@@ -9,7 +9,11 @@ function lm(x: number, y: number): Landmark {
   return { x, y, visibility: 1 };
 }
 
-function poseAt(hipY: number): Landmark[] {
+function poseAt(
+  hipY: number,
+  leftFootY = hipY + 0.26,
+  rightFootY = hipY + 0.26,
+): Landmark[] {
   const arr = Array.from({ length: 33 }, () => lm(0.5, 0.5));
   arr[0] = lm(0.5, hipY - 0.28);
   arr[11] = lm(0.44, hipY - 0.18);
@@ -18,8 +22,8 @@ function poseAt(hipY: number): Landmark[] {
   arr[24] = lm(0.53, hipY);
   arr[25] = lm(0.47, hipY + 0.12);
   arr[26] = lm(0.53, hipY + 0.12);
-  arr[27] = lm(0.47, hipY + 0.26);
-  arr[28] = lm(0.53, hipY + 0.26);
+  arr[27] = lm(0.47, leftFootY);
+  arr[28] = lm(0.53, rightFootY);
   arr[29] = arr[27];
   arr[30] = arr[28];
   return arr;
@@ -44,6 +48,46 @@ export function syntheticJumpFrames(fps = 30): PoseFrame[] {
     frames.push({ t, landmarks: poseAt(hipY) });
   }
   return frames;
+}
+
+export function syntheticRunningFrames(fps = 30): PoseFrame[] {
+  const contacts = [0.4, 0.73, 1.06, 1.39, 1.72, 2.05];
+  const leftContacts = contacts.filter((_, i) => i % 2 === 0);
+  const rightContacts = contacts.filter((_, i) => i % 2 === 1);
+  const duration = 2.35;
+  const frames: PoseFrame[] = [];
+
+  for (let i = 0; i < Math.round(duration * fps); i++) {
+    const t = i / fps;
+    const nearest = contacts.reduce((a, b) =>
+      Math.abs(t - a) < Math.abs(t - b) ? a : b,
+    );
+    const d = t - nearest;
+    let hipY = 0.43;
+    if (d >= -0.16 && d < 0) hipY = lerp(0.43, 0.46, (d + 0.16) / 0.16);
+    else if (d >= 0 && d < 0.16) hipY = lerp(0.46, 0.43, d / 0.16);
+
+    frames.push({
+      t,
+      landmarks: poseAt(
+        hipY,
+        runningFootY(t, leftContacts),
+        runningFootY(t, rightContacts),
+      ),
+    });
+  }
+  return frames;
+}
+
+function runningFootY(t: number, contacts: number[]): number {
+  const nearest = contacts.reduce((a, b) =>
+    Math.abs(t - a) < Math.abs(t - b) ? a : b,
+  );
+  const d = t - nearest;
+  if (d < -0.16 || d > 0.22) return 0.62;
+  if (d < 0) return lerp(0.62, 0.82, (d + 0.16) / 0.16);
+  if (d < 0.1) return 0.82;
+  return lerp(0.82, 0.62, (d - 0.1) / 0.12);
 }
 
 export function assertDetectsLanding() {
@@ -71,4 +115,19 @@ export function assertDetectsLanding() {
     throw new Error("force conversion mismatch");
   }
   return hit;
+}
+
+export function assertDetectsRunningSteps() {
+  const result = analyzeLandings(syntheticRunningFrames(), {
+    statureM: 1.7,
+    massKg: 70,
+    width: 1280,
+    height: 720,
+  });
+  if (result.landings.length < 4) {
+    throw new Error(
+      `expected at least four running contacts, got ${result.landings.length}`,
+    );
+  }
+  return result.landings;
 }

@@ -22,6 +22,10 @@ export type SeriesPoint = {
   acc: number;
   grfBw: number;
   kneeFlex: number;
+  leftFootM: number;
+  rightFootM: number;
+  leftFootVel: number;
+  rightFootVel: number;
 };
 
 export type Risk = "low" | "moderate" | "elevated" | "high" | "severe";
@@ -149,6 +153,8 @@ export function analyzeLandings(
   const mpp = estimateMetersPerPixel(frames, options.statureM, options.width, options.height);
   const comRaw: number[] = [];
   const kneeRaw: number[] = [];
+  const leftFootRaw: number[] = [];
+  const rightFootRaw: number[] = [];
   const t: number[] = [];
 
   for (const frame of frames) {
@@ -157,15 +163,25 @@ export function analyzeLandings(
     if (!lm) {
       comRaw.push(Number.NaN);
       kneeRaw.push(Number.NaN);
+      leftFootRaw.push(Number.NaN);
+      rightFootRaw.push(Number.NaN);
       continue;
     }
     const hip = mid(lm[LM.leftHip], lm[LM.rightHip]);
     if (!hip) {
       comRaw.push(Number.NaN);
       kneeRaw.push(Number.NaN);
+      leftFootRaw.push(Number.NaN);
+      rightFootRaw.push(Number.NaN);
       continue;
     }
     comRaw.push(-hip.y * options.height * mpp);
+    leftFootRaw.push(
+      footHeight(lm[LM.leftHeel], lm[LM.leftAnkle], options.height, mpp),
+    );
+    rightFootRaw.push(
+      footHeight(lm[LM.rightHeel], lm[LM.rightAnkle], options.height, mpp),
+    );
     const flexL = kneeFlexionDeg(
       lm[LM.leftHip],
       lm[LM.leftKnee],
@@ -189,6 +205,10 @@ export function analyzeLandings(
   const vel = movingAverage(derivative(com, t), 5);
   const acc = movingAverage(derivative(vel, t), 5);
   const knee = fillGaps(kneeRaw);
+  const leftFoot = movingAverage(fillGaps(leftFootRaw), 3);
+  const rightFoot = movingAverage(fillGaps(rightFootRaw), 3);
+  const leftFootVel = movingAverage(derivative(leftFoot, t), 3);
+  const rightFootVel = movingAverage(derivative(rightFoot, t), 3);
 
   const series: SeriesPoint[] = t.map((time, i) => {
     const a = acc[i];
@@ -200,6 +220,10 @@ export function analyzeLandings(
       acc: a,
       grfBw,
       kneeFlex: knee[i],
+      leftFootM: leftFoot[i],
+      rightFootM: rightFoot[i],
+      leftFootVel: leftFootVel[i],
+      rightFootVel: rightFootVel[i],
     };
   });
 
@@ -215,6 +239,21 @@ export function analyzeLandings(
     metersPerPixel: mpp,
     warnings,
   };
+}
+
+function footHeight(
+  heel: Landmark | undefined,
+  ankle: Landmark | undefined,
+  height: number,
+  metersPerPixel: number,
+): number {
+  const candidates = [heel, ankle].filter(
+    (p): p is Landmark => Boolean(p) && isVisible(p, 0.25),
+  );
+  if (!candidates.length) return Number.NaN;
+  // Image y grows downwards. The lowest visible foot point is the best contact
+  // proxy and also works when the heel is briefly hidden by the other leg.
+  return Math.max(...candidates.map((p) => p.y)) * height * metersPerPixel;
 }
 
 function fillGaps(values: number[]): number[] {
@@ -235,47 +274,62 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     series.slice(1).map((s, i) => s.t - series[i].t),
   );
   const dt = Number.isFinite(dtMedian) && dtMedian > 0 ? dtMedian : 1 / 30;
-  const minSep = Math.max(4, Math.round(0.28 / dt));
+  const minSep = Math.max(3, Math.round(0.2 / dt));
   const landings: Landing[] = [];
 
-  const accPeakMin = 9;
-  for (let i = 3; i < series.length - 3; i++) {
-    const a = acc[i];
-    if (!Number.isFinite(a) || a < accPeakMin) continue;
-    const isPeak = a >= acc[i - 1] && a >= acc[i + 1] && a >= acc[i - 2] && a >= acc[i + 2];
-    if (!isPeak) continue;
-
-    const from = Math.max(0, i - Math.round(0.16 / dt));
-    const minVelIdx = argMin(vel, from, i);
+  const candidates = contactCandidates(series, dt);
+  for (const candidate of candidates) {
+    let contactIdx = candidate;
+    const prior = Math.max(0, contactIdx - Math.round(0.2 / dt));
+    const minVelIdx = argMin(vel, prior, contactIdx);
     const impactVel = vel[minVelIdx];
-    if (!(impactVel < -0.55)) continue;
+    if (!Number.isFinite(impactVel) || impactVel > -0.06) continue;
 
     const last = landings.at(-1);
-    if (last && i - last.index < minSep) {
-      if (a > series[last.index].acc) landings.pop();
-      else continue;
-    }
+    if (last && contactIdx - last.index < minSep) continue;
 
-    const contactFrom = Math.max(0, minVelIdx);
-    let contactIdx = contactFrom;
-    for (let k = minVelIdx; k <= i; k++) {
-      if (acc[k] > 8) {
+    // Acceleration often starts one or two frames before the visible heel
+    // settles. Move contact back to that onset when it is clear.
+    for (let k = minVelIdx; k <= candidate; k++) {
+      if (acc[k] > 3.5) {
         contactIdx = k;
         break;
       }
     }
 
-    const after = Math.min(series.length - 1, i + Math.round(0.22 / dt));
-    let absorbIdx = i;
-    for (let k = i; k <= after; k++) {
-      absorbIdx = k;
-      if (vel[k] >= -0.15) break;
+    const after = Math.min(
+      series.length - 1,
+      contactIdx + Math.round(0.25 / dt),
+    );
+    let absorbIdx = after;
+    for (let k = contactIdx + 1; k <= after; k++) {
+      if (vel[k] >= -0.03) {
+        absorbIdx = k;
+        break;
+      }
     }
-    const peakIdx = argMax(acc, contactIdx, absorbIdx);
-    const absorptionMs = Math.max(20, (series[absorbIdx].t - series[contactIdx].t) * 1000);
-    const peakAcc = acc[peakIdx];
-    const peakGrfBw = clamp(1 + peakAcc / G, 1.05, 12);
-    const vImp = Math.abs(vel[contactIdx] < impactVel ? vel[contactIdx] : impactVel);
+    const peakWindowEnd = Math.min(
+      after,
+      contactIdx + Math.max(2, Math.round(0.18 / dt)),
+    );
+    const peakIdx = argMax(acc, contactIdx, peakWindowEnd);
+    const absorptionMs = clamp(
+      (series[absorbIdx].t - series[contactIdx].t) * 1000,
+      45,
+      300,
+    );
+    const peakAcc = Math.max(0, acc[peakIdx]);
+    const vImp = Math.abs(impactVel);
+    const measuredGrfBw = 1 + peakAcc / G;
+    // Low-frame-rate phone video smooths the acceleration peak. Momentum over
+    // the observed absorption interval gives a conservative lower-bound proxy.
+    const momentumGrfBw =
+      1 + (1.6 * vImp) / (G * (absorptionMs / 1000));
+    const peakGrfBw = clamp(
+      Math.max(measuredGrfBw, momentumGrfBw),
+      1.05,
+      12,
+    );
     const equivalentDropCm = ((vImp * vImp) / (2 * G)) * 100;
     const loadingRateBwS = peakGrfBw / (absorptionMs / 1000);
     const kneeFlexContact = finiteOr(series[contactIdx].kneeFlex, 20);
@@ -314,6 +368,82 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
   }
 
   return landings;
+}
+
+function contactCandidates(series: SeriesPoint[], dt: number): number[] {
+  const acc = series.map((s) => s.acc);
+  const vel = series.map((s) => s.vel);
+  const candidates: number[] = [];
+
+  // Jump and hard-landing path: a local upward acceleration peak following a
+  // descending COM. This remains useful when a foot is occluded.
+  for (let i = 2; i < series.length - 2; i++) {
+    const a = acc[i];
+    const isPeak =
+      Number.isFinite(a) &&
+      a >= 6 &&
+      a >= acc[i - 1] &&
+      a >= acc[i + 1] &&
+      a >= acc[i - 2] &&
+      a >= acc[i + 2];
+    if (!isPeak) continue;
+    const prior = Math.max(0, i - Math.round(0.18 / dt));
+    if (vel[argMin(vel, prior, i)] < -0.12) {
+      candidates.push(i);
+    }
+  }
+
+  // Running path: each foot descends quickly, then its vertical velocity drops
+  // around zero as it meets the ground. Looking at each foot independently
+  // avoids the cancellation caused by averaging alternating feet.
+  addFootContacts(
+    series.map((s) => s.leftFootM),
+    series.map((s) => s.leftFootVel),
+    dt,
+    candidates,
+  );
+  addFootContacts(
+    series.map((s) => s.rightFootM),
+    series.map((s) => s.rightFootVel),
+    dt,
+    candidates,
+  );
+
+  candidates.sort((a, b) => a - b);
+  const merged: number[] = [];
+  const cluster = Math.max(2, Math.round(0.12 / dt));
+  for (const index of candidates) {
+    const last = merged.at(-1);
+    if (last === undefined || index - last > cluster) {
+      merged.push(index);
+    } else {
+      // Keep the earlier point in a same-contact cluster. Heel settling and the
+      // acceleration peak can describe the same landing a few frames apart.
+      merged[merged.length - 1] = Math.min(last, index);
+    }
+  }
+  return merged;
+}
+
+function addFootContacts(
+  foot: number[],
+  footVel: number[],
+  dt: number,
+  output: number[],
+): void {
+  const lookBack = Math.max(2, Math.round(0.18 / dt));
+  const lookAhead = Math.max(2, Math.round(0.1 / dt));
+  for (let i = lookBack; i < foot.length - lookAhead; i++) {
+    const priorDown = Math.max(...footVel.slice(i - lookBack, i));
+    const settlesNow = footVel[i - 1] > 0.1 && footVel[i] <= 0.1;
+    const localLow = Math.max(
+      ...foot.slice(i - 1, i + lookAhead + 1),
+    );
+    const nearGroundTurn = foot[i] >= localLow - 0.018;
+    if (priorDown > 0.18 && settlesNow && nearGroundTurn) {
+      output.push(i);
+    }
+  }
 }
 
 function finiteOr(v: number, fallback: number): number {

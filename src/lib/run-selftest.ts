@@ -1,4 +1,7 @@
-import { assertDetectsLanding } from "./synthetic-jump";
+import {
+  assertDetectsLanding,
+  assertDetectsRunningSteps,
+} from "./synthetic-jump";
 
 const hit = assertDetectsLanding();
 console.log("landing ok", {
@@ -7,3 +10,9 @@ console.log("landing ok", {
   v: hit.impactVelocity.toFixed(2),
   score: hit.damageScore,
 });
+
+const steps = assertDetectsRunningSteps();
+console.log(
+  "running contacts ok",
+  steps.map((step) => step.tContact.toFixed(2)),
+);
