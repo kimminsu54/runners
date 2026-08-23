@@ -28,19 +28,17 @@ export function buildLandingGuidance(landing: Landing): LandingGuidance {
     0,
     landing.kneeFlexPeak - landing.kneeFlexContact,
   );
-  const highImpact =
-    landing.peakGrfBw >= 2.8 || landing.loadingRateBwS >= 24;
-  const stiffLanding =
-    landing.absorptionMs < 110 ||
-    landing.kneeFlexContact < 20 ||
-    kneeExcursion < 12;
+  const highImpact = landing.peakGrfBw >= 3 || landing.loadingRateBwS >= 55;
+  // A short contact is a symptom of speed, not of a bad landing, so judge
+  // stiffness from how much the knee actually gives way.
+  const stiffLanding = landing.kneeFlexContact < 18 || kneeExcursion < 10;
 
   if (highImpact) {
     patterns.push({
       area: "정강이·발",
       title: "반복 충격 부담 가능성",
       level:
-        landing.peakGrfBw >= 4 || landing.loadingRateBwS >= 38
+        landing.peakGrfBw >= 3.8 || landing.loadingRateBwS >= 85
           ? "high"
           : "attention",
       evidence: `${landing.peakGrfBw.toFixed(1)} BW · ${landing.loadingRateBwS.toFixed(0)} BW/s`,
@@ -58,10 +56,7 @@ export function buildLandingGuidance(landing: Landing): LandingGuidance {
     patterns.push({
       area: "무릎 앞쪽·고관절",
       title: "충격 흡수 여유가 작은 패턴",
-      level:
-        landing.absorptionMs < 80 || landing.kneeFlexContact < 12
-          ? "high"
-          : "attention",
+      level: landing.kneeFlexContact < 12 ? "high" : "attention",
       evidence: `흡수 ${Math.round(landing.absorptionMs)} ms · 무릎 ${landing.kneeFlexContact.toFixed(0)}°→${landing.kneeFlexPeak.toFixed(0)}°`,
       meaning:
         "착지 뒤 무릎과 엉덩이가 충분히 굽혀지지 않으면 충격을 여러 관절에 나누는 시간이 짧아질 수 있습니다. 무릎 통증이나 인대 손상을 진단하는 지표는 아닙니다.",
@@ -73,11 +68,11 @@ export function buildLandingGuidance(landing: Landing): LandingGuidance {
     });
   }
 
-  if (landing.impactVelocity >= 1.4) {
+  if (landing.impactVelocity >= 1.8) {
     patterns.push({
       area: "하체 전반",
       title: "큰 하강 속도",
-      level: landing.impactVelocity >= 2.2 ? "high" : "attention",
+      level: landing.impactVelocity >= 2.6 ? "high" : "attention",
       evidence: `${landing.impactVelocity.toFixed(1)} m/s · 등가 높이 ${landing.equivalentDropCm.toFixed(0)} cm`,
       meaning:
         "몸이 빠르게 내려오는 착지입니다. 내리막, 점프, 과한 상하 움직임처럼 동작 자체가 큰 경우인지 먼저 확인해야 합니다.",

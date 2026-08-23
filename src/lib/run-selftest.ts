@@ -1,9 +1,8 @@
-import { analyzeLandings } from "./landing-analysis";
-import { buildSessionSummary } from "./session-summary";
+import { buildSessionSummary, paceLabel } from "./session-summary";
 import {
+  analyzeSyntheticRun,
   assertDetectsLanding,
   assertDetectsRunningSteps,
-  syntheticRunningFrames,
 } from "./synthetic-jump";
 import { buildLandingGuidance } from "./training-guidance";
 
@@ -40,17 +39,51 @@ console.log(
   guidance.patterns.map((pattern) => pattern.area),
 );
 
-const running = analyzeLandings(syntheticRunningFrames(), {
-  statureM: 1.7,
-  massKg: 70,
-  width: 1280,
-  height: 720,
-});
-const session = buildSessionSummary(running);
+const session = buildSessionSummary(analyzeSyntheticRun());
 if (!session.headline || session.paragraphs.length < 3) {
   throw new Error("expected a multi-sentence session summary");
 }
 if (session.metrics.length < 4) {
   throw new Error("expected aggregated session metrics");
 }
-console.log("session summary ok", session.headline, session.metrics[0]);
+console.log("session summary ok", session.headline);
+
+const slow = buildSessionSummary(
+  analyzeSyntheticRun({ contactS: 0.31, flightS: 0.05 }),
+);
+const fast = buildSessionSummary(
+  analyzeSyntheticRun({ contactS: 0.13, flightS: 0.14 }),
+);
+for (const [name, s] of [
+  ["slow", slow],
+  ["fast", fast],
+] as const) {
+  console.log(`${name} pace`, {
+    pace: paceLabel[s.pace],
+    contactMs: Math.round(s.meanContactMs),
+    flightMs: Math.round(s.meanFlightMs),
+    duty: s.meanDutyFactor.toFixed(2),
+    bw: s.meanPeakGrfBw.toFixed(2),
+    headline: s.headline,
+  });
+}
+if (!(fast.meanPeakGrfBw > slow.meanPeakGrfBw * 1.35)) {
+  throw new Error(
+    `fast pace should load much harder: slow ${slow.meanPeakGrfBw} vs fast ${fast.meanPeakGrfBw}`,
+  );
+}
+if (!(fast.meanDutyFactor < slow.meanDutyFactor - 0.08)) {
+  throw new Error(
+    `duty factor should separate the paces: slow ${slow.meanDutyFactor} vs fast ${fast.meanDutyFactor}`,
+  );
+}
+if (slow.pace === fast.pace) {
+  throw new Error(`both clips classified as ${slow.pace}`);
+}
+if (slow.headline === fast.headline) {
+  throw new Error("slow and fast summaries should not read the same");
+}
+if (slow.meanPeakGrfBw > 2.4) {
+  throw new Error(`slow jogging should stay near 2 BW, got ${slow.meanPeakGrfBw}`);
+}
+console.log("pace discrimination ok");

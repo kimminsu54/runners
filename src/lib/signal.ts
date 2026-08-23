@@ -37,6 +37,28 @@ export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+export function percentile(values: number[], p: number): number {
+  const xs = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!xs.length) return Number.NaN;
+  const pos = clamp(p, 0, 1) * (xs.length - 1);
+  const low = Math.floor(pos);
+  const high = Math.ceil(pos);
+  if (low === high) return xs[low];
+  return xs[low] + (xs[high] - xs[low]) * (pos - low);
+}
+
+export function rollingPercentile(
+  values: number[],
+  halfWindow: number,
+  p: number,
+): number[] {
+  return values.map((_, i) => {
+    const from = Math.max(0, i - halfWindow);
+    const to = Math.min(values.length - 1, i + halfWindow);
+    return percentile(values.slice(from, to + 1), p);
+  });
+}
+
 export function argMin(values: number[], from: number, to: number): number {
   let best = from;
   let bestV = Infinity;

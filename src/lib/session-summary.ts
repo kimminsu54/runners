@@ -17,6 +17,37 @@ export type SessionMetric = {
   hint?: string;
 };
 
+export type PaceBand =
+  | "walk"
+  | "easy"
+  | "steady"
+  | "brisk"
+  | "fast"
+  | "sprint"
+  | "unknown";
+
+export const paceLabel: Record<PaceBand, string> = {
+  walk: "걷기에 가까움",
+  easy: "느린 조깅",
+  steady: "편한 러닝",
+  brisk: "빠른 러닝",
+  fast: "고속 러닝",
+  sprint: "스프린트",
+  unknown: "페이스 판정 불가",
+};
+
+// Duty factor is contact time over stride time. It drops as pace rises and is
+// far more stable than trying to read ground speed off a hand-held camera.
+export function classifyPace(dutyFactor: number, contactMs: number): PaceBand {
+  if (!Number.isFinite(dutyFactor)) return "unknown";
+  if (dutyFactor >= 0.5) return "walk";
+  if (dutyFactor >= 0.4 || contactMs >= 290) return "easy";
+  if (dutyFactor >= 0.33) return "steady";
+  if (dutyFactor >= 0.28) return "brisk";
+  if (dutyFactor >= 0.23) return "fast";
+  return "sprint";
+}
+
 export type SessionSummary = {
   headline: string;
   paragraphs: string[];
@@ -25,6 +56,11 @@ export type SessionSummary = {
   patterns: LoadPattern[];
   training: TrainingAdvice[];
   peakLandingIndex: number;
+  pace: PaceBand;
+  meanContactMs: number;
+  meanFlightMs: number;
+  meanDutyFactor: number;
+  meanPeakGrfBw: number;
 };
 
 function mean(values: number[]): number {
@@ -72,6 +108,11 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         },
       ],
       peakLandingIndex: -1,
+      pace: "unknown",
+      meanContactMs: Number.NaN,
+      meanFlightMs: Number.NaN,
+      meanDutyFactor: Number.NaN,
+      meanPeakGrfBw: Number.NaN,
     };
   }
 
@@ -107,6 +148,12 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     landings.length >= 2 && last > first
       ? ((landings.length - 1) / (last - first)) * 60
       : Number.NaN;
+
+  const meanContactMs = mean(landings.map((l) => l.contactMs));
+  const meanFlightMs = mean(landings.map((l) => l.flightMs));
+  const meanDutyFactor = mean(landings.map((l) => l.dutyFactor));
+  const pace = classifyPace(meanDutyFactor, meanContactMs);
+  const gaitCount = landings.filter((l) => l.gaitBased).length;
 
   const left = landings.filter((l) => l.side === "left");
   const right = landings.filter((l) => l.side === "right");
@@ -185,8 +232,13 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         : "",
   ].filter(Boolean);
 
+  const paceText = Number.isFinite(meanContactMs)
+    ? `접지 ${Math.round(meanContactMs)} ms · 체공 ${Math.round(meanFlightMs)} ms · 듀티 ${meanDutyFactor.toFixed(2)}로 보아 ${paceLabel[pace]}입니다.`
+    : `${paceLabel[pace]} — 발 접지를 충분히 못 봐서 페이스는 판정하지 않았습니다.`;
+
   const paragraphs = [
     `${durationS.toFixed(1)}초 · ${frameCount}프레임을 추적해 착지 ${landings.length}회를 모았습니다. 자세는 구간의 ${pct(detectedRatio, 1)}%에서 잡혔고, ${cadenceText}입니다.`,
+    paceText,
     `평균 추정 지면반력은 ${avgGrf.toFixed(1)} BW, 흡수 시간은 ${Math.round(avgAbsorb)} ms, 착지 순간 무릎은 ${avgKnee.toFixed(0)}°입니다. 가장 센 착지는 ${formatSeconds(peak.tContact)}의 ${peak.peakGrfBw.toFixed(1)} BW(점수 ${peak.damageScore})입니다.`,
     trendBits.length
       ? trendBits.join(" ")
@@ -198,31 +250,43 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         : "영상 전체로 보면 뚜렷한 고부하 패턴은 적습니다. 통증과 주간 훈련량을 함께 관찰하세요.",
   ];
 
+  const paceHeadline =
+    pace === "unknown" ? "" : `${paceLabel[pace]} · 평균 ${avgGrf.toFixed(1)} BW — `;
   const headline =
-    cautionCount >= Math.max(2, Math.ceil(landings.length * 0.4))
+    paceHeadline +
+    (cautionCount >= Math.max(2, Math.ceil(landings.length * 0.4))
       ? "반복 착지에서 충격이 몰리는 패턴이 보입니다."
       : stiffCount >= Math.max(2, Math.ceil(landings.length * 0.4))
         ? "착지를 여러 번 모아 보니 흡수가 짧은 편이 반복됩니다."
         : landings.length >= 4
           ? "여러 착지를 모아 본 전체 부하는 비교적 고른 편입니다."
-          : "잡은 착지가 적어 전체 경향은 참고 수준입니다.";
+          : "잡은 착지가 적어 전체 경향은 참고 수준입니다.");
 
   const metrics: SessionMetric[] = [
+    {
+      label: "페이스",
+      value: paceLabel[pace],
+      hint: Number.isFinite(meanDutyFactor)
+        ? `듀티 ${meanDutyFactor.toFixed(2)}`
+        : `착지 ${gaitCount}/${landings.length}회 측정`,
+    },
     { label: "착지", value: `${landings.length}회`, hint: cadenceText },
+    {
+      label: "접지 / 체공",
+      value: Number.isFinite(meanContactMs)
+        ? `${Math.round(meanContactMs)} / ${Math.round(meanFlightMs)} ms`
+        : "측정 불가",
+      hint: "짧은 접지·긴 체공일수록 큰 충격",
+    },
     {
       label: "평균 반력",
       value: `${avgGrf.toFixed(1)} BW`,
       hint: `최대 ${Math.max(...grfs).toFixed(1)} BW`,
     },
     {
-      label: "평균 흡수",
-      value: `${Math.round(avgAbsorb)} ms`,
-      hint: `부하율 ${avgRate.toFixed(0)} BW/s`,
-    },
-    {
       label: "평균 점수",
       value: String(Math.round(avgScore)),
-      hint: `최고 ${peak.damageScore}`,
+      hint: `부하율 ${avgRate.toFixed(0)} BW/s`,
     },
   ];
 
@@ -234,12 +298,6 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         ? `차이 ${Math.round(asymmetryPct)}%`
         : undefined,
     });
-  } else {
-    metrics.push({
-      label: "자세 포착",
-      value: `${pct(detectedRatio, 1)}%`,
-      hint: `${durationS.toFixed(1)}s`,
-    });
   }
 
   return {
@@ -250,5 +308,10 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     patterns,
     training: [...trainingVotes.values()].slice(0, 4),
     peakLandingIndex,
+    pace,
+    meanContactMs,
+    meanFlightMs,
+    meanDutyFactor,
+    meanPeakGrfBw: avgGrf,
   };
 }

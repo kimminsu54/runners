@@ -23,7 +23,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type Status = "idle" | "loading-model" | "analyzing" | "done" | "error";
 
 const MAX_SECONDS = 18;
-const TARGET_FPS = 24;
+// Sprint stance lasts about 100 ms, so sample far above video frame rate when
+// the clip is short enough to afford it.
+const FRAME_BUDGET = 540;
+const MIN_FPS = 24;
+const MAX_FPS = 60;
 
 export function LandingAnalyzer() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -152,7 +156,11 @@ export function LandingAnalyzer() {
       }
       const landmarker = await getPoseLandmarker();
       setStatus("analyzing");
-      const n = Math.min(Math.round(duration * TARGET_FPS), 420);
+      const sampleFps = Math.min(
+        MAX_FPS,
+        Math.max(MIN_FPS, FRAME_BUDGET / duration),
+      );
+      const n = Math.min(Math.round(duration * sampleFps), FRAME_BUDGET);
       const frames = [];
       for (let i = 0; i < n; i++) {
         const t = (i / Math.max(1, n - 1)) * duration;
@@ -353,7 +361,8 @@ export function LandingAnalyzer() {
               <div className="space-y-2">
                 <Progress value={status === "loading-model" ? 8 : progress} />
                 <p className="text-xs text-muted-foreground">
-                  브라우저에서 프레임마다 관절을 추적합니다. 앞 {MAX_SECONDS}초까지 봅니다.
+                  접지·체공 시간을 재려고 초당 최대 {MAX_FPS}장까지 촘촘히 훑습니다.
+                  앞 {MAX_SECONDS}초가 대상입니다.
                 </p>
               </div>
             ) : null}

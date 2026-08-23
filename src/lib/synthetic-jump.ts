@@ -50,44 +50,75 @@ export function syntheticJumpFrames(fps = 30): PoseFrame[] {
   return frames;
 }
 
-export function syntheticRunningFrames(fps = 30): PoseFrame[] {
-  const contacts = [0.4, 0.73, 1.06, 1.39, 1.72, 2.05];
-  const leftContacts = contacts.filter((_, i) => i % 2 === 0);
-  const rightContacts = contacts.filter((_, i) => i % 2 === 1);
-  const duration = 2.35;
-  const frames: PoseFrame[] = [];
+export type RunningGait = {
+  /** Seconds one foot stays on the ground. */
+  contactS: number;
+  /** Seconds with neither foot down, between consecutive contacts. */
+  flightS: number;
+  steps: number;
+  fps: number;
+};
 
+const GROUND_Y = 0.82;
+const FOOT_LIFT = 0.14;
+
+export function syntheticRunningFrames(
+  gait: Partial<RunningGait> = {},
+): PoseFrame[] {
+  const { contactS = 0.24, flightS = 0.1, steps = 8, fps = 60 } = gait;
+  const stepPeriod = contactS + flightS;
+  const starts = Array.from({ length: steps }, (_, i) => 0.25 + i * stepPeriod);
+  const leftStarts = starts.filter((_, i) => i % 2 === 0);
+  const rightStarts = starts.filter((_, i) => i % 2 === 1);
+  const duration = starts[starts.length - 1] + contactS + flightS + 0.25;
+
+  const frames: PoseFrame[] = [];
   for (let i = 0; i < Math.round(duration * fps); i++) {
     const t = i / fps;
-    const nearest = contacts.reduce((a, b) =>
-      Math.abs(t - a) < Math.abs(t - b) ? a : b,
-    );
-    const d = t - nearest;
-    let hipY = 0.43;
-    if (d >= -0.16 && d < 0) hipY = lerp(0.43, 0.46, (d + 0.16) / 0.16);
-    else if (d >= 0 && d < 0.16) hipY = lerp(0.46, 0.43, d / 0.16);
-
     frames.push({
       t,
       landmarks: poseAt(
-        hipY,
-        runningFootY(t, leftContacts),
-        runningFootY(t, rightContacts),
+        runningHipY(t, starts, contactS, stepPeriod),
+        runningFootY(t, leftStarts, contactS),
+        runningFootY(t, rightStarts, contactS),
       ),
     });
   }
   return frames;
 }
 
-function runningFootY(t: number, contacts: number[]): number {
-  const nearest = contacts.reduce((a, b) =>
-    Math.abs(t - a) < Math.abs(t - b) ? a : b,
+function runningHipY(
+  t: number,
+  starts: number[],
+  contactS: number,
+  stepPeriod: number,
+): number {
+  // Lowest at mid-stance, highest in mid-flight, about 8 cm peak to peak.
+  const phase = (t - (starts[0] + contactS / 2)) / stepPeriod;
+  return 0.43 + 0.014 * Math.cos(2 * Math.PI * phase);
+}
+
+function runningFootY(
+  t: number,
+  starts: number[],
+  contactS: number,
+): number {
+  for (const start of starts) {
+    if (t >= start && t <= start + contactS) return GROUND_Y;
+  }
+  const prevEnd = Math.max(
+    ...starts.filter((s) => s + contactS < t).map((s) => s + contactS),
+    Number.NEGATIVE_INFINITY,
   );
-  const d = t - nearest;
-  if (d < -0.16 || d > 0.22) return 0.62;
-  if (d < 0) return lerp(0.62, 0.82, (d + 0.16) / 0.16);
-  if (d < 0.1) return 0.82;
-  return lerp(0.82, 0.62, (d - 0.1) / 0.12);
+  const nextStart = Math.min(
+    ...starts.filter((s) => s > t),
+    Number.POSITIVE_INFINITY,
+  );
+  if (!Number.isFinite(prevEnd) || !Number.isFinite(nextStart)) {
+    return GROUND_Y - FOOT_LIFT * 0.5;
+  }
+  const u = (t - prevEnd) / (nextStart - prevEnd);
+  return GROUND_Y - FOOT_LIFT * Math.sin(Math.PI * u);
 }
 
 export function assertDetectsLanding() {
@@ -117,13 +148,17 @@ export function assertDetectsLanding() {
   return hit;
 }
 
-export function assertDetectsRunningSteps() {
-  const result = analyzeLandings(syntheticRunningFrames(), {
+export function analyzeSyntheticRun(gait: Partial<RunningGait> = {}) {
+  return analyzeLandings(syntheticRunningFrames(gait), {
     statureM: 1.7,
     massKg: 70,
     width: 1280,
     height: 720,
   });
+}
+
+export function assertDetectsRunningSteps() {
+  const result = analyzeSyntheticRun();
   if (result.landings.length < 4) {
     throw new Error(
       `expected at least four running contacts, got ${result.landings.length}`,

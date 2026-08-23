@@ -48,9 +48,19 @@ export function LandingCard({
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <Metric label="추정 최대 반력" value={`${landing.peakGrfBw.toFixed(1)} BW`} />
+          <Metric
+            label="접지 시간"
+            value={
+              landing.gaitBased ? `${Math.round(landing.contactMs)} ms` : "측정 불가"
+            }
+          />
+          <Metric
+            label="체공 시간"
+            value={
+              landing.gaitBased ? `${Math.round(landing.flightMs)} ms` : "측정 불가"
+            }
+          />
           <Metric label="착지 속도" value={`${landing.impactVelocity.toFixed(1)} m/s`} />
-          <Metric label="흡수 시간" value={`${Math.round(landing.absorptionMs)} ms`} />
-          <Metric label="등가 낙하 높이" value={`${landing.equivalentDropCm.toFixed(0)} cm`} />
         </CardContent>
         <p className="px-4 pb-4 text-sm text-muted-foreground">
           {landing.note} {compareHint(landing.damageScore)}

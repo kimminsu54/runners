@@ -6,9 +6,22 @@ import {
   mid,
   type Landmark,
 } from "@/lib/pose";
-import { argMax, argMin, clamp, derivative, median, movingAverage } from "@/lib/signal";
+import {
+  argMax,
+  argMin,
+  clamp,
+  derivative,
+  median,
+  movingAverage,
+  percentile,
+  rollingPercentile,
+} from "@/lib/signal";
 
 export const G = 9.80665;
+
+// A running stance looks roughly like a half-sine of vertical force, so the
+// peak sits about pi/2 above the mean force carried during that contact.
+const PEAK_OVER_MEAN = Math.PI / 2;
 
 export type PoseFrame = {
   t: number;
@@ -40,6 +53,9 @@ export type Landing = {
   peakGrfBw: number;
   peakForceN: number;
   absorptionMs: number;
+  contactMs: number;
+  flightMs: number;
+  dutyFactor: number;
   equivalentDropCm: number;
   loadingRateBwS: number;
   kneeFlexContact: number;
@@ -47,6 +63,7 @@ export type Landing = {
   damageScore: number;
   risk: Risk;
   side: FootSide;
+  gaitBased: boolean;
   note: string;
 };
 
@@ -91,26 +108,46 @@ export function riskLabel(risk: Risk): string {
 function damageScore(input: {
   peakGrfBw: number;
   loadingRateBwS: number;
-  absorptionMs: number;
+  dutyFactor: number;
   kneeFlexContact: number;
 }): number {
-  const bwTerm = clamp(((input.peakGrfBw - 1.15) / 6.5) * 52, 0, 52);
-  const rateTerm = clamp((input.loadingRateBwS / 90) * 24, 0, 24);
-  const stiffKnee = clamp((70 - input.kneeFlexContact) / 70, 0, 1) * 14;
-  const snap = input.absorptionMs < 70 ? 10 : input.absorptionMs < 110 ? 5 : 0;
-  return clamp(Math.round(bwTerm + rateTerm + stiffKnee + snap), 0, 100);
+  // Easy jogging sits near 1.8 BW and a sprint near 4.5 BW, so anchor the
+  // scale there instead of letting ordinary running saturate the score.
+  const bwTerm = clamp(((input.peakGrfBw - 1.7) / 2.8) * 45, 0, 45);
+  const rateTerm = clamp(((input.loadingRateBwS - 12) / 70) * 25, 0, 25);
+  const stiffKnee = clamp((55 - input.kneeFlexContact) / 55, 0, 1) * 15;
+  const duty = input.dutyFactor;
+  const flightTerm = !Number.isFinite(duty)
+    ? 0
+    : duty < 0.25
+      ? 15
+      : duty < 0.3
+        ? 10
+        : duty < 0.35
+          ? 5
+          : 0;
+  return clamp(
+    Math.round(bwTerm + rateTerm + stiffKnee + flightTerm),
+    0,
+    100,
+  );
 }
 
 function landingNote(l: Omit<Landing, "note" | "index">): string {
   const bits: string[] = [];
-  if (l.absorptionMs < 90 && l.kneeFlexContact < 25) {
-    bits.push("무릎을 거의 펴고 짧게 받아 뻣뻣한 착지로 보입니다.");
-  } else if (l.kneeFlexPeak - l.kneeFlexContact > 25 && l.absorptionMs >= 120) {
+  if (l.kneeFlexContact < 18 && l.kneeFlexPeak - l.kneeFlexContact < 10) {
+    bits.push("무릎을 거의 편 채로 받아 뻣뻣한 착지로 보입니다.");
+  } else if (l.kneeFlexPeak - l.kneeFlexContact > 25) {
     bits.push("착지 후 무릎을 굽혀 충격을 나눠 받은 편입니다.");
   }
-  if (l.peakGrfBw >= 3.5) {
-    bits.push("추정 최대 지면반력이 체중의 3.5배를 넘습니다.");
-  } else if (l.peakGrfBw < 1.8) {
+  if (Number.isFinite(l.contactMs) && l.contactMs > 0) {
+    bits.push(
+      `접지 ${Math.round(l.contactMs)} ms · 체공 ${Math.round(l.flightMs)} ms.`,
+    );
+  }
+  if (l.peakGrfBw >= 3.4) {
+    bits.push("빠른 페이스에서 나타나는 큰 반력입니다.");
+  } else if (l.peakGrfBw < 2) {
     bits.push("걷기·가벼운 조깅에 가까운 충격 수준입니다.");
   }
   if (!bits.length) {
@@ -269,6 +306,22 @@ function fillGaps(values: number[]): number[] {
   return out;
 }
 
+type ContactInterval = {
+  side: FootSide;
+  startIdx: number;
+  start: number;
+  end: number;
+};
+
+type RawLanding = {
+  contactIdx: number;
+  peakIdx: number;
+  absorbIdx: number;
+  impactVel: number;
+  interval: ContactInterval | null;
+  flightS: number;
+};
+
 function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
   if (series.length < 8) return [];
   const acc = series.map((s) => s.acc);
@@ -278,18 +331,18 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
   );
   const dt = Number.isFinite(dtMedian) && dtMedian > 0 ? dtMedian : 1 / 30;
   const minSep = Math.max(3, Math.round(0.2 / dt));
-  const landings: Landing[] = [];
+  const intervals = groundContactIntervals(series, dt);
 
-  const candidates = contactCandidates(series, dt);
-  for (const candidate of candidates) {
+  const raws: RawLanding[] = [];
+  for (const candidate of contactCandidates(series, dt)) {
     let contactIdx = candidate;
     const prior = Math.max(0, contactIdx - Math.round(0.2 / dt));
     const minVelIdx = argMin(vel, prior, contactIdx);
     const impactVel = vel[minVelIdx];
     if (!Number.isFinite(impactVel) || impactVel > -0.06) continue;
 
-    const last = landings.at(-1);
-    if (last && contactIdx - last.index < minSep) continue;
+    const last = raws.at(-1);
+    if (last && contactIdx - last.contactIdx < minSep) continue;
 
     // Acceleration often starts one or two frames before the visible heel
     // settles. Move contact back to that onset when it is clear.
@@ -315,63 +368,185 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
       after,
       contactIdx + Math.max(2, Math.round(0.18 / dt)),
     );
-    const peakIdx = argMax(acc, contactIdx, peakWindowEnd);
-    const absorptionMs = clamp(
-      (series[absorbIdx].t - series[contactIdx].t) * 1000,
-      45,
-      300,
-    );
-    const peakAcc = Math.max(0, acc[peakIdx]);
-    const vImp = Math.abs(impactVel);
-    const measuredGrfBw = 1 + peakAcc / G;
-    // Low-frame-rate phone video smooths the acceleration peak. Momentum over
-    // the observed absorption interval gives a conservative lower-bound proxy.
-    const momentumGrfBw =
-      1 + (1.6 * vImp) / (G * (absorptionMs / 1000));
-    const peakGrfBw = clamp(
-      Math.max(measuredGrfBw, momentumGrfBw),
-      1.05,
-      12,
-    );
-    const equivalentDropCm = ((vImp * vImp) / (2 * G)) * 100;
-    const loadingRateBwS = peakGrfBw / (absorptionMs / 1000);
-    const kneeFlexContact = finiteOr(series[contactIdx].kneeFlex, 20);
-    const kneeSlice = series.slice(contactIdx, absorbIdx + 1).map((s) => s.kneeFlex);
-    const kneeFlexPeak = Math.max(kneeFlexContact, ...kneeSlice.filter(Number.isFinite));
+    const interval = matchInterval(intervals, contactIdx, dt);
+    raws.push({
+      contactIdx,
+      peakIdx: argMax(acc, contactIdx, peakWindowEnd),
+      absorbIdx,
+      impactVel,
+      interval,
+      flightS: interval ? flightBefore(intervals, interval) : Number.NaN,
+    });
+  }
 
-    const base = {
-      tContact: series[contactIdx].t,
-      tPeakForce: series[peakIdx].t,
+  const medianContactS = median(
+    raws.map((r) => (r.interval ? r.interval.end - r.interval.start : Number.NaN)),
+  );
+  const medianFlightS = median(raws.map((r) => r.flightS));
+
+  return raws.map((raw) => {
+    const contactS = raw.interval
+      ? raw.interval.end - raw.interval.start
+      : medianContactS;
+    const flightS = Number.isFinite(raw.flightS) ? raw.flightS : medianFlightS;
+    const gaitBased =
+      Number.isFinite(contactS) && contactS > 0.05 && Number.isFinite(flightS);
+
+    const vImp = Math.abs(raw.impactVel);
+    const peakAcc = Math.max(0, acc[raw.peakIdx]);
+    const measuredGrfBw = 1 + peakAcc / G;
+    // One foot carries the whole body over a step period, so the mean force in
+    // that stance is bodyweight scaled by stepPeriod/contactTime. A shorter
+    // contact with more airtime is what makes a fast pace hit harder.
+    const peakGrfBw = gaitBased
+      ? clamp((PEAK_OVER_MEAN * (contactS + flightS)) / contactS, 1.05, 6)
+      : clamp(measuredGrfBw, 1.05, 4);
+
+    const absorptionMs = (series[raw.absorbIdx].t - series[raw.contactIdx].t) * 1000;
+    const measuredRiseS = series[raw.peakIdx].t - series[raw.contactIdx].t;
+    const riseS = gaitBased
+      ? Math.max(0.4 * contactS, dt)
+      : Math.max(measuredRiseS, dt);
+    const loadingRateBwS = peakGrfBw / riseS;
+    const dutyFactor = gaitBased
+      ? contactS / (2 * (contactS + flightS))
+      : Number.NaN;
+
+    const kneeFlexContact = finiteOr(series[raw.contactIdx].kneeFlex, 20);
+    const kneeSlice = series
+      .slice(raw.contactIdx, raw.absorbIdx + 1)
+      .map((s) => s.kneeFlex)
+      .filter(Number.isFinite);
+    const kneeFlexPeak = Math.max(kneeFlexContact, ...kneeSlice);
+
+    const score = damageScore({
+      peakGrfBw,
+      loadingRateBwS,
+      dutyFactor,
+      kneeFlexContact,
+    });
+    const landing: Landing = {
+      index: raw.peakIdx,
+      tContact: series[raw.contactIdx].t,
+      tPeakForce: series[raw.peakIdx].t,
       impactVelocity: vImp,
       peakGrfBw,
       peakForceN: peakGrfBw * massKg * G,
       absorptionMs,
-      equivalentDropCm,
+      contactMs: gaitBased ? contactS * 1000 : Number.NaN,
+      flightMs: gaitBased ? Math.max(0, flightS) * 1000 : Number.NaN,
+      dutyFactor,
+      equivalentDropCm: ((vImp * vImp) / (2 * G)) * 100,
       loadingRateBwS,
       kneeFlexContact,
       kneeFlexPeak,
-      damageScore: 0,
-      risk: "low" as Risk,
-      side: inferFootSide(series[contactIdx]),
-    };
-    const score = damageScore({
-      peakGrfBw,
-      loadingRateBwS,
-      absorptionMs,
-      kneeFlexContact,
-    });
-    const landing: Landing = {
-      ...base,
-      index: peakIdx,
       damageScore: score,
       risk: riskFromScore(score),
+      side: raw.interval?.side ?? inferFootSide(series[raw.contactIdx]),
+      gaitBased,
       note: "",
     };
     landing.note = landingNote(landing);
-    landings.push(landing);
+    return landing;
+  });
+}
+
+function matchInterval(
+  intervals: ContactInterval[],
+  contactIdx: number,
+  dt: number,
+): ContactInterval | null {
+  const tolerance = Math.round(0.12 / dt) + 1;
+  let best: ContactInterval | null = null;
+  let bestGap = Infinity;
+  for (const interval of intervals) {
+    const gap = Math.abs(interval.startIdx - contactIdx);
+    if (gap <= tolerance && gap < bestGap) {
+      best = interval;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
+function flightBefore(
+  intervals: ContactInterval[],
+  current: ContactInterval,
+): number {
+  let previousEnd = Number.NaN;
+  for (const interval of intervals) {
+    if (interval === current) continue;
+    if (interval.start >= current.start) continue;
+    if (!Number.isFinite(previousEnd) || interval.end > previousEnd) {
+      previousEnd = interval.end;
+    }
+  }
+  if (!Number.isFinite(previousEnd)) return Number.NaN;
+  return Math.max(0, current.start - previousEnd);
+}
+
+function groundContactIntervals(
+  series: SeriesPoint[],
+  dt: number,
+): ContactInterval[] {
+  return [
+    ...footIntervals(series.map((s) => s.leftFootM), series, dt, "left"),
+    ...footIntervals(series.map((s) => s.rightFootM), series, dt, "right"),
+  ].sort((a, b) => a.start - b.start);
+}
+
+function footIntervals(
+  foot: number[],
+  series: SeriesPoint[],
+  dt: number,
+  side: FootSide,
+): ContactInterval[] {
+  const finite = foot.filter(Number.isFinite);
+  if (finite.length < foot.length * 0.5) return [];
+  const swing = percentile(finite, 0.9) - percentile(finite, 0.1);
+  if (!(swing > 0.03)) return [];
+
+  // The ground line drifts as the runner crosses the frame, so track it in a
+  // window rather than assuming one level for the whole clip.
+  const ground = rollingPercentile(foot, Math.max(4, Math.round(0.7 / dt)), 0.92);
+  // Keep this band tight. A loose band counts the early swing as stance, which
+  // stretches contact time and erases the difference between paces.
+  const tolerance = Math.max(0.015, swing * 0.12);
+  const grounded = foot.map(
+    (value, i) => Number.isFinite(value) && value >= ground[i] - tolerance,
+  );
+
+  const minFrames = Math.max(2, Math.round(0.05 / dt));
+  const maxGapFrames = Math.max(1, Math.round(0.05 / dt));
+  const spans: Array<[number, number]> = [];
+  let start = -1;
+  for (let i = 0; i <= grounded.length; i++) {
+    const on = i < grounded.length && grounded[i];
+    if (on && start < 0) start = i;
+    if (!on && start >= 0) {
+      spans.push([start, i - 1]);
+      start = -1;
+    }
   }
 
-  return landings;
+  const merged: Array<[number, number]> = [];
+  for (const span of spans) {
+    const previous = merged.at(-1);
+    if (previous && span[0] - previous[1] - 1 <= maxGapFrames) {
+      previous[1] = span[1];
+    } else {
+      merged.push([...span]);
+    }
+  }
+
+  return merged
+    .filter(([from, to]) => to - from + 1 >= minFrames)
+    .map(([from, to]) => ({
+      side,
+      startIdx: from,
+      start: series[from].t,
+      end: series[to].t + dt,
+    }));
 }
 
 function contactCandidates(series: SeriesPoint[], dt: number): number[] {
