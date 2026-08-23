@@ -30,6 +30,8 @@ export type SeriesPoint = {
 
 export type Risk = "low" | "moderate" | "elevated" | "high" | "severe";
 
+export type FootSide = "left" | "right" | "unknown";
+
 export type Landing = {
   index: number;
   tContact: number;
@@ -44,6 +46,7 @@ export type Landing = {
   kneeFlexPeak: number;
   damageScore: number;
   risk: Risk;
+  side: FootSide;
   note: string;
 };
 
@@ -349,6 +352,7 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
       kneeFlexPeak,
       damageScore: 0,
       risk: "low" as Risk,
+      side: inferFootSide(series[contactIdx]),
     };
     const score = damageScore({
       peakGrfBw,
@@ -448,6 +452,15 @@ function addFootContacts(
 
 function finiteOr(v: number, fallback: number): number {
   return Number.isFinite(v) ? v : fallback;
+}
+
+function inferFootSide(point: SeriesPoint): FootSide {
+  const left = point.leftFootM;
+  const right = point.rightFootM;
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return "unknown";
+  const gap = left - right;
+  if (Math.abs(gap) < 0.012) return "unknown";
+  return gap > 0 ? "left" : "right";
 }
 
 export function formatSeconds(t: number): string {

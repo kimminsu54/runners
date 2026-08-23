@@ -1,6 +1,9 @@
+import { analyzeLandings } from "./landing-analysis";
+import { buildSessionSummary } from "./session-summary";
 import {
   assertDetectsLanding,
   assertDetectsRunningSteps,
+  syntheticRunningFrames,
 } from "./synthetic-jump";
 import { buildLandingGuidance } from "./training-guidance";
 
@@ -36,3 +39,18 @@ console.log(
   "guidance ok",
   guidance.patterns.map((pattern) => pattern.area),
 );
+
+const running = analyzeLandings(syntheticRunningFrames(), {
+  statureM: 1.7,
+  massKg: 70,
+  width: 1280,
+  height: 720,
+});
+const session = buildSessionSummary(running);
+if (!session.headline || session.paragraphs.length < 3) {
+  throw new Error("expected a multi-sentence session summary");
+}
+if (session.metrics.length < 4) {
+  throw new Error("expected aggregated session metrics");
+}
+console.log("session summary ok", session.headline, session.metrics[0]);

@@ -13,7 +13,7 @@ export default function Home() {
           </h1>
           <p className="max-w-2xl text-sm leading-6 text-zinc-400 sm:text-base">
             관절 위치를 프레임마다 추적해 무게중심이 얼마나 빠르게 내려오다 멈추는지 봅니다.
-            그 감속으로부터 체중 배수 지면반력, 흡수 시간, 무릎이 얼마나 굽혀졌는지를 추정합니다.
+            착지를 모두 모은 뒤 평균 충격, 반복 패턴, 좌우 차이까지 한 번에 요약합니다.
           </p>
         </div>
       </header>

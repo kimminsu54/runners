@@ -3,6 +3,7 @@
 import { ImpactChart } from "@/components/impact-chart";
 import { InjuryGuidance } from "@/components/injury-guidance";
 import { LandingCard } from "@/components/landing-card";
+import { SessionSummaryCard } from "@/components/session-summary";
 import { PoseOverlay } from "@/components/pose-overlay";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -368,6 +369,15 @@ export function LandingAnalyzer() {
       </div>
 
       {status === "done" && result ? (
+        <div className="flex flex-col gap-6">
+        <SessionSummaryCard
+          result={result}
+          onSelectPeak={(index) => {
+            setSelected(index);
+            const landing = result.landings[index];
+            if (landing) void jumpTo(landing.tContact);
+          }}
+        />
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-6">
             <Card>
@@ -441,6 +451,7 @@ export function LandingAnalyzer() {
               ))
             )}
           </div>
+        </div>
         </div>
       ) : null}
     </div>
