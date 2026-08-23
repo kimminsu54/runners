@@ -56,8 +56,11 @@ export function SessionSummaryCard({
       <CardContent className="space-y-5">
         <div className="space-y-2">
           <p className="text-lg font-medium leading-7">{summary.headline}</p>
-          {summary.paragraphs.map((paragraph) => (
-            <p key={paragraph} className="text-sm leading-6 text-muted-foreground">
+          {summary.paragraphs.map((paragraph, index) => (
+            <p
+              key={`${index}-${paragraph}`}
+              className="text-sm leading-6 text-muted-foreground"
+            >
               {paragraph}
             </p>
           ))}
@@ -105,9 +108,9 @@ export function SessionSummaryCard({
 
         {summary.patterns.length ? (
           <div className="grid gap-3 md:grid-cols-3">
-            {summary.patterns.map((pattern) => (
+            {summary.patterns.map((pattern, index) => (
               <div
-                key={`${pattern.area}-${pattern.title}`}
+                key={`${index}-${pattern.area}-${pattern.title}`}
                 className="rounded-xl border border-white/10 p-4"
               >
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -131,7 +134,7 @@ export function SessionSummaryCard({
         {summary.training.length ? (
           <ol className="grid gap-3 md:grid-cols-2">
             {summary.training.map((item, index) => (
-              <li key={item.title} className="flex gap-3 text-sm">
+              <li key={`${index}-${item.title}`} className="flex gap-3 text-sm">
                 <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-xs font-semibold text-amber-300">
                   {index + 1}
                 </span>

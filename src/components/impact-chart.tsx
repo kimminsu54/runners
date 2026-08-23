@@ -49,9 +49,9 @@ export function ImpactChart({ series, landingTimes, selectedTime, onSelectTime }
         {maxG.toFixed(1)}
       </text>
       <path d={path} fill="none" className="stroke-amber-400" strokeWidth={2} />
-      {landingTimes.map((t) => (
+      {landingTimes.map((t, index) => (
         <line
-          key={t}
+          key={`${index}-${t}`}
           x1={x(t)}
           x2={x(t)}
           y1={pad.t}

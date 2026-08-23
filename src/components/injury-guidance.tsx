@@ -51,9 +51,9 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
             관찰된 부담 패턴
           </h3>
           <div className="grid gap-3 md:grid-cols-2">
-            {guidance.patterns.map((pattern) => (
+            {guidance.patterns.map((pattern, index) => (
               <div
-                key={`${pattern.area}-${pattern.title}`}
+                key={`${index}-${pattern.area}-${pattern.title}`}
                 className="rounded-xl border border-white/10 bg-black/10 p-4"
               >
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -89,7 +89,7 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
           <ol className="grid gap-3 md:grid-cols-2">
             {guidance.training.map((item, index) => (
               <li
-                key={item.title}
+                key={`${index}-${item.title}`}
                 className="flex gap-3 rounded-xl bg-white/[0.035] p-4"
               >
                 <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-xs font-semibold text-amber-300">

@@ -395,9 +395,12 @@ export function LandingAnalyzer() {
                 <CardDescription>1 BW는 가만히 서 있을 때의 체중 하중입니다. 세로 선은 착지 순간입니다.</CardDescription>
               </CardHeader>
               <CardContent>
-                {result.warnings.map((w) => (
-                  <p key={w} className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-                    {w}
+                {result.warnings.map((warning, index) => (
+                  <p
+                    key={`${index}-${warning}`}
+                    className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+                  >
+                    {warning}
                   </p>
                 ))}
                 {summary ? (

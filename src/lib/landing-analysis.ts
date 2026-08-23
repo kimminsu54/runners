@@ -240,13 +240,14 @@ export function analyzeLandings(
     kneeRaw.push(flexes.length ? flexes.reduce((a, b) => a + b, 0) / flexes.length : Number.NaN);
   }
 
-  const filled = fillGaps(comRaw);
-  const com = movingAverage(filled, 5);
+  // Only bridge momentary dropouts. Holding the last value across a long gap
+  // invents a motionless body, which then reads as a very long ground contact.
+  const com = movingAverage(fillShortGaps(comRaw, 3), 5);
   const vel = movingAverage(derivative(com, t), 5);
   const acc = movingAverage(derivative(vel, t), 5);
   const knee = fillGaps(kneeRaw);
-  const leftFoot = movingAverage(fillGaps(leftFootRaw), 3);
-  const rightFoot = movingAverage(fillGaps(rightFootRaw), 3);
+  const leftFoot = movingAverage(fillShortGaps(leftFootRaw, 2), 3);
+  const rightFoot = movingAverage(fillShortGaps(rightFootRaw, 2), 3);
   const leftFootVel = movingAverage(derivative(leftFoot, t), 3);
   const rightFootVel = movingAverage(derivative(rightFoot, t), 3);
 
@@ -268,6 +269,11 @@ export function analyzeLandings(
   });
 
   const landings = detectLandings(series, options.massKg);
+  if (landings.length && detectedRatio < 0.8) {
+    warnings.push(
+      `자세가 끊긴 구간이 있어(포착 ${Math.round(detectedRatio * 100)}%) 접지·체공 시간과 페이스 판정의 오차가 커집니다.`,
+    );
+  }
   if (!landings.length) {
     warnings.push("뚜렷한 착지 충격을 찾지 못했습니다. 점프·달리기처럼 발이 떨어졌다 닿는 구간이 보이게 찍어 보세요.");
   }
@@ -306,6 +312,27 @@ function fillGaps(values: number[]): number[] {
   return out;
 }
 
+function fillShortGaps(values: number[], maxRun: number): number[] {
+  const out = values.slice();
+  let runStart = -1;
+  for (let i = 0; i <= out.length; i++) {
+    const missing = i < out.length && !Number.isFinite(out[i]);
+    if (missing && runStart < 0) runStart = i;
+    if (!missing && runStart >= 0) {
+      const before = out[runStart - 1];
+      const after = i < out.length ? out[i] : Number.NaN;
+      const length = i - runStart;
+      if (length <= maxRun && Number.isFinite(before) && Number.isFinite(after)) {
+        for (let k = runStart; k < i; k++) {
+          out[k] = before + ((after - before) * (k - runStart + 1)) / (length + 1);
+        }
+      }
+      runStart = -1;
+    }
+  }
+  return out;
+}
+
 type ContactInterval = {
   side: FootSide;
   startIdx: number;
@@ -318,9 +345,16 @@ type RawLanding = {
   peakIdx: number;
   absorbIdx: number;
   impactVel: number;
-  interval: ContactInterval | null;
-  flightS: number;
+  contactS: number;
+  side: FootSide;
 };
+
+// Human running stance and step timings. Anything outside these came from a
+// tracking dropout, not from the runner.
+const MIN_CONTACT_S = 0.06;
+const MAX_CONTACT_S = 0.4;
+const MIN_STEP_S = 0.15;
+const MAX_STEP_S = 0.7;
 
 function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
   if (series.length < 8) return [];
@@ -341,8 +375,6 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     const impactVel = vel[minVelIdx];
     if (!Number.isFinite(impactVel) || impactVel > -0.06) continue;
 
-    const last = raws.at(-1);
-    if (last && contactIdx - last.contactIdx < minSep) continue;
 
     // Acceleration often starts one or two frames before the visible heel
     // settles. Move contact back to that onset when it is clear.
@@ -369,28 +401,45 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
       contactIdx + Math.max(2, Math.round(0.18 / dt)),
     );
     const interval = matchInterval(intervals, contactIdx, dt);
+    const rawContactS = interval ? interval.end - interval.start : Number.NaN;
     raws.push({
       contactIdx,
       peakIdx: argMax(acc, contactIdx, peakWindowEnd),
       absorbIdx,
       impactVel,
-      interval,
-      flightS: interval ? flightBefore(intervals, interval) : Number.NaN,
+      contactS:
+        rawContactS >= MIN_CONTACT_S && rawContactS <= MAX_CONTACT_S
+          ? rawContactS
+          : Number.NaN,
+      side: interval?.side ?? inferFootSide(series[contactIdx]),
     });
   }
 
-  const medianContactS = median(
-    raws.map((r) => (r.interval ? r.interval.end - r.interval.start : Number.NaN)),
+  const deduped = dedupe(raws, acc, minSep);
+  const medianContactS = median(deduped.map((r) => r.contactS));
+  // Cadence is the most reliable timing we have, so read the step period from
+  // the contacts themselves and take flight as whatever the stance leaves over.
+  const stepPeriodS = median(
+    deduped
+      .slice(1)
+      .map((r, i) => series[r.contactIdx].t - series[deduped[i].contactIdx].t)
+      .filter((gap) => gap >= MIN_STEP_S && gap <= MAX_STEP_S),
   );
-  const medianFlightS = median(raws.map((r) => r.flightS));
 
-  return raws.map((raw) => {
-    const contactS = raw.interval
-      ? raw.interval.end - raw.interval.start
+  return deduped.map((raw) => {
+    // A single stance is measured to within a frame or two, so keep each
+    // contact near the clip's median rather than letting one noisy frame
+    // produce a five-bodyweight outlier.
+    const contactS = Number.isFinite(raw.contactS)
+      ? Number.isFinite(medianContactS)
+        ? clamp(raw.contactS, medianContactS * 0.75, medianContactS * 1.35)
+        : raw.contactS
       : medianContactS;
-    const flightS = Number.isFinite(raw.flightS) ? raw.flightS : medianFlightS;
     const gaitBased =
-      Number.isFinite(contactS) && contactS > 0.05 && Number.isFinite(flightS);
+      Number.isFinite(contactS) &&
+      Number.isFinite(stepPeriodS) &&
+      contactS <= stepPeriodS;
+    const flightS = gaitBased ? Math.max(0, stepPeriodS - contactS) : Number.NaN;
 
     const vImp = Math.abs(raw.impactVel);
     const peakAcc = Math.max(0, acc[raw.peakIdx]);
@@ -399,7 +448,7 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     // that stance is bodyweight scaled by stepPeriod/contactTime. A shorter
     // contact with more airtime is what makes a fast pace hit harder.
     const peakGrfBw = gaitBased
-      ? clamp((PEAK_OVER_MEAN * (contactS + flightS)) / contactS, 1.05, 6)
+      ? clamp((PEAK_OVER_MEAN * stepPeriodS) / contactS, 1.05, 5)
       : clamp(measuredGrfBw, 1.05, 4);
 
     const absorptionMs = (series[raw.absorbIdx].t - series[raw.contactIdx].t) * 1000;
@@ -408,9 +457,7 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
       ? Math.max(0.4 * contactS, dt)
       : Math.max(measuredRiseS, dt);
     const loadingRateBwS = peakGrfBw / riseS;
-    const dutyFactor = gaitBased
-      ? contactS / (2 * (contactS + flightS))
-      : Number.NaN;
+    const dutyFactor = gaitBased ? contactS / (2 * stepPeriodS) : Number.NaN;
 
     const kneeFlexContact = finiteOr(series[raw.contactIdx].kneeFlex, 20);
     const kneeSlice = series
@@ -442,13 +489,33 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
       kneeFlexPeak,
       damageScore: score,
       risk: riskFromScore(score),
-      side: raw.interval?.side ?? inferFootSide(series[raw.contactIdx]),
+      side: raw.side,
       gaitBased,
       note: "",
     };
     landing.note = landingNote(landing);
     return landing;
   });
+}
+
+// Pulling contact back to the acceleration onset can land two candidates on the
+// same frame, so collapse neighbours only after that adjustment.
+function dedupe(
+  raws: RawLanding[],
+  acc: number[],
+  minSep: number,
+): RawLanding[] {
+  const sorted = [...raws].sort((a, b) => a.contactIdx - b.contactIdx);
+  const out: RawLanding[] = [];
+  for (const raw of sorted) {
+    const previous = out.at(-1);
+    if (previous && raw.contactIdx - previous.contactIdx < minSep) {
+      if (acc[raw.peakIdx] > acc[previous.peakIdx]) out[out.length - 1] = raw;
+      continue;
+    }
+    out.push(raw);
+  }
+  return out;
 }
 
 function matchInterval(
@@ -467,22 +534,6 @@ function matchInterval(
     }
   }
   return best;
-}
-
-function flightBefore(
-  intervals: ContactInterval[],
-  current: ContactInterval,
-): number {
-  let previousEnd = Number.NaN;
-  for (const interval of intervals) {
-    if (interval === current) continue;
-    if (interval.start >= current.start) continue;
-    if (!Number.isFinite(previousEnd) || interval.end > previousEnd) {
-      previousEnd = interval.end;
-    }
-  }
-  if (!Number.isFinite(previousEnd)) return Number.NaN;
-  return Math.max(0, current.start - previousEnd);
 }
 
 function groundContactIntervals(
@@ -516,7 +567,8 @@ function footIntervals(
     (value, i) => Number.isFinite(value) && value >= ground[i] - tolerance,
   );
 
-  const minFrames = Math.max(2, Math.round(0.05 / dt));
+  const minFrames = Math.max(2, Math.round(MIN_CONTACT_S / dt));
+  const maxFrames = Math.ceil(MAX_CONTACT_S / dt) + 1;
   const maxGapFrames = Math.max(1, Math.round(0.05 / dt));
   const spans: Array<[number, number]> = [];
   let start = -1;
@@ -540,7 +592,10 @@ function footIntervals(
   }
 
   return merged
-    .filter(([from, to]) => to - from + 1 >= minFrames)
+    .filter(
+      ([from, to]) =>
+        to - from + 1 >= minFrames && to - from + 1 <= maxFrames,
+    )
     .map(([from, to]) => ({
       side,
       startIdx: from,
