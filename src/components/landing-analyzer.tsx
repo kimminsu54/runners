@@ -15,6 +15,7 @@ import {
 } from "@/lib/landing-analysis";
 import type { Landmark } from "@/lib/pose";
 import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
+import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Status = "idle" | "loading-model" | "analyzing" | "done" | "error";
@@ -40,13 +41,17 @@ export function LandingAnalyzer() {
   const [overlay, setOverlay] = useState<Landmark[] | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    return () => {
-      if (videoUrl) URL.revokeObjectURL(videoUrl);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
+    if (!videoUrl) return;
+    return () => URL.revokeObjectURL(videoUrl);
   }, [videoUrl]);
+
+  useEffect(() => {
+    const stream = streamRef.current;
+    return () => stream?.getTracks().forEach((t) => t.stop());
+  }, []);
 
   const attachFile = useCallback((file: File) => {
     setResult(null);
@@ -55,16 +60,15 @@ export function LandingAnalyzer() {
     setSelected(0);
     setOverlay(null);
     setFileName(file.name);
-    setVideoUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
+    setVideoUrl(URL.createObjectURL(file));
   }, []);
 
   const onFile = (list: FileList | null) => {
     const file = list?.[0];
     if (!file) return;
-    if (!file.type.startsWith("video/")) {
+    const looksLikeVideo =
+      file.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(file.name);
+    if (!looksLikeVideo) {
       setError("영상 파일만 올릴 수 있습니다.");
       setStatus("error");
       return;
@@ -205,7 +209,23 @@ export function LandingAnalyzer() {
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <Card className="overflow-hidden bg-card/80">
-          <div className="relative aspect-video bg-black">
+          <div
+            className={cn(
+              "relative aspect-video bg-black transition",
+              dragging && "ring-2 ring-amber-400 ring-inset",
+            )}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              stopCamera();
+              onFile(e.dataTransfer.files);
+            }}
+          >
             <video
               ref={videoRef}
               src={cameraOn ? undefined : videoUrl ?? undefined}
@@ -213,6 +233,13 @@ export function LandingAnalyzer() {
               playsInline
               controls={!cameraOn && Boolean(videoUrl)}
               muted
+              onError={() => {
+                if (!videoUrl) return;
+                setStatus("error");
+                setError(
+                  "브라우저가 이 영상을 재생하지 못했습니다. iPhone HEVC(.mov)라면 MP4(H.264)로 변환해 올려 주세요.",
+                );
+              }}
             />
             <PoseOverlay
               videoRef={videoRef}
@@ -223,15 +250,18 @@ export function LandingAnalyzer() {
               <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-2 px-6 text-center">
                 <input
                   type="file"
-                  accept="video/*"
+                  accept="video/*,.mp4,.mov,.m4v,.webm"
                   className="sr-only"
-                  onChange={(e) => onFile(e.target.files)}
+                  onChange={(e) => {
+                    onFile(e.target.files);
+                    e.target.value = "";
+                  }}
                 />
                 <span className="rounded-full bg-amber-400/15 px-3 py-1 text-xs font-medium text-amber-300">
                   영상 업로드
                 </span>
                 <span className="max-w-sm text-sm text-zinc-300">
-                  전신이 나오는 달리기·점프 영상을 올리세요. 옆모습이 무릎 각도를 더 잘 잡습니다.
+                  전신이 나오는 달리기·점프 영상을 끌어다 놓거나 눌러서 고르세요. 옆모습이 무릎 각도를 더 잘 잡습니다.
                 </span>
               </label>
             ) : null}
@@ -251,11 +281,12 @@ export function LandingAnalyzer() {
                 파일 선택
                 <input
                   type="file"
-                  accept="video/*"
+                  accept="video/*,.mp4,.mov,.m4v,.webm"
                   className="sr-only"
                   onChange={(e) => {
                     stopCamera();
                     onFile(e.target.files);
+                    e.target.value = "";
                   }}
                 />
               </label>
