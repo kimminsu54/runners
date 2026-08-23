@@ -1,6 +1,7 @@
 "use client";
 
 import { ImpactChart } from "@/components/impact-chart";
+import { InjuryGuidance } from "@/components/injury-guidance";
 import { LandingCard } from "@/components/landing-card";
 import { PoseOverlay } from "@/components/pose-overlay";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -368,47 +369,52 @@ export function LandingAnalyzer() {
 
       {status === "done" && result ? (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <Card>
-            <CardHeader>
-              <CardTitle>추정 지면반력</CardTitle>
-              <CardDescription>1 BW는 가만히 서 있을 때의 체중 하중입니다. 세로 선은 착지 순간입니다.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {result.warnings.map((w) => (
-                <p key={w} className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-                  {w}
-                </p>
-              ))}
-              {summary ? (
-                <div className="mb-4 grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">착지 횟수</p>
-                    <p className="text-lg font-semibold tabular-nums">{summary.count}</p>
+          <div className="flex flex-col gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>추정 지면반력</CardTitle>
+                <CardDescription>1 BW는 가만히 서 있을 때의 체중 하중입니다. 세로 선은 착지 순간입니다.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {result.warnings.map((w) => (
+                  <p key={w} className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                    {w}
+                  </p>
+                ))}
+                {summary ? (
+                  <div className="mb-4 grid grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">착지 횟수</p>
+                      <p className="text-lg font-semibold tabular-nums">{summary.count}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">평균 점수</p>
+                      <p className="text-lg font-semibold tabular-nums">{Math.round(summary.avg)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">가장 센 착지</p>
+                      <p className="text-lg font-semibold tabular-nums">
+                        {summary.worst.damageScore} · {formatSeconds(summary.worst.tContact)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">평균 점수</p>
-                    <p className="text-lg font-semibold tabular-nums">{Math.round(summary.avg)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">가장 센 착지</p>
-                    <p className="text-lg font-semibold tabular-nums">
-                      {summary.worst.damageScore} · {formatSeconds(summary.worst.tContact)}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <p className="mb-4 text-sm text-muted-foreground">착지가 감지되지 않았습니다.</p>
-              )}
-              <ImpactChart
-                series={result.series}
-                landingTimes={result.landings.map((l) => l.tContact)}
-                selectedTime={selectedLanding?.tContact ?? null}
-                onSelectTime={(t) => {
-                  void jumpTo(t);
-                }}
-              />
-            </CardContent>
-          </Card>
+                ) : (
+                  <p className="mb-4 text-sm text-muted-foreground">착지가 감지되지 않았습니다.</p>
+                )}
+                <ImpactChart
+                  series={result.series}
+                  landingTimes={result.landings.map((l) => l.tContact)}
+                  selectedTime={selectedLanding?.tContact ?? null}
+                  onSelectTime={(t) => {
+                    void jumpTo(t);
+                  }}
+                />
+              </CardContent>
+            </Card>
+            {selectedLanding ? (
+              <InjuryGuidance landing={selectedLanding} />
+            ) : null}
+          </div>
 
           <div className="flex flex-col gap-3">
             {result.landings.length === 0 ? (
