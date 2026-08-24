@@ -28,17 +28,17 @@ const levelLabel: Record<GuidanceLevel, string> = {
 };
 
 const levelClass: Record<GuidanceLevel, string> = {
-  monitor: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  attention: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  high: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+  monitor: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  attention: "border-amber-200 bg-amber-50 text-amber-800",
+  high: "border-rose-200 bg-rose-50 text-rose-700",
 };
 
 const riskTone: Record<string, string> = {
-  low: "text-emerald-300",
-  moderate: "text-sky-300",
-  elevated: "text-amber-300",
-  high: "text-orange-300",
-  severe: "text-rose-300",
+  low: "text-emerald-700",
+  moderate: "text-sky-700",
+  elevated: "text-amber-800",
+  high: "text-orange-700",
+  severe: "text-rose-700",
 };
 
 export function SessionSummaryCard({
@@ -55,20 +55,20 @@ export function SessionSummaryCard({
     poor: "페이스 판정 불가",
   }[result.quality.level];
   const qualityClass = {
-    good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-    fair: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-    poor: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+    good: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    fair: "border-amber-200 bg-amber-50 text-amber-800",
+    poor: "border-rose-200 bg-rose-50 text-rose-700",
   }[result.quality.level];
 
   return (
-    <Card className="rounded-none border-[#f4ead3]/15 bg-[#1e2117]/90">
+    <Card className="rounded-2xl border-border bg-white">
       <CardHeader>
-        <p className="font-mono text-[9px] tracking-[0.18em] text-[#f05236] uppercase">
+        <p className="font-mono text-[9px] tracking-[0.18em] text-primary uppercase">
           03 / Session report
         </p>
         <div className="flex items-center gap-2">
-          <ClipboardList className="size-4 text-[#d3f35b]" aria-hidden />
-          <CardTitle className="display-type text-2xl text-[#f4ead3]">영상 전체 요약</CardTitle>
+          <ClipboardList className="size-4 text-primary" aria-hidden />
+          <CardTitle className="display-type text-2xl text-foreground">영상 전체 요약</CardTitle>
         </div>
         <CardDescription>
           프레임마다 추적한 착지를 모아 평균·반복 패턴·좌우 차이를 한 번에 봅니다.
@@ -86,7 +86,7 @@ export function SessionSummaryCard({
           </span>
         </div>
         {result.quality.reasons.length ? (
-          <ul className="list-disc space-y-1 rounded-lg bg-amber-500/[0.08] px-7 py-3 text-xs leading-5 text-amber-100/90">
+          <ul className="list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-7 py-3 text-xs leading-5 text-amber-900">
             {result.quality.reasons.map((reason, index) => (
               <li key={`${index}-${reason}`}>{reason}</li>
             ))}
@@ -108,7 +108,7 @@ export function SessionSummaryCard({
           {summary.metrics.map((metric) => (
             <div
               key={metric.label}
-              className="rounded-xl border border-white/10 bg-black/10 px-3 py-3"
+              className="rounded-xl border border-border bg-neutral-50 px-3 py-3"
             >
               <p className="text-xs text-muted-foreground">{metric.label}</p>
               <p className="text-base font-semibold tabular-nums">{metric.value}</p>
@@ -136,8 +136,8 @@ export function SessionSummaryCard({
                     className={cn(
                       "rounded-lg border px-2 py-2 text-center",
                       active
-                        ? "border-amber-400 bg-amber-400/15 text-amber-200"
-                        : "border-white/10 text-muted-foreground",
+                        ? "border-primary bg-accent text-accent-foreground"
+                        : "border-border text-muted-foreground",
                     )}
                   >
                     <p className="text-[11px] leading-tight font-medium">
@@ -159,15 +159,15 @@ export function SessionSummaryCard({
                 접지 순간 발가락–뒤꿈치 각도 기준
               </span>
             </div>
-            <div className="flex h-3 overflow-hidden rounded-full bg-white/5">
+            <div className="flex h-3 overflow-hidden rounded-full bg-neutral-100">
               {summary.strikeCounts.map((row) => (
                 <div
                   key={row.type}
                   style={{ width: `${row.percent}%` }}
                   className={cn(
-                    row.type === "rearfoot" && "bg-sky-400",
-                    row.type === "midfoot" && "bg-emerald-400",
-                    row.type === "forefoot" && "bg-amber-400",
+                    row.type === "rearfoot" && "bg-sky-500",
+                    row.type === "midfoot" && "bg-emerald-500",
+                    row.type === "forefoot" && "bg-amber-500",
                   )}
                   title={`${row.label} ${row.percent}%`}
                 />
@@ -179,9 +179,9 @@ export function SessionSummaryCard({
                   <span
                     className={cn(
                       "mr-1 inline-block size-2 rounded-full",
-                      row.type === "rearfoot" && "bg-sky-400",
-                      row.type === "midfoot" && "bg-emerald-400",
-                      row.type === "forefoot" && "bg-amber-400",
+                      row.type === "rearfoot" && "bg-sky-500",
+                      row.type === "midfoot" && "bg-emerald-500",
+                      row.type === "forefoot" && "bg-amber-500",
                     )}
                   />
                   {row.label} {row.count}회 · {row.percent}%
@@ -197,7 +197,7 @@ export function SessionSummaryCard({
               <span
                 key={row.risk}
                 className={cn(
-                  "rounded-full bg-white/5 px-3 py-1 text-xs tabular-nums",
+                  "rounded-full border border-border bg-neutral-50 px-3 py-1 text-xs tabular-nums",
                   riskTone[row.risk],
                 )}
               >
@@ -207,7 +207,7 @@ export function SessionSummaryCard({
             {summary.peakLandingIndex >= 0 && onSelectPeak ? (
               <button
                 type="button"
-                className="rounded-full border border-amber-400/40 px-3 py-1 text-xs text-amber-200 hover:bg-amber-400/10"
+                className="rounded-full border border-primary px-3 py-1 text-xs text-primary hover:bg-accent"
                 onClick={() => onSelectPeak(summary.peakLandingIndex)}
               >
                 가장 센 착지로 이동
@@ -221,7 +221,7 @@ export function SessionSummaryCard({
             {summary.patterns.map((pattern, index) => (
               <div
                 key={`${index}-${pattern.area}-${pattern.title}`}
-                className="rounded-xl border border-white/10 p-4"
+                className="rounded-xl border border-border p-4"
               >
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <Badge
@@ -233,7 +233,7 @@ export function SessionSummaryCard({
                   <span className="text-xs text-muted-foreground">{pattern.area}</span>
                 </div>
                 <p className="text-sm font-medium">{pattern.title}</p>
-                <p className="mt-1 font-mono text-xs text-amber-200">
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
                   {pattern.evidence}
                 </p>
               </div>
@@ -245,7 +245,7 @@ export function SessionSummaryCard({
           <ol className="grid gap-3 md:grid-cols-2">
             {summary.training.map((item, index) => (
               <li key={`${index}-${item.title}`} className="flex gap-3 text-sm">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-xs font-semibold text-amber-300">
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
                   {index + 1}
                 </span>
                 <div>

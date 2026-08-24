@@ -21,19 +21,19 @@ const levelLabel: Record<GuidanceLevel, string> = {
 };
 
 const levelClass: Record<GuidanceLevel, string> = {
-  monitor: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  attention: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  high: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+  monitor: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  attention: "border-amber-200 bg-amber-50 text-amber-800",
+  high: "border-rose-200 bg-rose-50 text-rose-700",
 };
 
 export function InjuryGuidance({ landing }: { landing: Landing }) {
   const guidance = buildLandingGuidance(landing);
 
   return (
-    <Card className="bg-card/80">
+    <Card className="rounded-2xl border-border bg-white">
       <CardHeader>
         <div className="flex items-center gap-2">
-          <Stethoscope className="size-4 text-amber-300" aria-hidden />
+          <Stethoscope className="size-4 text-primary" aria-hidden />
           <CardTitle>부담 가능 부위와 훈련 제안</CardTitle>
         </div>
         <CardDescription>
@@ -42,7 +42,7 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+        <p className="rounded-lg border border-border bg-neutral-50 px-3 py-2 text-sm">
           {guidance.summary}
         </p>
 
@@ -54,7 +54,7 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
             {guidance.patterns.map((pattern, index) => (
               <div
                 key={`${index}-${pattern.area}-${pattern.title}`}
-                className="rounded-xl border border-white/10 bg-black/10 p-4"
+                className="rounded-xl border border-border bg-neutral-50 p-4"
               >
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <Badge
@@ -68,7 +68,7 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
                   </span>
                 </div>
                 <p className="font-medium">{pattern.title}</p>
-                <p className="mt-1 font-mono text-xs text-amber-200">
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
                   근거: {pattern.evidence}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -81,7 +81,7 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
 
         <section aria-labelledby="training-plan">
           <div className="mb-3 flex items-center gap-2">
-            <Dumbbell className="size-4 text-amber-300" aria-hidden />
+            <Dumbbell className="size-4 text-primary" aria-hidden />
             <h3 id="training-plan" className="text-sm font-medium">
               다음 훈련에서 해볼 것
             </h3>
@@ -90,9 +90,9 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
             {guidance.training.map((item, index) => (
               <li
                 key={`${index}-${item.title}`}
-                className="flex gap-3 rounded-xl bg-white/[0.035] p-4"
+                className="flex gap-3 rounded-xl border border-border bg-neutral-50 p-4"
               >
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-xs font-semibold text-amber-300">
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
                   {index + 1}
                 </span>
                 <div>
@@ -106,12 +106,12 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
           </ol>
         </section>
 
-        <div className="flex gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.07] p-4 text-sm">
+        <div className="flex gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm">
           <AlertTriangle
-            className="mt-0.5 size-4 shrink-0 text-rose-300"
+            className="mt-0.5 size-4 shrink-0 text-rose-600"
             aria-hidden
           />
-          <p className="leading-6 text-rose-100/90">
+          <p className="leading-6 text-rose-900">
             한쪽에 국소 통증·부종이 있거나, 절뚝거리거나, 휴식 후에도 통증이
             심해진다면 영상 점수와 관계없이 달리기를 중단하고 스포츠의학
             전문가에게 평가받으세요.

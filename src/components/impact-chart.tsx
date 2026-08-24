@@ -48,7 +48,7 @@ export function ImpactChart({ series, landingTimes, selectedTime, onSelectTime }
       <text x={4} y={y(maxG) + 10} className="fill-muted-foreground text-[10px]">
         {maxG.toFixed(1)}
       </text>
-      <path d={path} fill="none" className="stroke-amber-400" strokeWidth={2} />
+      <path d={path} fill="none" className="stroke-primary" strokeWidth={2} />
       {landingTimes.map((t, index) => (
         <line
           key={`${index}-${t}`}
@@ -56,7 +56,7 @@ export function ImpactChart({ series, landingTimes, selectedTime, onSelectTime }
           x2={x(t)}
           y1={pad.t}
           y2={h - pad.b}
-          className="stroke-rose-400/70"
+          className="stroke-neutral-400"
           strokeWidth={selectedTime !== null && Math.abs(selectedTime - t) < 0.04 ? 2.5 : 1}
         />
       ))}

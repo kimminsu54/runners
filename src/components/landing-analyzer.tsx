@@ -240,11 +240,12 @@ export function LandingAnalyzer() {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="overflow-hidden rounded-none border-[#f4ead3]/15 bg-[#1e2117]/90">
+        <Card className="overflow-hidden rounded-2xl border-border bg-white">
           <div
             className={cn(
-              "relative aspect-video bg-black transition",
-              dragging && "ring-2 ring-amber-400 ring-inset",
+              "relative aspect-video transition",
+              videoUrl || cameraOn ? "bg-neutral-900" : "bg-neutral-50",
+              dragging && "ring-2 ring-primary ring-inset",
             )}
             onDragOver={(e) => {
               e.preventDefault();
@@ -258,7 +259,7 @@ export function LandingAnalyzer() {
               onFile(e.dataTransfer.files);
             }}
           >
-            <div className="pointer-events-none absolute top-3 right-3 z-10 border border-white/20 bg-black/45 px-2 py-1 font-mono text-[9px] tracking-[0.16em] text-white uppercase backdrop-blur-sm">
+            <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-full border border-border bg-white/90 px-2 py-1 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase backdrop-blur-sm">
               01 / Run clip
             </div>
             <video
@@ -292,10 +293,10 @@ export function LandingAnalyzer() {
                     e.target.value = "";
                   }}
                 />
-                <span className="rounded-full bg-amber-400/15 px-3 py-1 text-xs font-medium text-amber-300">
+                <span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
                   영상 업로드
                 </span>
-                <span className="max-w-sm text-sm text-zinc-300">
+                <span className="max-w-sm text-sm text-muted-foreground">
                   전신이 나오는 달리기·점프 영상을 끌어다 놓거나 눌러서 고르세요. 옆모습이 무릎 각도를 더 잘 잡습니다.
                 </span>
               </label>
@@ -343,12 +344,12 @@ export function LandingAnalyzer() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-none border-[#f4ead3]/15 bg-[#24271b]/90">
-          <CardHeader className="border-b border-white/10 pb-4">
-            <p className="font-mono text-[9px] tracking-[0.18em] text-[#f05236] uppercase">
+        <Card className="rounded-2xl border-border bg-white">
+          <CardHeader className="border-b border-border pb-4">
+            <p className="font-mono text-[9px] tracking-[0.18em] text-primary uppercase">
               02 / Runner setup
             </p>
-            <CardTitle className="display-type text-2xl text-[#f4ead3]">러너 세팅</CardTitle>
+            <CardTitle className="display-type text-2xl text-foreground">러너 세팅</CardTitle>
             <CardDescription>
               신체 정보와 촬영 조건을 맞추면 영상의 픽셀을 실제 움직임으로 바꿀 수 있습니다.
             </CardDescription>
@@ -446,7 +447,7 @@ export function LandingAnalyzer() {
                   : "240fps 슬로우 모션이면 8배입니다. 일반 속도로 찍었다면 반드시 바꿔야 접지·체공 시간과 페이스가 맞습니다."}
               </p>
               {suggestedSlowMotion ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                   <span>
                     이 영상은 사람이 낼 수 없는 보행이 됩니다.{" "}
                     {suggestedSlowMotion === 1
@@ -484,7 +485,9 @@ export function LandingAnalyzer() {
               </div>
             ) : null}
             {error ? (
-              <p className="rounded-lg bg-destructive/15 px-3 py-2 text-sm text-destructive">{error}</p>
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </p>
             ) : null}
             <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
               <li>힘판이 아니라 2D 영상 추정입니다. 의료·훈련 처방이 아닙니다.</li>
@@ -506,7 +509,7 @@ export function LandingAnalyzer() {
         />
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-6">
-            <Card>
+            <Card className="rounded-2xl border-border bg-white">
               <CardHeader>
                 <CardTitle>추정 지면반력</CardTitle>
                 <CardDescription>1 BW는 가만히 서 있을 때의 체중 하중입니다. 세로 선은 착지 순간입니다.</CardDescription>
@@ -515,7 +518,7 @@ export function LandingAnalyzer() {
                 {result.warnings.map((warning, index) => (
                   <p
                     key={`${index}-${warning}`}
-                    className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+                    className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
                   >
                     {warning}
                   </p>
@@ -541,7 +544,7 @@ export function LandingAnalyzer() {
                   <p className="mb-4 text-sm text-muted-foreground">착지가 감지되지 않았습니다.</p>
                 )}
                 {result.quality.level === "poor" ? (
-                  <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-white/15 px-6 text-center text-sm text-muted-foreground">
+                  <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border px-6 text-center text-sm text-muted-foreground">
                     촬영 품질이 부족해 지면반력 곡선을 표시하지 않습니다.
                   </div>
                 ) : (
@@ -563,7 +566,7 @@ export function LandingAnalyzer() {
 
           <div className="flex flex-col gap-3">
             {result.landings.length === 0 ? (
-              <Card>
+              <Card className="rounded-2xl border-border bg-white">
                 <CardHeader>
                   <CardTitle>결과 없음</CardTitle>
                   <CardDescription>

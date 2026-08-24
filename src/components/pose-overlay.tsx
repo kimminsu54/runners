@@ -28,8 +28,8 @@ export function PoseOverlay({ videoRef, landmarks, className }: Props) {
       ctx.clearRect(0, 0, w, h);
       if (landmarks?.length) {
         ctx.lineWidth = Math.max(2, w / 280);
-        ctx.strokeStyle = "rgba(251, 191, 36, 0.9)";
-        ctx.fillStyle = "rgba(253, 224, 71, 0.95)";
+        ctx.strokeStyle = "rgba(224, 64, 42, 0.95)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
         for (const [a, b] of SKELETON) {
           const pa = landmarks[a];
           const pb = landmarks[b];

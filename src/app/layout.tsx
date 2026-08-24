@@ -33,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="ko"
-      className={`dark ${geistSans.variable} ${geistMono.variable} ${notoSansKr.variable} ${blackHanSans.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${notoSansKr.variable} ${blackHanSans.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">{children}</body>
     </html>

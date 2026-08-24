@@ -10,11 +10,11 @@ import {
 import { cn } from "@/lib/utils";
 
 const riskClass: Record<Landing["risk"], string> = {
-  low: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  moderate: "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  elevated: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  high: "bg-orange-500/15 text-orange-300 border-orange-500/30",
-  severe: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  low: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  moderate: "bg-sky-50 text-sky-700 border-sky-200",
+  elevated: "bg-amber-50 text-amber-800 border-amber-200",
+  high: "bg-orange-50 text-orange-700 border-orange-200",
+  severe: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
 export function LandingCard({
@@ -34,8 +34,8 @@ export function LandingCard({
     <button type="button" onClick={onSelect} className="w-full text-left">
       <Card
         className={cn(
-          "bg-card/70 transition ring-foreground/10",
-          selected && "ring-2 ring-amber-400/70",
+          "bg-white transition ring-foreground/10",
+          selected && "ring-2 ring-primary",
         )}
       >
         <CardHeader className="flex flex-row items-start justify-between gap-3">
