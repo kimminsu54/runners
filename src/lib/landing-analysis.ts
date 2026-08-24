@@ -57,11 +57,22 @@ export type SeriesPoint = {
   rightFootVel: number;
   leftFootSpeed: number;
   rightFootSpeed: number;
+  leftFootStrikeAngle: number;
+  rightFootStrikeAngle: number;
 };
 
 export type Risk = "low" | "moderate" | "elevated" | "high" | "severe";
 
 export type FootSide = "left" | "right" | "unknown";
+export type FootStrike = "rearfoot" | "midfoot" | "forefoot" | "unknown";
+export type StrikeConfidence = "high" | "medium" | "low";
+
+export const footStrikeLabel: Record<FootStrike, string> = {
+  rearfoot: "리어풋",
+  midfoot: "미드풋",
+  forefoot: "포어풋",
+  unknown: "판정 불가",
+};
 
 export type Landing = {
   index: number;
@@ -82,6 +93,9 @@ export type Landing = {
   risk: Risk;
   side: FootSide;
   gaitBased: boolean;
+  footStrike: FootStrike;
+  footStrikeAngleDeg: number;
+  footStrikeConfidence: StrikeConfidence;
   note: string;
 };
 
@@ -92,6 +106,7 @@ export type AnalysisQuality = {
   subjectHeightRatio: number;
   detectedRatio: number;
   cadenceConsistency: number;
+  sideViewRatio: number;
   reasons: string[];
 };
 
@@ -195,8 +210,9 @@ function measureSubject(
   statureM: number,
   width: number,
   height: number,
-): { metersPerPixel: number; staturePx: number } {
+): { metersPerPixel: number; staturePx: number; sideViewRatio: number } {
   const lengths: number[] = [];
+  const profileRatios: number[] = [];
   for (const frame of frames) {
     const lm = frame.landmarks;
     if (!lm) continue;
@@ -204,22 +220,34 @@ function measureSubject(
     const heel = mid(lm[LM.leftHeel], lm[LM.rightHeel]) ?? mid(lm[LM.leftAnkle], lm[LM.rightAnkle]);
     if (!isVisible(nose, 0.3) || !heel) continue;
     const px = distPx(nose, heel, width, height);
-    if (px > 20) lengths.push(px / 0.92);
+    if (px > 20) {
+      const staturePx = px / 0.92;
+      lengths.push(staturePx);
+      const shoulderWidth = Math.abs(lm[LM.leftShoulder].x - lm[LM.rightShoulder].x) * width;
+      const hipWidth = Math.abs(lm[LM.leftHip].x - lm[LM.rightHip].x) * width;
+      profileRatios.push(Math.max(shoulderWidth, hipWidth) / staturePx);
+    }
   }
   const staturePx = median(lengths);
   if (!Number.isFinite(staturePx) || staturePx < 40) {
     return {
       metersPerPixel: statureM / (height * 0.55),
       staturePx: Number.isFinite(staturePx) ? staturePx : Number.NaN,
+      sideViewRatio: median(profileRatios),
     };
   }
-  return { metersPerPixel: statureM / staturePx, staturePx };
+  return {
+    metersPerPixel: statureM / staturePx,
+    staturePx,
+    sideViewRatio: median(profileRatios),
+  };
 }
 
 function assessQuality(
   subjectHeightRatio: number,
   detectedRatio: number,
   landings: Landing[],
+  sideViewRatio: number,
 ): AnalysisQuality {
   const gaps = landings
     .slice(1)
@@ -242,6 +270,11 @@ function assessQuality(
       `자세가 ${Math.round(detectedRatio * 100)}% 구간에서만 잡혔습니다. 전신이 계속 보이도록 찍어 주세요.`,
     );
   }
+  if (Number.isFinite(sideViewRatio) && sideViewRatio > 0.14) {
+    reasons.push(
+      "정면·사선에 가까워 발바닥 각도로 착지 주법을 분류할 수 없습니다. 정확한 옆모습으로 찍어 주세요.",
+    );
+  }
   if (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.55) {
     reasons.push(
       "착지 간격이 고르지 않아 일부 착지를 놓쳤을 수 있습니다. 같은 속도로 곧게 달리는 구간이 좋습니다.",
@@ -258,6 +291,7 @@ function assessQuality(
     subjectHeightRatio,
     detectedRatio,
     cadenceConsistency,
+    sideViewRatio,
     reasons,
   };
 }
@@ -273,7 +307,7 @@ export function analyzeLandings(
     warnings.push("사람 자세가 잘 잡히지 않았습니다. 전신이 나오고 옆모습·밝은 영상이 더 정확합니다.");
   }
 
-  const { metersPerPixel: mpp, staturePx } = measureSubject(
+  const { metersPerPixel: mpp, staturePx, sideViewRatio } = measureSubject(
     frames,
     options.statureM,
     options.width,
@@ -294,6 +328,8 @@ export function analyzeLandings(
   const rightFootRaw: number[] = [];
   const leftFootAbsRaw: number[] = [];
   const rightFootAbsRaw: number[] = [];
+  const leftStrikeAngleRaw: number[] = [];
+  const rightStrikeAngleRaw: number[] = [];
   const t: number[] = [];
 
   for (const frame of frames) {
@@ -306,6 +342,8 @@ export function analyzeLandings(
       rightFootRaw.push(Number.NaN);
       leftFootAbsRaw.push(Number.NaN);
       rightFootAbsRaw.push(Number.NaN);
+      leftStrikeAngleRaw.push(Number.NaN);
+      rightStrikeAngleRaw.push(Number.NaN);
       continue;
     }
     const hip = mid(lm[LM.leftHip], lm[LM.rightHip]);
@@ -316,6 +354,8 @@ export function analyzeLandings(
       rightFootRaw.push(Number.NaN);
       leftFootAbsRaw.push(Number.NaN);
       rightFootAbsRaw.push(Number.NaN);
+      leftStrikeAngleRaw.push(Number.NaN);
+      rightStrikeAngleRaw.push(Number.NaN);
       continue;
     }
     comRaw.push(-hip.y * options.height * mpp);
@@ -330,6 +370,22 @@ export function analyzeLandings(
     );
     rightFootAbsRaw.push(
       footAbsolute(lm[LM.rightHeel], lm[LM.rightAnkle], options.height, mpp),
+    );
+    leftStrikeAngleRaw.push(
+      footStrikeAngleDeg(
+        lm[LM.leftHeel],
+        lm[LM.leftFootIndex],
+        options.width,
+        options.height,
+      ),
+    );
+    rightStrikeAngleRaw.push(
+      footStrikeAngleDeg(
+        lm[LM.rightHeel],
+        lm[LM.rightFootIndex],
+        options.width,
+        options.height,
+      ),
     );
     const flexL = kneeFlexionDeg(
       lm[LM.leftHip],
@@ -380,6 +436,16 @@ export function analyzeLandings(
     derivative(movingAverage(fillShortGaps(rightFootAbsRaw, 2), 3), t),
     3,
   ).map(Math.abs);
+  const leftFootStrikeAngle = normalizeFootAngles(
+    movingAverage(leftStrikeAngleRaw, 3),
+    leftFootSpeed,
+    leftFoot,
+  );
+  const rightFootStrikeAngle = normalizeFootAngles(
+    movingAverage(rightStrikeAngleRaw, 3),
+    rightFootSpeed,
+    rightFoot,
+  );
 
   const series: SeriesPoint[] = t.map((time, i) => {
     const a = acc[i];
@@ -397,19 +463,30 @@ export function analyzeLandings(
       rightFootVel: rightFootVel[i],
       leftFootSpeed: leftFootSpeed[i],
       rightFootSpeed: rightFootSpeed[i],
+      leftFootStrikeAngle: leftFootStrikeAngle[i],
+      rightFootStrikeAngle: rightFootStrikeAngle[i],
     };
   });
 
   const detectedLandings = detectLandings(series, options.massKg);
-  const quality = assessQuality(subjectHeightRatio, detectedRatio, detectedLandings);
+  const quality = assessQuality(
+    subjectHeightRatio,
+    detectedRatio,
+    detectedLandings,
+    sideViewRatio,
+  );
 
   // Contact and flight timing is only meaningful when the runner is big enough
   // and tracked continuously. Publishing a number from a poor clip is what made
   // every video look like the same hard landing.
+  const strikeChecked =
+    Number.isFinite(sideViewRatio) && sideViewRatio <= 0.14
+      ? detectedLandings
+      : detectedLandings.map(withoutFootStrike);
   const landings =
     quality.level === "poor"
-      ? detectedLandings.map(withoutGaitTiming)
-      : detectedLandings;
+      ? strikeChecked.map(withoutGaitTiming)
+      : strikeChecked;
 
   if (quality.level === "poor" && landings.length) {
     warnings.push(
@@ -521,6 +598,15 @@ function gaitPlausibility(result: AnalysisResult): number {
   return score;
 }
 
+function withoutFootStrike(landing: Landing): Landing {
+  return {
+    ...landing,
+    footStrike: "unknown",
+    footStrikeAngleDeg: Number.NaN,
+    footStrikeConfidence: "low",
+  };
+}
+
 function withoutGaitTiming(landing: Landing): Landing {
   if (!landing.gaitBased) return landing;
   const fallbackGrf = clamp(landing.peakGrfBw, 1.05, 3);
@@ -538,9 +624,77 @@ function withoutGaitTiming(landing: Landing): Landing {
     flightMs: Number.NaN,
     dutyFactor: Number.NaN,
     gaitBased: false,
+    footStrike: "unknown",
+    footStrikeAngleDeg: Number.NaN,
+    footStrikeConfidence: "low",
     damageScore: score,
     risk: riskFromScore(score),
   };
+}
+
+function normalizeFootAngles(
+  angles: number[],
+  speed: number[],
+  footHeight: number[],
+): number[] {
+  const finiteSpeed = speed.filter(Number.isFinite);
+  const finiteHeight = footHeight.filter(Number.isFinite);
+  const speedCut = percentile(finiteSpeed, 0.35);
+  const groundCut = percentile(finiteHeight, 0.7);
+  const stanceAngles = angles.filter(
+    (angle, i) =>
+      Number.isFinite(angle) &&
+      Math.abs(angle) <= 40 &&
+      Number.isFinite(speed[i]) &&
+      speed[i] <= speedCut &&
+      Number.isFinite(footHeight[i]) &&
+      footHeight[i] >= groundCut,
+  );
+  // A planted foot supplies the local ground/camera-roll reference. Requiring
+  // several samples prevents one occluded frame from rotating every contact.
+  const baseline = stanceAngles.length >= 5 ? median(stanceAngles) : 0;
+  return angles.map((angle) =>
+    Number.isFinite(angle) ? angle - baseline : Number.NaN,
+  );
+}
+
+function footStrikeAngleDeg(
+  heel: Landmark | undefined,
+  toe: Landmark | undefined,
+  width: number,
+  height: number,
+): number {
+  if (!heel || !toe || !isVisible(heel, 0.45) || !isVisible(toe, 0.45)) {
+    return Number.NaN;
+  }
+  const dx = (toe.x - heel.x) * width;
+  const dy = (toe.y - heel.y) * height;
+  const length = Math.hypot(dx, dy);
+  if (length < 4) return Number.NaN;
+  // Image y grows down. Positive means the forefoot is below the heel, which
+  // indicates a forefoot-first contact; negative means heel-first.
+  return (Math.asin(clamp(dy / length, -1, 1)) * 180) / Math.PI;
+}
+
+export function classifyFootStrike(angleDeg: number): {
+  type: FootStrike;
+  confidence: StrikeConfidence;
+} {
+  if (!Number.isFinite(angleDeg) || Math.abs(angleDeg) > 40) {
+    return { type: "unknown", confidence: "low" };
+  }
+  const magnitude = Math.abs(angleDeg);
+  const type: FootStrike =
+    angleDeg <= -8 ? "rearfoot" : angleDeg >= 8 ? "forefoot" : "midfoot";
+  const confidence: StrikeConfidence =
+    type === "midfoot"
+      ? magnitude <= 4
+        ? "high"
+        : "medium"
+      : magnitude >= 15 && magnitude <= 35
+        ? "high"
+        : "medium";
+  return { type, confidence };
 }
 
 function footAbsolute(
@@ -619,6 +773,7 @@ type RawLanding = {
   impactVel: number;
   contactS: number;
   side: FootSide;
+  strikeIdx: number;
 };
 
 // Human running stance and step timings. Anything outside these came from a
@@ -691,6 +846,7 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
           ? rawContactS
           : Number.NaN,
       side: interval?.side ?? inferFootSide(series[contactIdx]),
+      strikeIdx: interval?.startIdx ?? contactIdx,
     });
   }
 
@@ -752,6 +908,9 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
       dutyFactor,
       kneeFlexContact,
     });
+    const side = raw.side;
+    const footStrikeAngle = strikeAngleAt(series, raw.strikeIdx, side);
+    const strike = classifyFootStrike(footStrikeAngle);
     const landing: Landing = {
       index: raw.peakIdx,
       tContact: series[raw.contactIdx].t,
@@ -769,8 +928,11 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
       kneeFlexPeak,
       damageScore: score,
       risk: riskFromScore(score),
-      side: raw.side,
+      side,
       gaitBased,
+      footStrike: strike.type,
+      footStrikeAngleDeg: footStrikeAngle,
+      footStrikeConfidence: strike.confidence,
       note: "",
     };
     landing.note = landingNote(landing);
@@ -796,6 +958,29 @@ function dedupe(
     out.push(raw);
   }
   return out;
+}
+
+function strikeAngleAt(
+  series: SeriesPoint[],
+  index: number,
+  side: FootSide,
+): number {
+  let resolved = side;
+  if (resolved === "unknown") resolved = inferFootSide(series[index]);
+  if (resolved === "unknown") return Number.NaN;
+
+  const values: number[] = [];
+  // The detected contact can lead or trail the visible first-contact frame by
+  // one sample. Use a very small window so the flat foot later in stance does
+  // not wash out heel-first or forefoot-first contact.
+  for (let i = Math.max(0, index - 1); i <= Math.min(series.length - 1, index + 1); i++) {
+    const angle =
+      resolved === "left"
+        ? series[i].leftFootStrikeAngle
+        : series[i].rightFootStrikeAngle;
+    if (Number.isFinite(angle)) values.push(angle);
+  }
+  return median(values);
 }
 
 function matchInterval(

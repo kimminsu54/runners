@@ -148,6 +148,46 @@ export function SessionSummaryCard({
           </div>
         ) : null}
 
+        {summary.strikeCounts.length ? (
+          <div>
+            <div className="mb-2 flex items-baseline justify-between gap-4">
+              <h3 className="text-sm font-medium">착지 주법 분포</h3>
+              <span className="text-right text-xs text-muted-foreground">
+                접지 순간 발가락–뒤꿈치 각도 기준
+              </span>
+            </div>
+            <div className="flex h-3 overflow-hidden rounded-full bg-white/5">
+              {summary.strikeCounts.map((row) => (
+                <div
+                  key={row.type}
+                  style={{ width: `${row.percent}%` }}
+                  className={cn(
+                    row.type === "rearfoot" && "bg-sky-400",
+                    row.type === "midfoot" && "bg-emerald-400",
+                    row.type === "forefoot" && "bg-amber-400",
+                  )}
+                  title={`${row.label} ${row.percent}%`}
+                />
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              {summary.strikeCounts.map((row) => (
+                <span key={row.type} className="text-xs text-muted-foreground">
+                  <span
+                    className={cn(
+                      "mr-1 inline-block size-2 rounded-full",
+                      row.type === "rearfoot" && "bg-sky-400",
+                      row.type === "midfoot" && "bg-emerald-400",
+                      row.type === "forefoot" && "bg-amber-400",
+                    )}
+                  />
+                  {row.label} {row.count}회 · {row.percent}%
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {summary.riskCounts.length ? (
           <div className="flex flex-wrap gap-2">
             {summary.riskCounts.map((row) => (

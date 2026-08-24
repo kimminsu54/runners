@@ -16,16 +16,18 @@ function poseAt(
 ): Landmark[] {
   const arr = Array.from({ length: 33 }, () => lm(0.5, 0.5));
   arr[0] = lm(0.5, hipY - 0.28);
-  arr[11] = lm(0.44, hipY - 0.18);
-  arr[12] = lm(0.56, hipY - 0.18);
-  arr[23] = lm(0.47, hipY);
-  arr[24] = lm(0.53, hipY);
+  arr[11] = lm(0.49, hipY - 0.18);
+  arr[12] = lm(0.51, hipY - 0.18);
+  arr[23] = lm(0.495, hipY);
+  arr[24] = lm(0.505, hipY);
   arr[25] = lm(0.47, hipY + 0.12);
   arr[26] = lm(0.53, hipY + 0.12);
   arr[27] = lm(0.47, leftFootY);
   arr[28] = lm(0.53, rightFootY);
   arr[29] = arr[27];
   arr[30] = arr[28];
+  arr[31] = lm(0.39, leftFootY);
+  arr[32] = lm(0.61, rightFootY);
   return arr;
 }
 

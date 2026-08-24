@@ -1,7 +1,9 @@
 import {
+  footStrikeLabel,
   formatSeconds,
   riskLabel,
   type AnalysisResult,
+  type FootStrike,
   type Risk,
 } from "@/lib/landing-analysis";
 import {
@@ -72,6 +74,8 @@ export type SessionSummary = {
   meanDutyFactor: number;
   meanPeakGrfBw: number;
   paceSource: "reported" | "gait" | "unknown";
+  strikeCounts: Array<{ type: FootStrike; label: string; count: number; percent: number }>;
+  dominantStrike: FootStrike | "mixed";
 };
 
 function mean(values: number[]): number {
@@ -126,6 +130,8 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       meanDutyFactor: Number.NaN,
       meanPeakGrfBw: Number.NaN,
       paceSource: "unknown",
+      strikeCounts: [],
+      dominantStrike: "unknown",
     };
   }
 
@@ -196,6 +202,38 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     bothSides && pairMean > 0
       ? (Math.abs(leftGrf - rightGrf) / pairMean) * 100
       : Number.NaN;
+
+  const strikeOrder: FootStrike[] = ["rearfoot", "midfoot", "forefoot"];
+  const knownStrikes = forceTrusted
+    ? landings.filter(
+        (landing) =>
+          landing.footStrike !== "unknown" &&
+          landing.footStrikeConfidence !== "low",
+      )
+    : [];
+  const strikeCounts = strikeOrder
+    .map((type) => {
+      const count = knownStrikes.filter((landing) => landing.footStrike === type).length;
+      return {
+        type,
+        label: footStrikeLabel[type],
+        count,
+        percent: pct(count, knownStrikes.length),
+      };
+    })
+    .filter((row) => row.count > 0);
+  const topStrike = strikeCounts.reduce<(typeof strikeCounts)[number] | null>(
+    (best, row) => (!best || row.count > best.count ? row : best),
+    null,
+  );
+  const enoughStrikeSamples =
+    knownStrikes.length >= Math.max(3, Math.ceil(landings.length * 0.5));
+  const dominantStrike: SessionSummary["dominantStrike"] =
+    !topStrike || !enoughStrikeSamples
+      ? "unknown"
+      : topStrike.percent >= 60
+        ? topStrike.type
+        : "mixed";
 
   const riskOrder: Risk[] = ["low", "moderate", "elevated", "high", "severe"];
   const riskCounts = (forceTrusted ? riskOrder : [])
@@ -276,9 +314,20 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       ? `${reportedText}촬영 조건 때문에 접지 시간 기반 교차 검증은 하지 못했습니다.`
       : `${paceLabel[pace]} — 접지 순간을 신뢰할 만큼 재지 못해 페이스는 판정하지 않았습니다.`;
 
+  const strikeDistribution = strikeCounts
+    .map((row) => `${row.label} ${row.percent}%`)
+    .join(" · ");
+  const strikeText =
+    dominantStrike === "unknown"
+      ? "발뒤꿈치와 발가락이 접지 순간에 충분히 보이지 않아 착지 주법은 판정하지 않았습니다."
+      : dominantStrike === "mixed"
+        ? `착지 주법은 혼합형입니다(${strikeDistribution}). 어느 한 주법이 보편적으로 더 안전한 것은 아닙니다.`
+        : `착지 주법은 주로 ${footStrikeLabel[dominantStrike]}입니다(${strikeDistribution}). 어느 한 주법이 보편적으로 더 안전한 것은 아닙니다.`;
+
   const paragraphs = [
     `${durationS.toFixed(1)}초 · ${frameCount}프레임을 추적해 착지 ${landings.length}회를 모았습니다. 자세는 구간의 ${pct(detectedRatio, 1)}%에서 잡혔고, ${cadenceText}입니다.`,
     paceText,
+    strikeText,
     forceTrusted
       ? `평균 추정 지면반력은 ${avgGrf.toFixed(1)} BW, 흡수 시간은 ${Math.round(avgAbsorb)} ms, 착지 순간 무릎은 ${avgKnee.toFixed(0)}°입니다. 가장 센 착지는 ${formatSeconds(peak.tContact)}의 ${peak.peakGrfBw.toFixed(1)} BW(점수 ${peak.damageScore})입니다.`
       : "사람이 작거나 자세 추적이 끊겨 충격량은 숫자로 평가하지 않았습니다. 더 가까이서 다시 촬영해야 합니다.",
@@ -319,6 +368,14 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         : Number.isFinite(meanDutyFactor)
           ? `듀티 ${meanDutyFactor.toFixed(2)} · 영상 추정`
         : `착지 ${gaitCount}/${landings.length}회 측정`,
+    },
+    {
+      label: "착지 주법",
+      value:
+        dominantStrike === "mixed"
+          ? "혼합형"
+          : footStrikeLabel[dominantStrike],
+      hint: strikeDistribution || "옆모습에서 발 전체 필요",
     },
     {
       label: forceTrusted ? "착지" : "착지 후보",
@@ -379,6 +436,8 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     meanDutyFactor,
     meanPeakGrfBw: forceTrusted ? avgGrf : Number.NaN,
     paceSource,
+    strikeCounts,
+    dominantStrike,
   };
 }
 

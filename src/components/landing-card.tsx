@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   compareHint,
+  footStrikeLabel,
   formatSeconds,
   riskLabel,
   type Landing,
@@ -53,7 +54,15 @@ export function LandingCard({
             <Badge variant="outline">품질 부족</Badge>
           )}
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+          <Metric
+            label="착지 주법"
+            value={
+              trusted && landing.footStrike !== "unknown"
+                ? `${footStrikeLabel[landing.footStrike]} · ${landing.footStrikeAngleDeg > 0 ? "+" : ""}${landing.footStrikeAngleDeg.toFixed(0)}°`
+                : "판정 불가"
+            }
+          />
           <Metric
             label="추정 최대 반력"
             value={trusted ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가"}

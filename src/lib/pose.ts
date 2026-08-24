@@ -17,6 +17,8 @@ export const LM = {
   rightAnkle: 28,
   leftHeel: 29,
   rightHeel: 30,
+  leftFootIndex: 31,
+  rightFootIndex: 32,
 } as const;
 
 export const SKELETON: Array<[number, number]> = [
@@ -27,9 +29,13 @@ export const SKELETON: Array<[number, number]> = [
   [23, 25],
   [25, 27],
   [27, 29],
+  [29, 31],
+  [27, 31],
   [24, 26],
   [26, 28],
   [28, 30],
+  [30, 32],
+  [28, 32],
   [11, 13],
   [13, 15],
   [12, 14],

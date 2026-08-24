@@ -1,4 +1,8 @@
-import { analyzeLandingsAuto } from "./landing-analysis";
+import {
+  analyzeLandings,
+  analyzeLandingsAuto,
+  classifyFootStrike,
+} from "./landing-analysis";
 import { buildSessionSummary, paceLabel } from "./session-summary";
 import {
   analyzeSyntheticRun,
@@ -49,6 +53,43 @@ if (session.metrics.length < 4) {
   throw new Error("expected aggregated session metrics");
 }
 console.log("session summary ok", session.headline);
+
+for (const [angle, expected] of [
+  [-16, "rearfoot"],
+  [0, "midfoot"],
+  [16, "forefoot"],
+  [55, "unknown"],
+] as const) {
+  const actual = classifyFootStrike(angle).type;
+  if (actual !== expected) {
+    throw new Error(`strike ${angle}°: expected ${expected}, got ${actual}`);
+  }
+}
+if (session.dominantStrike !== "midfoot") {
+  throw new Error(`level synthetic feet should be midfoot, got ${session.dominantStrike}`);
+}
+console.log("foot-strike classification ok", session.strikeCounts);
+
+const frontalFrames = syntheticRunningFrames().map((frame) => {
+  if (!frame.landmarks) return frame;
+  const landmarks = frame.landmarks.map((point) => ({ ...point }));
+  landmarks[11].x = 0.38;
+  landmarks[12].x = 0.62;
+  landmarks[23].x = 0.44;
+  landmarks[24].x = 0.56;
+  return { ...frame, landmarks };
+});
+const frontal = analyzeLandings(frontalFrames, {
+  statureM: 1.7,
+  massKg: 70,
+  width: 1280,
+  height: 720,
+});
+const frontalSummary = buildSessionSummary(frontal);
+if (frontalSummary.dominantStrike !== "unknown") {
+  throw new Error("frontal footage must not receive a foot-strike label");
+}
+console.log("frontal strike gate ok", frontal.quality.sideViewRatio.toFixed(2));
 
 const SLOW_GAIT = { contactS: 0.31, flightS: 0.05 };
 const FAST_GAIT = { contactS: 0.13, flightS: 0.14 };
