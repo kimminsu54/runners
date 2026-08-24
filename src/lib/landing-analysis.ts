@@ -518,15 +518,35 @@ const SLOW_MOTION_CANDIDATES = [1, 2, 4, 8];
  * narrow physiological ranges, so try the usual factors and keep whichever one
  * describes a gait a human could actually produce.
  */
+export type SlowMotionAnalysis = {
+  result: AnalysisResult;
+  slowMotionFactor: number;
+  autoDetected: boolean;
+  /** Set when the evidence clearly favours a factor other than the chosen one. */
+  suggestedFactor?: number;
+};
+
 export function analyzeLandingsAuto(
   frames: PoseFrame[],
   options: AnalyzeOptions,
-): { result: AnalysisResult; slowMotionFactor: number; autoDetected: boolean } {
+): SlowMotionAnalysis {
   if (options.slowMotionFactor && options.slowMotionFactor > 0) {
+    const chosen = analyzeLandings(frames, options);
+    const best = bestSlowMotion(frames, options);
+    const chosenScore = gaitPlausibility(chosen);
+    // A wrong capture rate pushes stance and step outside human limits, so the
+    // gait falls apart. Say so instead of quietly reporting the broken numbers.
+    const suggestedFactor =
+      best &&
+      best.factor !== options.slowMotionFactor &&
+      best.score > chosenScore + 0.5
+        ? best.factor
+        : undefined;
     return {
-      result: analyzeLandings(frames, options),
+      result: chosen,
       slowMotionFactor: options.slowMotionFactor,
       autoDetected: false,
+      suggestedFactor,
     };
   }
 
@@ -540,12 +560,7 @@ export function analyzeLandingsAuto(
     return { result: baseline, slowMotionFactor: 1, autoDetected: false };
   }
 
-  let best: { result: AnalysisResult; factor: number; score: number } | null = null;
-  for (const factor of SLOW_MOTION_CANDIDATES) {
-    const result = analyzeLandings(frames, { ...options, slowMotionFactor: factor });
-    const score = gaitPlausibility(result) - (factor === 1 ? 0 : 0.12);
-    if (!best || score > best.score) best = { result, factor, score };
-  }
+  const best = bestSlowMotion(frames, options);
 
   const chosen = best ?? {
     result: analyzeLandings(frames, { ...options, slowMotionFactor: 1 }),
@@ -557,6 +572,19 @@ export function analyzeLandingsAuto(
     slowMotionFactor: chosen.factor,
     autoDetected: chosen.factor !== 1,
   };
+}
+
+function bestSlowMotion(
+  frames: PoseFrame[],
+  options: AnalyzeOptions,
+): { result: AnalysisResult; factor: number; score: number } | null {
+  let best: { result: AnalysisResult; factor: number; score: number } | null = null;
+  for (const factor of SLOW_MOTION_CANDIDATES) {
+    const result = analyzeLandings(frames, { ...options, slowMotionFactor: factor });
+    const score = gaitPlausibility(result) - (factor === 1 ? 0 : 0.12);
+    if (!best || score > best.score) best = { result, factor, score };
+  }
+  return best;
 }
 
 function gaitPlausibility(result: AnalysisResult): number {

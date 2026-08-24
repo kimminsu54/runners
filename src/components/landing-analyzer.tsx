@@ -51,8 +51,10 @@ export function LandingAnalyzer() {
   const [recording, setRecording] = useState(false);
   const [dragging, setDragging] = useState(false);
   // 0 means let the analyzer infer the capture rate from the gait itself.
-  const [slowMotionFactor, setSlowMotionFactor] = useState(0);
+  // Default to 8x because that is what the phone slow-motion mode records.
+  const [slowMotionFactor, setSlowMotionFactor] = useState(8);
   const [detectedSlowMotion, setDetectedSlowMotion] = useState<number | null>(null);
+  const [suggestedSlowMotion, setSuggestedSlowMotion] = useState<number | null>(null);
 
   useEffect(() => {
     if (!videoUrl) return;
@@ -174,7 +176,11 @@ export function LandingAnalyzer() {
         frames.push({ t, landmarks: det.landmarks[0] ?? null });
         if (i % 2 === 0) setProgress(Math.round(((i + 1) / n) * 100));
       }
-      const { result: analysis, slowMotionFactor: usedFactor } = analyzeLandingsAuto(
+      const {
+        result: analysis,
+        slowMotionFactor: usedFactor,
+        suggestedFactor,
+      } = analyzeLandingsAuto(
         frames,
         {
           statureM: statureCm / 100,
@@ -190,6 +196,7 @@ export function LandingAnalyzer() {
         },
       );
       setDetectedSlowMotion(usedFactor);
+      setSuggestedSlowMotion(suggestedFactor ?? null);
       setResult(analysis);
       setSelected(0);
       setStatus("done");
@@ -416,7 +423,10 @@ export function LandingAnalyzer() {
                     id={factor === 0 ? "slowmo" : undefined}
                     size="sm"
                     variant={slowMotionFactor === factor ? "default" : "outline"}
-                    onClick={() => setSlowMotionFactor(factor)}
+                    onClick={() => {
+                      setSlowMotionFactor(factor);
+                      setSuggestedSlowMotion(null);
+                    }}
                   >
                     {factor === 0 ? "자동" : factor === 1 ? "일반" : `${factor}배`}
                   </Button>
@@ -427,8 +437,29 @@ export function LandingAnalyzer() {
                   ? detectedSlowMotion === 1
                     ? "일반 속도 영상으로 판정했습니다."
                     : `${detectedSlowMotion}배 슬로우 모션으로 판정했습니다. 틀렸다면 직접 골라 주세요.`
-                  : "슬로우 모션은 접지·체공 시간을 늘려 페이스 판정을 망칩니다. 자동 판별이 어긋나면 직접 지정하세요."}
+                  : "240fps 슬로우 모션이면 8배입니다. 일반 속도로 찍었다면 반드시 바꿔야 접지·체공 시간과 페이스가 맞습니다."}
               </p>
+              {suggestedSlowMotion ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                  <span>
+                    이 영상은 사람이 낼 수 없는 보행이 됩니다.{" "}
+                    {suggestedSlowMotion === 1
+                      ? "일반 속도"
+                      : `${suggestedSlowMotion}배 슬로우`}
+                    가 맞아 보입니다.
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => {
+                      setSlowMotionFactor(suggestedSlowMotion);
+                      setSuggestedSlowMotion(null);
+                    }}
+                  >
+                    바꾸고 다시 분석
+                  </Button>
+                </div>
+              ) : null}
             </div>
             <Button size="lg" onClick={analyze} disabled={status === "analyzing" || status === "loading-model"}>
               {status === "loading-model"

@@ -181,3 +181,29 @@ if (autoSummary.pace !== realSummary.pace) {
   );
 }
 console.log("slow-motion recovery ok");
+
+// Picking a capture rate that the footage does not have must be called out
+// rather than silently reported, because it warps every timing in the clip.
+const wrongFactor = analyzeLandingsAuto(slowFrames, {
+  statureM: 1.7,
+  massKg: 70,
+  width: 1280,
+  height: 720,
+  slowMotionFactor: 1,
+});
+if (wrongFactor.suggestedFactor !== 4) {
+  throw new Error(
+    `expected a suggestion of 4x, got ${wrongFactor.suggestedFactor ?? "none"}`,
+  );
+}
+const rightFactor = analyzeLandingsAuto(slowFrames, {
+  statureM: 1.7,
+  massKg: 70,
+  width: 1280,
+  height: 720,
+  slowMotionFactor: 4,
+});
+if (rightFactor.suggestedFactor !== undefined) {
+  throw new Error("a correct capture rate should not be second-guessed");
+}
+console.log("slow-motion mismatch warning ok");
