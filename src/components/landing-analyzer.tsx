@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
-  analyzeLandings,
+  analyzeLandingsAuto,
   formatSeconds,
   type AnalysisResult,
 } from "@/lib/landing-analysis";
@@ -39,6 +39,8 @@ export function LandingAnalyzer() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [statureCm, setStatureCm] = useState(170);
   const [massKg, setMassKg] = useState(70);
+  const [paceMinutes, setPaceMinutes] = useState<string>("");
+  const [paceSeconds, setPaceSeconds] = useState<string>("");
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +50,9 @@ export function LandingAnalyzer() {
   const [cameraOn, setCameraOn] = useState(false);
   const [recording, setRecording] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // 0 means let the analyzer infer the capture rate from the gait itself.
+  const [slowMotionFactor, setSlowMotionFactor] = useState(0);
+  const [detectedSlowMotion, setDetectedSlowMotion] = useState<number | null>(null);
 
   useEffect(() => {
     if (!videoUrl) return;
@@ -169,12 +174,22 @@ export function LandingAnalyzer() {
         frames.push({ t, landmarks: det.landmarks[0] ?? null });
         if (i % 2 === 0) setProgress(Math.round(((i + 1) / n) * 100));
       }
-      const analysis = analyzeLandings(frames, {
-        statureM: statureCm / 100,
-        massKg,
-        width: video.videoWidth || 640,
-        height: video.videoHeight || 360,
-      });
+      const { result: analysis, slowMotionFactor: usedFactor } = analyzeLandingsAuto(
+        frames,
+        {
+          statureM: statureCm / 100,
+          massKg,
+          width: video.videoWidth || 640,
+          height: video.videoHeight || 360,
+          slowMotionFactor: slowMotionFactor || undefined,
+          reportedPaceMinPerKm:
+            Number(paceMinutes) > 0
+              ? Number(paceMinutes) +
+                Math.min(59, Math.max(0, Number(paceSeconds) || 0)) / 60
+              : undefined,
+        },
+      );
+      setDetectedSlowMotion(usedFactor);
       setResult(analysis);
       setSelected(0);
       setStatus("done");
@@ -350,6 +365,71 @@ export function LandingAnalyzer() {
                 />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="pace-minutes">
+                실제 페이스 <span className="text-muted-foreground">(선택)</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="relative">
+                  <Input
+                    id="pace-minutes"
+                    inputMode="numeric"
+                    type="number"
+                    min={2}
+                    max={15}
+                    placeholder="5"
+                    value={paceMinutes}
+                    onChange={(event) => setPaceMinutes(event.target.value)}
+                    className="pr-10"
+                  />
+                  <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
+                    분
+                  </span>
+                </div>
+                <div className="relative">
+                  <Input
+                    inputMode="numeric"
+                    type="number"
+                    min={0}
+                    max={59}
+                    placeholder="30"
+                    value={paceSeconds}
+                    onChange={(event) => setPaceSeconds(event.target.value)}
+                    className="pr-12"
+                  />
+                  <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
+                    초/km
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                영상만으로 수평 속도를 재면 카메라 패닝에 속습니다. 알고 있다면
+                입력한 페이스를 요약의 기준으로 사용합니다.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="slowmo">촬영 배속</Label>
+              <div className="flex flex-wrap gap-2">
+                {[0, 1, 2, 4, 8].map((factor) => (
+                  <Button
+                    key={factor}
+                    id={factor === 0 ? "slowmo" : undefined}
+                    size="sm"
+                    variant={slowMotionFactor === factor ? "default" : "outline"}
+                    onClick={() => setSlowMotionFactor(factor)}
+                  >
+                    {factor === 0 ? "자동" : factor === 1 ? "일반" : `${factor}배`}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {slowMotionFactor === 0 && detectedSlowMotion
+                  ? detectedSlowMotion === 1
+                    ? "일반 속도 영상으로 판정했습니다."
+                    : `${detectedSlowMotion}배 슬로우 모션으로 판정했습니다. 틀렸다면 직접 골라 주세요.`
+                  : "슬로우 모션은 접지·체공 시간을 늘려 페이스 판정을 망칩니다. 자동 판별이 어긋나면 직접 지정하세요."}
+              </p>
+            </div>
             <Button size="lg" onClick={analyze} disabled={status === "analyzing" || status === "loading-model"}>
               {status === "loading-model"
                 ? "자세 모델 준비 중…"
@@ -423,17 +503,23 @@ export function LandingAnalyzer() {
                 ) : (
                   <p className="mb-4 text-sm text-muted-foreground">착지가 감지되지 않았습니다.</p>
                 )}
-                <ImpactChart
-                  series={result.series}
-                  landingTimes={result.landings.map((l) => l.tContact)}
-                  selectedTime={selectedLanding?.tContact ?? null}
-                  onSelectTime={(t) => {
-                    void jumpTo(t);
-                  }}
-                />
+                {result.quality.level === "poor" ? (
+                  <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-white/15 px-6 text-center text-sm text-muted-foreground">
+                    촬영 품질이 부족해 지면반력 곡선을 표시하지 않습니다.
+                  </div>
+                ) : (
+                  <ImpactChart
+                    series={result.series}
+                    landingTimes={result.landings.map((l) => l.tContact)}
+                    selectedTime={selectedLanding?.tContact ?? null}
+                    onSelectTime={(t) => {
+                      void jumpTo(t);
+                    }}
+                  />
+                )}
               </CardContent>
             </Card>
-            {selectedLanding ? (
+            {selectedLanding && result.quality.level !== "poor" ? (
               <InjuryGuidance landing={selectedLanding} />
             ) : null}
           </div>
@@ -455,6 +541,7 @@ export function LandingAnalyzer() {
                   landing={landing}
                   order={i + 1}
                   selected={i === selected}
+                  trusted={result.quality.level !== "poor"}
                   onSelect={() => {
                     setSelected(i);
                     void jumpTo(landing.tContact);

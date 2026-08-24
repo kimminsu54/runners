@@ -1,8 +1,10 @@
+import { analyzeLandingsAuto } from "./landing-analysis";
 import { buildSessionSummary, paceLabel } from "./session-summary";
 import {
   analyzeSyntheticRun,
   assertDetectsLanding,
   assertDetectsRunningSteps,
+  syntheticRunningFrames,
 } from "./synthetic-jump";
 import { buildLandingGuidance } from "./training-guidance";
 
@@ -87,3 +89,37 @@ if (slow.meanPeakGrfBw > 2.4) {
   throw new Error(`slow jogging should stay near 2 BW, got ${slow.meanPeakGrfBw}`);
 }
 console.log("pace discrimination ok");
+
+// Slow-motion footage stretches every duration, so the analyzer has to undo it
+// before contact and flight times mean anything.
+const realTime = analyzeSyntheticRun({ contactS: 0.18, flightS: 0.14 });
+const slowFrames = syntheticRunningFrames({ contactS: 0.18, flightS: 0.14 }).map(
+  (frame) => ({ ...frame, t: frame.t * 4 }),
+);
+const auto = analyzeLandingsAuto(slowFrames, {
+  statureM: 1.7,
+  massKg: 70,
+  width: 1280,
+  height: 720,
+});
+const realSummary = buildSessionSummary(realTime);
+const autoSummary = buildSessionSummary(auto.result);
+console.log("slow-motion auto", {
+  factor: auto.slowMotionFactor,
+  realBw: realSummary.meanPeakGrfBw.toFixed(2),
+  recoveredBw: autoSummary.meanPeakGrfBw.toFixed(2),
+  realContact: Math.round(realSummary.meanContactMs),
+  recoveredContact: Math.round(autoSummary.meanContactMs),
+});
+if (auto.slowMotionFactor !== 4) {
+  throw new Error(`expected 4x slow motion, detected ${auto.slowMotionFactor}`);
+}
+if (Math.abs(autoSummary.meanContactMs - realSummary.meanContactMs) > 25) {
+  throw new Error("slow-motion correction should recover real contact time");
+}
+if (autoSummary.pace !== realSummary.pace) {
+  throw new Error(
+    `pace should survive slow motion: ${realSummary.pace} vs ${autoSummary.pace}`,
+  );
+}
+console.log("slow-motion recovery ok");

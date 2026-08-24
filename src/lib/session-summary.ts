@@ -43,8 +43,18 @@ export function classifyPace(dutyFactor: number, contactMs: number): PaceBand {
   if (dutyFactor >= 0.5) return "walk";
   if (dutyFactor >= 0.4 || contactMs >= 290) return "easy";
   if (dutyFactor >= 0.33) return "steady";
-  if (dutyFactor >= 0.28) return "brisk";
-  if (dutyFactor >= 0.23) return "fast";
+  if (dutyFactor >= 0.23) return "brisk";
+  if (dutyFactor >= 0.18) return "fast";
+  return "sprint";
+}
+
+export function classifyReportedPace(minPerKm: number): PaceBand {
+  if (!Number.isFinite(minPerKm)) return "unknown";
+  if (minPerKm >= 8) return "walk";
+  if (minPerKm >= 6) return "easy";
+  if (minPerKm >= 5) return "steady";
+  if (minPerKm >= 4.25) return "brisk";
+  if (minPerKm >= 3.5) return "fast";
   return "sprint";
 }
 
@@ -61,6 +71,7 @@ export type SessionSummary = {
   meanFlightMs: number;
   meanDutyFactor: number;
   meanPeakGrfBw: number;
+  paceSource: "reported" | "gait" | "unknown";
 };
 
 function mean(values: number[]): number {
@@ -82,6 +93,7 @@ function levelRank(level: GuidanceLevel): number {
 
 export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   const { landings, series, detectedRatio } = result;
+  const forceTrusted = result.quality.level !== "poor";
   const durationS = series.length ? series[series.length - 1].t - series[0].t : 0;
   const frameCount = series.length;
 
@@ -113,6 +125,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       meanFlightMs: Number.NaN,
       meanDutyFactor: Number.NaN,
       meanPeakGrfBw: Number.NaN,
+      paceSource: "unknown",
     };
   }
 
@@ -131,12 +144,11 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
 
   const stiffCount = landings.filter(
     (l) =>
-      l.absorptionMs < 110 ||
-      l.kneeFlexContact < 20 ||
-      l.kneeFlexPeak - l.kneeFlexContact < 12,
+      l.kneeFlexContact < 18 ||
+      l.kneeFlexPeak - l.kneeFlexContact < 10,
   ).length;
   const highImpactCount = landings.filter(
-    (l) => l.peakGrfBw >= 2.8 || l.loadingRateBwS >= 24,
+    (l) => l.peakGrfBw >= 3 || l.loadingRateBwS >= 55,
   ).length;
   const cautionCount = landings.filter(
     (l) => l.risk === "elevated" || l.risk === "high" || l.risk === "severe",
@@ -152,8 +164,27 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   const meanContactMs = mean(landings.map((l) => l.contactMs));
   const meanFlightMs = mean(landings.map((l) => l.flightMs));
   const meanDutyFactor = mean(landings.map((l) => l.dutyFactor));
-  const pace = classifyPace(meanDutyFactor, meanContactMs);
+  const hasReportedPace =
+    Number.isFinite(result.reportedPaceMinPerKm) &&
+    (result.reportedPaceMinPerKm ?? 0) > 0;
+  const pace = hasReportedPace
+    ? classifyReportedPace(result.reportedPaceMinPerKm!)
+    : result.quality.level === "poor"
+      ? "unknown"
+      : classifyPace(meanDutyFactor, meanContactMs);
+  const paceSource: SessionSummary["paceSource"] = hasReportedPace
+    ? "reported"
+    : pace === "unknown"
+      ? "unknown"
+      : "gait";
   const gaitCount = landings.filter((l) => l.gaitBased).length;
+  // Running always has a flight phase, so a sub-120 cadence means the clip is
+  // played slower than it was run.
+  const looksSlowMotion =
+    Number.isFinite(cadence) &&
+    cadence < 120 &&
+    Number.isFinite(meanDutyFactor) &&
+    meanDutyFactor < 0.5;
 
   const left = landings.filter((l) => l.side === "left");
   const right = landings.filter((l) => l.side === "right");
@@ -167,7 +198,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       : Number.NaN;
 
   const riskOrder: Risk[] = ["low", "moderate", "elevated", "high", "severe"];
-  const riskCounts = riskOrder
+  const riskCounts = (forceTrusted ? riskOrder : [])
     .map((risk) => ({
       risk,
       label: riskLabel(risk),
@@ -205,7 +236,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     }
   }
 
-  const patterns = [...patternVotes.values()]
+  const patterns = (forceTrusted ? [...patternVotes.values()] : [])
     .sort(
       (a, b) =>
         b.count - a.count ||
@@ -220,7 +251,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
 
   const trendBits = [
     stiffCount
-      ? `착지의 ${pct(stiffCount, landings.length)}%는 흡수 시간이 짧거나 무릎이 덜 굽혀진 뻣뻣한 패턴입니다.`
+      ? `착지의 ${pct(stiffCount, landings.length)}%는 착지 뒤 무릎 굽힘이 작은 패턴입니다.`
       : "",
     highImpactCount
       ? `착지의 ${pct(highImpactCount, landings.length)}%는 비교적 큰 충격·부하율입니다.`
@@ -232,14 +263,25 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         : "",
   ].filter(Boolean);
 
+  const reportedText = hasReportedPace
+    ? `입력 페이스 ${formatPace(result.reportedPaceMinPerKm!)}를 기준으로 ${paceLabel[pace]}입니다. `
+    : "";
   const paceText = Number.isFinite(meanContactMs)
-    ? `접지 ${Math.round(meanContactMs)} ms · 체공 ${Math.round(meanFlightMs)} ms · 듀티 ${meanDutyFactor.toFixed(2)}로 보아 ${paceLabel[pace]}입니다.`
-    : `${paceLabel[pace]} — 발 접지를 충분히 못 봐서 페이스는 판정하지 않았습니다.`;
+    ? reportedText +
+      `접지 ${Math.round(meanContactMs)} ms · 체공 ${Math.round(meanFlightMs)} ms · 듀티 ${meanDutyFactor.toFixed(2)}입니다.` +
+      (looksSlowMotion
+        ? " 케이던스가 사람이 낼 수 없을 만큼 낮습니다. 슬로우 모션 영상이라면 위에서 촬영 배속을 지정해 주세요."
+        : "")
+    : hasReportedPace
+      ? `${reportedText}촬영 조건 때문에 접지 시간 기반 교차 검증은 하지 못했습니다.`
+      : `${paceLabel[pace]} — 접지 순간을 신뢰할 만큼 재지 못해 페이스는 판정하지 않았습니다.`;
 
   const paragraphs = [
     `${durationS.toFixed(1)}초 · ${frameCount}프레임을 추적해 착지 ${landings.length}회를 모았습니다. 자세는 구간의 ${pct(detectedRatio, 1)}%에서 잡혔고, ${cadenceText}입니다.`,
     paceText,
-    `평균 추정 지면반력은 ${avgGrf.toFixed(1)} BW, 흡수 시간은 ${Math.round(avgAbsorb)} ms, 착지 순간 무릎은 ${avgKnee.toFixed(0)}°입니다. 가장 센 착지는 ${formatSeconds(peak.tContact)}의 ${peak.peakGrfBw.toFixed(1)} BW(점수 ${peak.damageScore})입니다.`,
+    forceTrusted
+      ? `평균 추정 지면반력은 ${avgGrf.toFixed(1)} BW, 흡수 시간은 ${Math.round(avgAbsorb)} ms, 착지 순간 무릎은 ${avgKnee.toFixed(0)}°입니다. 가장 센 착지는 ${formatSeconds(peak.tContact)}의 ${peak.peakGrfBw.toFixed(1)} BW(점수 ${peak.damageScore})입니다.`
+      : "사람이 작거나 자세 추적이 끊겨 충격량은 숫자로 평가하지 않았습니다. 더 가까이서 다시 촬영해야 합니다.",
     trendBits.length
       ? trendBits.join(" ")
       : "반복 착지 평균은 일반적인 달리기 범위에 가깝습니다. 개별 착지를 눌러 순간 값을 비교해 보세요.",
@@ -251,13 +293,19 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   ];
 
   const paceHeadline =
-    pace === "unknown" ? "" : `${paceLabel[pace]} · 평균 ${avgGrf.toFixed(1)} BW — `;
+    pace === "unknown"
+      ? ""
+      : forceTrusted
+        ? `${paceLabel[pace]} · 평균 ${avgGrf.toFixed(1)} BW — `
+        : `${paceLabel[pace]} · 충격량 측정 불가 — `;
   const headline =
-    paceHeadline +
+    !forceTrusted
+      ? paceHeadline + "촬영 조건을 먼저 개선해 주세요."
+      : paceHeadline +
     (cautionCount >= Math.max(2, Math.ceil(landings.length * 0.4))
       ? "반복 착지에서 충격이 몰리는 패턴이 보입니다."
       : stiffCount >= Math.max(2, Math.ceil(landings.length * 0.4))
-        ? "착지를 여러 번 모아 보니 흡수가 짧은 편이 반복됩니다."
+        ? "착지를 여러 번 모아 보니 무릎 굽힘이 작은 편이 반복됩니다."
         : landings.length >= 4
           ? "여러 착지를 모아 본 전체 부하는 비교적 고른 편입니다."
           : "잡은 착지가 적어 전체 경향은 참고 수준입니다.");
@@ -266,11 +314,17 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     {
       label: "페이스",
       value: paceLabel[pace],
-      hint: Number.isFinite(meanDutyFactor)
-        ? `듀티 ${meanDutyFactor.toFixed(2)}`
+      hint: hasReportedPace
+        ? `${formatPace(result.reportedPaceMinPerKm!)} · 직접 입력`
+        : Number.isFinite(meanDutyFactor)
+          ? `듀티 ${meanDutyFactor.toFixed(2)} · 영상 추정`
         : `착지 ${gaitCount}/${landings.length}회 측정`,
     },
-    { label: "착지", value: `${landings.length}회`, hint: cadenceText },
+    {
+      label: forceTrusted ? "착지" : "착지 후보",
+      value: `${landings.length}회`,
+      hint: forceTrusted ? cadenceText : "품질 개선 후 확정",
+    },
     {
       label: "접지 / 체공",
       value: Number.isFinite(meanContactMs)
@@ -280,17 +334,20 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     },
     {
       label: "평균 반력",
-      value: `${avgGrf.toFixed(1)} BW`,
-      hint: `최대 ${Math.max(...grfs).toFixed(1)} BW`,
+      value: forceTrusted ? `${avgGrf.toFixed(1)} BW` : "측정 불가",
+      // The half-sine stance model is good to roughly a sixth either way.
+      hint: forceTrusted
+        ? `추정 범위 ${(avgGrf * 0.85).toFixed(1)}–${(avgGrf * 1.15).toFixed(1)} BW`
+        : "사람을 화면 높이 25% 이상으로 촬영",
     },
     {
       label: "평균 점수",
-      value: String(Math.round(avgScore)),
-      hint: `부하율 ${avgRate.toFixed(0)} BW/s`,
+      value: forceTrusted ? String(Math.round(avgScore)) : "측정 불가",
+      hint: forceTrusted ? `부하율 ${avgRate.toFixed(0)} BW/s` : undefined,
     },
   ];
 
-  if (bothSides) {
+  if (bothSides && forceTrusted) {
     metrics.push({
       label: "좌우",
       value: `L ${leftGrf.toFixed(1)} / R ${rightGrf.toFixed(1)}`,
@@ -306,12 +363,27 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     metrics,
     riskCounts,
     patterns,
-    training: [...trainingVotes.values()].slice(0, 4),
+    training: forceTrusted
+      ? [...trainingVotes.values()].slice(0, 4)
+      : [
+          {
+            title: "먼저 촬영 조건 개선",
+            detail:
+              "전신이 화면 높이의 25% 이상이 되게 가까이서, 카메라를 고정하고 일정한 속도 구간 5–8초를 옆에서 찍어 주세요.",
+          },
+        ],
     peakLandingIndex,
     pace,
     meanContactMs,
     meanFlightMs,
     meanDutyFactor,
-    meanPeakGrfBw: avgGrf,
+    meanPeakGrfBw: forceTrusted ? avgGrf : Number.NaN,
+    paceSource,
   };
+}
+
+function formatPace(minPerKm: number): string {
+  const minutes = Math.floor(minPerKm);
+  const seconds = Math.round((minPerKm - minutes) * 60);
+  return `${minutes}:${String(seconds).padStart(2, "0")}/km`;
 }

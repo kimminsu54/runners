@@ -7,10 +7,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { AnalysisResult } from "@/lib/landing-analysis";
-import { buildSessionSummary } from "@/lib/session-summary";
+import { buildSessionSummary, paceLabel, type PaceBand } from "@/lib/session-summary";
 import type { GuidanceLevel } from "@/lib/training-guidance";
 import { cn } from "@/lib/utils";
 import { ClipboardList } from "lucide-react";
+
+const PACE_SCALE: Array<{ band: PaceBand; duty: string }> = [
+  { band: "walk", duty: "0.50+" },
+  { band: "easy", duty: "0.40" },
+  { band: "steady", duty: "0.33" },
+  { band: "brisk", duty: "0.23" },
+  { band: "fast", duty: "0.18" },
+  { band: "sprint", duty: "<0.18" },
+];
 
 const levelLabel: Record<GuidanceLevel, string> = {
   monitor: "관찰",
@@ -40,6 +49,16 @@ export function SessionSummaryCard({
   onSelectPeak?: (index: number) => void;
 }) {
   const summary = buildSessionSummary(result);
+  const qualityLabel = {
+    good: "측정 품질 좋음",
+    fair: "측정 오차 큼",
+    poor: "페이스 판정 불가",
+  }[result.quality.level];
+  const qualityClass = {
+    good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    fair: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    poor: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+  }[result.quality.level];
 
   return (
     <Card className="bg-card/80">
@@ -54,6 +73,22 @@ export function SessionSummaryCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className={qualityClass}>
+            {qualityLabel}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            사람 크기 {Math.round(result.quality.subjectHeightRatio * 100)}% ·
+            자세 포착 {Math.round(result.quality.detectedRatio * 100)}%
+          </span>
+        </div>
+        {result.quality.reasons.length ? (
+          <ul className="list-disc space-y-1 rounded-lg bg-amber-500/[0.08] px-7 py-3 text-xs leading-5 text-amber-100/90">
+            {result.quality.reasons.map((reason, index) => (
+              <li key={`${index}-${reason}`}>{reason}</li>
+            ))}
+          </ul>
+        ) : null}
         <div className="space-y-2">
           <p className="text-lg font-medium leading-7">{summary.headline}</p>
           {summary.paragraphs.map((paragraph, index) => (
@@ -80,6 +115,38 @@ export function SessionSummaryCard({
             </div>
           ))}
         </div>
+
+        {summary.pace !== "unknown" ? (
+          <div>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h3 className="text-sm font-medium">페이스 위치</h3>
+              <span className="text-xs text-muted-foreground">
+                듀티 팩터가 낮을수록 빠른 페이스이고 충격이 커집니다
+              </span>
+            </div>
+            <div className="grid grid-cols-6 gap-1">
+              {PACE_SCALE.map((step) => {
+                const active = step.band === summary.pace;
+                return (
+                  <div
+                    key={step.band}
+                    className={cn(
+                      "rounded-lg border px-2 py-2 text-center",
+                      active
+                        ? "border-amber-400 bg-amber-400/15 text-amber-200"
+                        : "border-white/10 text-muted-foreground",
+                    )}
+                  >
+                    <p className="text-[11px] leading-tight font-medium">
+                      {paceLabel[step.band]}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[10px]">{step.duty}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {summary.riskCounts.length ? (
           <div className="flex flex-wrap gap-2">

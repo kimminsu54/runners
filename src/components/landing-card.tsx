@@ -20,11 +20,13 @@ export function LandingCard({
   landing,
   order,
   selected,
+  trusted = true,
   onSelect,
 }: {
   landing: Landing;
   order: number;
   selected: boolean;
+  trusted?: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -39,15 +41,23 @@ export function LandingCard({
           <div>
             <p className="text-xs text-muted-foreground">착지 {order}</p>
             <CardTitle className="text-base">
-              {formatSeconds(landing.tContact)} · 점수 {landing.damageScore}
+              {formatSeconds(landing.tContact)} ·{" "}
+              {trusted ? `점수 ${landing.damageScore}` : "측정 참고용"}
             </CardTitle>
           </div>
-          <Badge variant="outline" className={cn("border", riskClass[landing.risk])}>
-            {riskLabel(landing.risk)}
-          </Badge>
+          {trusted ? (
+            <Badge variant="outline" className={cn("border", riskClass[landing.risk])}>
+              {riskLabel(landing.risk)}
+            </Badge>
+          ) : (
+            <Badge variant="outline">품질 부족</Badge>
+          )}
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <Metric label="추정 최대 반력" value={`${landing.peakGrfBw.toFixed(1)} BW`} />
+          <Metric
+            label="추정 최대 반력"
+            value={trusted ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가"}
+          />
           <Metric
             label="접지 시간"
             value={
@@ -63,7 +73,9 @@ export function LandingCard({
           <Metric label="착지 속도" value={`${landing.impactVelocity.toFixed(1)} m/s`} />
         </CardContent>
         <p className="px-4 pb-4 text-sm text-muted-foreground">
-          {landing.note} {compareHint(landing.damageScore)}
+          {trusted
+            ? `${landing.note} ${compareHint(landing.damageScore)}`
+            : "착지 후보는 찾았지만 사람 크기·추적 품질이 부족해 충격을 평가하지 않았습니다."}
         </p>
       </Card>
     </button>

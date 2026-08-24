@@ -21,7 +21,7 @@ export const G = 9.80665;
 
 // A running stance looks roughly like a half-sine of vertical force, so the
 // peak sits about pi/2 above the mean force carried during that contact.
-const PEAK_OVER_MEAN = Math.PI / 2;
+const PEAK_OVER_MEAN = 1.2;
 
 export type PoseFrame = {
   t: number;
@@ -39,6 +39,8 @@ export type SeriesPoint = {
   rightFootM: number;
   leftFootVel: number;
   rightFootVel: number;
+  leftFootSpeed: number;
+  rightFootSpeed: number;
 };
 
 export type Risk = "low" | "moderate" | "elevated" | "high" | "severe";
@@ -67,11 +69,23 @@ export type Landing = {
   note: string;
 };
 
+export type QualityLevel = "good" | "fair" | "poor";
+
+export type AnalysisQuality = {
+  level: QualityLevel;
+  subjectHeightRatio: number;
+  detectedRatio: number;
+  cadenceConsistency: number;
+  reasons: string[];
+};
+
 export type AnalysisResult = {
   series: SeriesPoint[];
   landings: Landing[];
   detectedRatio: number;
   metersPerPixel: number;
+  quality: AnalysisQuality;
+  reportedPaceMinPerKm?: number;
   warnings: string[];
 };
 
@@ -80,6 +94,10 @@ export type AnalyzeOptions = {
   massKg: number;
   width: number;
   height: number;
+  /** Playback slowdown of the clip: 2 means it was shot at twice real speed. */
+  slowMotionFactor?: number;
+  /** Optional real pace supplied by the runner, in minutes per kilometre. */
+  reportedPaceMinPerKm?: number;
 };
 
 function riskFromScore(score: number): Risk {
@@ -156,12 +174,12 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
   return bits.join(" ");
 }
 
-function estimateMetersPerPixel(
+function measureSubject(
   frames: PoseFrame[],
   statureM: number,
   width: number,
   height: number,
-): number {
+): { metersPerPixel: number; staturePx: number } {
   const lengths: number[] = [];
   for (const frame of frames) {
     const lm = frame.landmarks;
@@ -174,9 +192,58 @@ function estimateMetersPerPixel(
   }
   const staturePx = median(lengths);
   if (!Number.isFinite(staturePx) || staturePx < 40) {
-    return statureM / (height * 0.55);
+    return {
+      metersPerPixel: statureM / (height * 0.55),
+      staturePx: Number.isFinite(staturePx) ? staturePx : Number.NaN,
+    };
   }
-  return statureM / staturePx;
+  return { metersPerPixel: statureM / staturePx, staturePx };
+}
+
+function assessQuality(
+  subjectHeightRatio: number,
+  detectedRatio: number,
+  landings: Landing[],
+): AnalysisQuality {
+  const gaps = landings
+    .slice(1)
+    .map((l, i) => l.tContact - landings[i].tContact);
+  const typical = median(gaps);
+  const cadenceConsistency =
+    gaps.length >= 3 && Number.isFinite(typical) && typical > 0
+      ? gaps.filter((g) => Math.abs(g - typical) <= typical * 0.3).length /
+        gaps.length
+      : Number.NaN;
+
+  const reasons: string[] = [];
+  if (!(subjectHeightRatio >= 0.2)) {
+    reasons.push(
+      `사람이 화면 높이의 ${Math.round((subjectHeightRatio || 0) * 100)}%만 차지합니다. 접지 순간을 재려면 25% 이상으로 크게 담아 주세요.`,
+    );
+  }
+  if (detectedRatio < 0.8) {
+    reasons.push(
+      `자세가 ${Math.round(detectedRatio * 100)}% 구간에서만 잡혔습니다. 전신이 계속 보이도록 찍어 주세요.`,
+    );
+  }
+  if (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.55) {
+    reasons.push(
+      "착지 간격이 고르지 않아 일부 착지를 놓쳤을 수 있습니다. 같은 속도로 곧게 달리는 구간이 좋습니다.",
+    );
+  }
+
+  const severe =
+    !(subjectHeightRatio >= 0.2) ||
+    detectedRatio < 0.75 ||
+    (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.45);
+  const level: QualityLevel = severe ? "poor" : reasons.length ? "fair" : "good";
+  return {
+    level,
+    subjectHeightRatio,
+    detectedRatio,
+    cadenceConsistency,
+    reasons,
+  };
 }
 
 export function analyzeLandings(
@@ -190,21 +257,39 @@ export function analyzeLandings(
     warnings.push("사람 자세가 잘 잡히지 않았습니다. 전신이 나오고 옆모습·밝은 영상이 더 정확합니다.");
   }
 
-  const mpp = estimateMetersPerPixel(frames, options.statureM, options.width, options.height);
+  const { metersPerPixel: mpp, staturePx } = measureSubject(
+    frames,
+    options.statureM,
+    options.width,
+    options.height,
+  );
+  const subjectHeightRatio = Number.isFinite(staturePx)
+    ? staturePx / options.height
+    : Number.NaN;
+  // Slow-motion footage stretches every duration by the same factor, so undo it
+  // on the clock rather than trying to correct each derived quantity.
+  const timeScale =
+    options.slowMotionFactor && options.slowMotionFactor > 0
+      ? 1 / options.slowMotionFactor
+      : 1;
   const comRaw: number[] = [];
   const kneeRaw: number[] = [];
   const leftFootRaw: number[] = [];
   const rightFootRaw: number[] = [];
+  const leftFootAbsRaw: number[] = [];
+  const rightFootAbsRaw: number[] = [];
   const t: number[] = [];
 
   for (const frame of frames) {
-    t.push(frame.t);
+    t.push(frame.t * timeScale);
     const lm = frame.landmarks;
     if (!lm) {
       comRaw.push(Number.NaN);
       kneeRaw.push(Number.NaN);
       leftFootRaw.push(Number.NaN);
       rightFootRaw.push(Number.NaN);
+      leftFootAbsRaw.push(Number.NaN);
+      rightFootAbsRaw.push(Number.NaN);
       continue;
     }
     const hip = mid(lm[LM.leftHip], lm[LM.rightHip]);
@@ -213,14 +298,22 @@ export function analyzeLandings(
       kneeRaw.push(Number.NaN);
       leftFootRaw.push(Number.NaN);
       rightFootRaw.push(Number.NaN);
+      leftFootAbsRaw.push(Number.NaN);
+      rightFootAbsRaw.push(Number.NaN);
       continue;
     }
     comRaw.push(-hip.y * options.height * mpp);
     leftFootRaw.push(
-      footHeight(lm[LM.leftHeel], lm[LM.leftAnkle], options.height, mpp),
+      footDropFromHip(lm[LM.leftHeel], lm[LM.leftAnkle], hip, options.height, mpp),
     );
     rightFootRaw.push(
-      footHeight(lm[LM.rightHeel], lm[LM.rightAnkle], options.height, mpp),
+      footDropFromHip(lm[LM.rightHeel], lm[LM.rightAnkle], hip, options.height, mpp),
+    );
+    leftFootAbsRaw.push(
+      footAbsolute(lm[LM.leftHeel], lm[LM.leftAnkle], options.height, mpp),
+    );
+    rightFootAbsRaw.push(
+      footAbsolute(lm[LM.rightHeel], lm[LM.rightAnkle], options.height, mpp),
     );
     const flexL = kneeFlexionDeg(
       lm[LM.leftHip],
@@ -242,7 +335,18 @@ export function analyzeLandings(
 
   // Only bridge momentary dropouts. Holding the last value across a long gap
   // invents a motionless body, which then reads as a very long ground contact.
-  const com = movingAverage(fillShortGaps(comRaw, 3), 5);
+  const comAbsolute = movingAverage(fillShortGaps(comRaw, 3), 5);
+  // Subtract the slow drift so camera tilt and depth changes do not show up as
+  // a steady vertical velocity of the runner. The window has to stay well above
+  // one gait cycle or it would flatten the motion we are trying to measure.
+  const frameStep = median(t.slice(1).map((time, i) => time - t[i]));
+  const trendWindow = Number.isFinite(frameStep) && frameStep > 0
+    ? Math.max(9, Math.round(1.5 / frameStep))
+    : 9;
+  const comTrend = movingAverage(comAbsolute, trendWindow);
+  const com = comAbsolute.map((v, i) =>
+    Number.isFinite(v) && Number.isFinite(comTrend[i]) ? v - comTrend[i] : Number.NaN,
+  );
   const vel = movingAverage(derivative(com, t), 5);
   const acc = movingAverage(derivative(vel, t), 5);
   const knee = fillGaps(kneeRaw);
@@ -250,6 +354,16 @@ export function analyzeLandings(
   const rightFoot = movingAverage(fillShortGaps(rightFootRaw, 2), 3);
   const leftFootVel = movingAverage(derivative(leftFoot, t), 3);
   const rightFootVel = movingAverage(derivative(rightFoot, t), 3);
+  // Absolute foot speed tells stance from swing even while the hip rises and
+  // falls, which the hip-relative height alone cannot do.
+  const leftFootSpeed = movingAverage(
+    derivative(movingAverage(fillShortGaps(leftFootAbsRaw, 2), 3), t),
+    3,
+  ).map(Math.abs);
+  const rightFootSpeed = movingAverage(
+    derivative(movingAverage(fillShortGaps(rightFootAbsRaw, 2), 3), t),
+    3,
+  ).map(Math.abs);
 
   const series: SeriesPoint[] = t.map((time, i) => {
     const a = acc[i];
@@ -265,14 +379,28 @@ export function analyzeLandings(
       rightFootM: rightFoot[i],
       leftFootVel: leftFootVel[i],
       rightFootVel: rightFootVel[i],
+      leftFootSpeed: leftFootSpeed[i],
+      rightFootSpeed: rightFootSpeed[i],
     };
   });
 
-  const landings = detectLandings(series, options.massKg);
-  if (landings.length && detectedRatio < 0.8) {
+  const detectedLandings = detectLandings(series, options.massKg);
+  const quality = assessQuality(subjectHeightRatio, detectedRatio, detectedLandings);
+
+  // Contact and flight timing is only meaningful when the runner is big enough
+  // and tracked continuously. Publishing a number from a poor clip is what made
+  // every video look like the same hard landing.
+  const landings =
+    quality.level === "poor"
+      ? detectedLandings.map(withoutGaitTiming)
+      : detectedLandings;
+
+  if (quality.level === "poor" && landings.length) {
     warnings.push(
-      `자세가 끊긴 구간이 있어(포착 ${Math.round(detectedRatio * 100)}%) 접지·체공 시간과 페이스 판정의 오차가 커집니다.`,
+      `촬영 조건이 부족해 접지·체공 시간과 페이스는 표시하지 않습니다. ${quality.reasons[0] ?? ""}`.trim(),
     );
+  } else if (quality.level === "fair" && landings.length) {
+    warnings.push(`측정 오차가 큰 조건입니다. ${quality.reasons[0] ?? ""}`.trim());
   }
   if (!landings.length) {
     warnings.push("뚜렷한 착지 충격을 찾지 못했습니다. 점프·달리기처럼 발이 떨어졌다 닿는 구간이 보이게 찍어 보세요.");
@@ -283,11 +411,108 @@ export function analyzeLandings(
     landings,
     detectedRatio,
     metersPerPixel: mpp,
+    quality,
+    reportedPaceMinPerKm: options.reportedPaceMinPerKm,
     warnings,
   };
 }
 
-function footHeight(
+const SLOW_MOTION_CANDIDATES = [1, 2, 4, 8];
+
+/**
+ * Phones record slow motion without marking it, and every duration in the clip
+ * is then stretched by that factor. Running cadence and stance duration have
+ * narrow physiological ranges, so try the usual factors and keep whichever one
+ * describes a gait a human could actually produce.
+ */
+export function analyzeLandingsAuto(
+  frames: PoseFrame[],
+  options: AnalyzeOptions,
+): { result: AnalysisResult; slowMotionFactor: number; autoDetected: boolean } {
+  if (options.slowMotionFactor && options.slowMotionFactor > 0) {
+    return {
+      result: analyzeLandings(frames, options),
+      slowMotionFactor: options.slowMotionFactor,
+      autoDetected: false,
+    };
+  }
+
+  // Do not infer playback speed from a runner too small or intermittently
+  // tracked. A missed step can mimic slow motion exactly.
+  const baseline = analyzeLandings(frames, { ...options, slowMotionFactor: 1 });
+  if (
+    baseline.quality.subjectHeightRatio < 0.2 ||
+    baseline.quality.detectedRatio < 0.75
+  ) {
+    return { result: baseline, slowMotionFactor: 1, autoDetected: false };
+  }
+
+  let best: { result: AnalysisResult; factor: number; score: number } | null = null;
+  for (const factor of SLOW_MOTION_CANDIDATES) {
+    const result = analyzeLandings(frames, { ...options, slowMotionFactor: factor });
+    const score = gaitPlausibility(result) - (factor === 1 ? 0 : 0.12);
+    if (!best || score > best.score) best = { result, factor, score };
+  }
+
+  const chosen = best ?? {
+    result: analyzeLandings(frames, { ...options, slowMotionFactor: 1 }),
+    factor: 1,
+    score: 0,
+  };
+  return {
+    result: chosen.result,
+    slowMotionFactor: chosen.factor,
+    autoDetected: chosen.factor !== 1,
+  };
+}
+
+function gaitPlausibility(result: AnalysisResult): number {
+  const { landings, quality } = result;
+  if (landings.length < 4) return 0;
+
+  const gaps = landings
+    .slice(1)
+    .map((l, i) => l.tContact - landings[i].tContact);
+  const stepPeriod = median(gaps);
+  if (!Number.isFinite(stepPeriod) || stepPeriod <= 0) return 0;
+  const cadence = 60 / stepPeriod;
+  const contactS = median(landings.map((l) => l.contactMs)) / 1000;
+  const duty = median(landings.map((l) => l.dutyFactor));
+
+  let score = Number.isFinite(quality.cadenceConsistency)
+    ? quality.cadenceConsistency
+    : 0;
+  if (cadence >= 140 && cadence <= 220) score += 0.6;
+  else if (cadence >= 110 && cadence < 140) score += 0.2;
+  if (contactS >= 0.08 && contactS <= 0.32) score += 0.4;
+  if (Number.isFinite(duty) && duty >= 0.18 && duty <= 0.48) score += 0.3;
+  score += (landings.filter((l) => l.gaitBased).length / landings.length) * 0.4;
+  return score;
+}
+
+function withoutGaitTiming(landing: Landing): Landing {
+  if (!landing.gaitBased) return landing;
+  const fallbackGrf = clamp(landing.peakGrfBw, 1.05, 3);
+  const score = damageScore({
+    peakGrfBw: fallbackGrf,
+    loadingRateBwS: landing.loadingRateBwS,
+    dutyFactor: Number.NaN,
+    kneeFlexContact: landing.kneeFlexContact,
+  });
+  return {
+    ...landing,
+    peakGrfBw: fallbackGrf,
+    peakForceN: (landing.peakForceN / landing.peakGrfBw) * fallbackGrf,
+    contactMs: Number.NaN,
+    flightMs: Number.NaN,
+    dutyFactor: Number.NaN,
+    gaitBased: false,
+    damageScore: score,
+    risk: riskFromScore(score),
+  };
+}
+
+function footAbsolute(
   heel: Landmark | undefined,
   ankle: Landmark | undefined,
   height: number,
@@ -297,9 +522,25 @@ function footHeight(
     (p): p is Landmark => Boolean(p) && isVisible(p, 0.25),
   );
   if (!candidates.length) return Number.NaN;
-  // Image y grows downwards. The lowest visible foot point is the best contact
-  // proxy and also works when the heel is briefly hidden by the other leg.
   return Math.max(...candidates.map((p) => p.y)) * height * metersPerPixel;
+}
+
+function footDropFromHip(
+  heel: Landmark | undefined,
+  ankle: Landmark | undefined,
+  hip: Landmark,
+  height: number,
+  metersPerPixel: number,
+): number {
+  const candidates = [heel, ankle].filter(
+    (p): p is Landmark => Boolean(p) && isVisible(p, 0.25),
+  );
+  if (!candidates.length) return Number.NaN;
+  // Measure how far the foot sits below the hip rather than where it sits in
+  // the frame. A panning or tilting camera slides the whole body across the
+  // image, which would otherwise drag the ground line along with it.
+  const lowest = Math.max(...candidates.map((p) => p.y));
+  return (lowest - hip.y) * height * metersPerPixel;
 }
 
 function fillGaps(values: number[]): number[] {
@@ -448,7 +689,7 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     // that stance is bodyweight scaled by stepPeriod/contactTime. A shorter
     // contact with more airtime is what makes a fast pace hit harder.
     const peakGrfBw = gaitBased
-      ? clamp((PEAK_OVER_MEAN * stepPeriodS) / contactS, 1.05, 5)
+      ? clamp((PEAK_OVER_MEAN * stepPeriodS) / contactS, 1.05, 4.5)
       : clamp(measuredGrfBw, 1.05, 4);
 
     const absorptionMs = (series[raw.absorbIdx].t - series[raw.contactIdx].t) * 1000;
@@ -541,13 +782,26 @@ function groundContactIntervals(
   dt: number,
 ): ContactInterval[] {
   return [
-    ...footIntervals(series.map((s) => s.leftFootM), series, dt, "left"),
-    ...footIntervals(series.map((s) => s.rightFootM), series, dt, "right"),
+    ...footIntervals(
+      series.map((s) => s.leftFootM),
+      series.map((s) => s.leftFootSpeed),
+      series,
+      dt,
+      "left",
+    ),
+    ...footIntervals(
+      series.map((s) => s.rightFootM),
+      series.map((s) => s.rightFootSpeed),
+      series,
+      dt,
+      "right",
+    ),
   ].sort((a, b) => a.start - b.start);
 }
 
 function footIntervals(
   foot: number[],
+  speed: number[],
   series: SeriesPoint[],
   dt: number,
   side: FootSide,
@@ -560,11 +814,19 @@ function footIntervals(
   // The ground line drifts as the runner crosses the frame, so track it in a
   // window rather than assuming one level for the whole clip.
   const ground = rollingPercentile(foot, Math.max(4, Math.round(0.7 / dt)), 0.92);
-  // Keep this band tight. A loose band counts the early swing as stance, which
-  // stretches contact time and erases the difference between paces.
-  const tolerance = Math.max(0.015, swing * 0.12);
+  // The hip drops through mid-stance, so this band has to be wide enough to
+  // hold the whole stance. Foot stillness is what keeps it out of the swing.
+  const tolerance = Math.max(0.02, swing * 0.35);
+  const swingSpeed = percentile(speed.filter(Number.isFinite), 0.8);
+  const stillSpeed =
+    Number.isFinite(swingSpeed) && swingSpeed > 0
+      ? Math.max(0.24, swingSpeed * 0.9)
+      : Number.POSITIVE_INFINITY;
   const grounded = foot.map(
-    (value, i) => Number.isFinite(value) && value >= ground[i] - tolerance,
+    (value, i) =>
+      Number.isFinite(value) &&
+      value >= ground[i] - tolerance &&
+      (!Number.isFinite(speed[i]) || speed[i] <= stillSpeed),
   );
 
   const minFrames = Math.max(2, Math.round(MIN_CONTACT_S / dt));
