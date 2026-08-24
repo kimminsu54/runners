@@ -240,7 +240,7 @@ export function LandingAnalyzer() {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="overflow-hidden bg-card/80">
+        <Card className="overflow-hidden rounded-none border-[#f4ead3]/15 bg-[#1e2117]/90">
           <div
             className={cn(
               "relative aspect-video bg-black transition",
@@ -258,6 +258,9 @@ export function LandingAnalyzer() {
               onFile(e.dataTransfer.files);
             }}
           >
+            <div className="pointer-events-none absolute top-3 right-3 z-10 border border-white/20 bg-black/45 px-2 py-1 font-mono text-[9px] tracking-[0.16em] text-white uppercase backdrop-blur-sm">
+              01 / Run clip
+            </div>
             <video
               ref={videoRef}
               src={cameraOn ? undefined : videoUrl ?? undefined}
@@ -340,11 +343,14 @@ export function LandingAnalyzer() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>신체 정보</CardTitle>
+        <Card className="rounded-none border-[#f4ead3]/15 bg-[#24271b]/90">
+          <CardHeader className="border-b border-white/10 pb-4">
+            <p className="font-mono text-[9px] tracking-[0.18em] text-[#f05236] uppercase">
+              02 / Runner setup
+            </p>
+            <CardTitle className="display-type text-2xl text-[#f4ead3]">러너 세팅</CardTitle>
             <CardDescription>
-              키는 픽셀을 미터로 바꿀 때, 체중은 뉴턴 단위 힘을 가늠할 때 씁니다. 대략 값이면 충분합니다.
+              신체 정보와 촬영 조건을 맞추면 영상의 픽셀을 실제 움직임으로 바꿀 수 있습니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -466,7 +472,7 @@ export function LandingAnalyzer() {
                 ? "자세 모델 준비 중…"
                 : status === "analyzing"
                   ? "착지 분석 중…"
-                  : "착지 충격 분석"}
+                  : "세션 분석 시작 →"}
             </Button>
             {status === "analyzing" || status === "loading-model" ? (
               <div className="space-y-2">

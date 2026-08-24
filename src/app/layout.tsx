@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Noto_Sans_KR } from "next/font/google";
+import { Black_Han_Sans, Geist, Geist_Mono, Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,6 +17,12 @@ const notoSansKr = Noto_Sans_KR({
   subsets: ["latin"],
 });
 
+const blackHanSans = Black_Han_Sans({
+  variable: "--font-black-han-sans",
+  subsets: ["latin"],
+  weight: "400",
+});
+
 export const metadata: Metadata = {
   title: "착지 충격 랩",
   description:
@@ -27,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="ko"
-      className={`dark ${geistSans.variable} ${geistMono.variable} ${notoSansKr.variable} h-full antialiased`}
+      className={`dark ${geistSans.variable} ${geistMono.variable} ${notoSansKr.variable} ${blackHanSans.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">{children}</body>
     </html>

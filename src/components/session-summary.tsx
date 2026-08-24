@@ -61,11 +61,14 @@ export function SessionSummaryCard({
   }[result.quality.level];
 
   return (
-    <Card className="bg-card/80">
+    <Card className="rounded-none border-[#f4ead3]/15 bg-[#1e2117]/90">
       <CardHeader>
+        <p className="font-mono text-[9px] tracking-[0.18em] text-[#f05236] uppercase">
+          03 / Session report
+        </p>
         <div className="flex items-center gap-2">
-          <ClipboardList className="size-4 text-amber-300" aria-hidden />
-          <CardTitle>영상 전체 요약</CardTitle>
+          <ClipboardList className="size-4 text-[#d3f35b]" aria-hidden />
+          <CardTitle className="display-type text-2xl text-[#f4ead3]">영상 전체 요약</CardTitle>
         </div>
         <CardDescription>
           프레임마다 추적한 착지를 모아 평균·반복 패턴·좌우 차이를 한 번에 봅니다.
