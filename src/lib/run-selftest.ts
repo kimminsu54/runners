@@ -50,12 +50,24 @@ if (session.metrics.length < 4) {
 }
 console.log("session summary ok", session.headline);
 
-const slow = buildSessionSummary(
-  analyzeSyntheticRun({ contactS: 0.31, flightS: 0.05 }),
-);
-const fast = buildSessionSummary(
-  analyzeSyntheticRun({ contactS: 0.13, flightS: 0.14 }),
-);
+const SLOW_GAIT = { contactS: 0.31, flightS: 0.05 };
+const FAST_GAIT = { contactS: 0.13, flightS: 0.14 };
+const slow = buildSessionSummary(analyzeSyntheticRun(SLOW_GAIT));
+const fast = buildSessionSummary(analyzeSyntheticRun(FAST_GAIT));
+
+// Contact time drives the force estimate, so hold it to the known truth of the
+// fixture rather than only checking that the two paces come out different.
+for (const [name, summary, truthS] of [
+  ["slow", slow, SLOW_GAIT.contactS],
+  ["fast", fast, FAST_GAIT.contactS],
+] as const) {
+  const errorMs = summary.meanContactMs - truthS * 1000;
+  if (!Number.isFinite(errorMs) || Math.abs(errorMs) > 40) {
+    throw new Error(
+      `${name} contact time off by ${Math.round(errorMs)} ms (measured ${Math.round(summary.meanContactMs)}, truth ${truthS * 1000})`,
+    );
+  }
+}
 for (const [name, s] of [
   ["slow", slow],
   ["fast", fast],
@@ -69,9 +81,11 @@ for (const [name, s] of [
     headline: s.headline,
   });
 }
-if (!(fast.meanPeakGrfBw > slow.meanPeakGrfBw * 1.35)) {
+// Peak force rises with pace, but far less steeply than duty factor does, so
+// duty is the discriminator and force is only expected to be modestly higher.
+if (!(fast.meanPeakGrfBw > slow.meanPeakGrfBw * 1.15)) {
   throw new Error(
-    `fast pace should load much harder: slow ${slow.meanPeakGrfBw} vs fast ${fast.meanPeakGrfBw}`,
+    `fast pace should load harder: slow ${slow.meanPeakGrfBw} vs fast ${fast.meanPeakGrfBw}`,
   );
 }
 if (!(fast.meanDutyFactor < slow.meanDutyFactor - 0.08)) {
@@ -85,8 +99,11 @@ if (slow.pace === fast.pace) {
 if (slow.headline === fast.headline) {
   throw new Error("slow and fast summaries should not read the same");
 }
-if (slow.meanPeakGrfBw > 2.4) {
+if (slow.meanPeakGrfBw > 2.2) {
   throw new Error(`slow jogging should stay near 2 BW, got ${slow.meanPeakGrfBw}`);
+}
+if (fast.meanPeakGrfBw > 3.4) {
+  throw new Error(`fast running should stay under sprint loads, got ${fast.meanPeakGrfBw}`);
 }
 console.log("pace discrimination ok");
 

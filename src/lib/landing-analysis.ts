@@ -19,9 +19,25 @@ import {
 
 export const G = 9.80665;
 
-// A running stance looks roughly like a half-sine of vertical force, so the
-// peak sits about pi/2 above the mean force carried during that contact.
-const PEAK_OVER_MEAN = 1.2;
+/**
+ * Peak vertical ground reaction force as a function of duty factor, which is
+ * stance time over stride time.
+ *
+ * Treating stance as a clean half-sine gives peak = (pi/2) / (2 * duty). That
+ * is right in spirit but climbs far too steeply once duty drops, because the
+ * real force trace broadens as pace rises. This curve keeps the same 1/duty
+ * shape but is anchored to reported peaks instead: about 2.1 BW for an easy
+ * jog near duty 0.38, 2.4 BW for a steady run near 0.32, and 3.7 BW for a
+ * sprint near 0.18.
+ */
+function peakForceFromDuty(dutyFactor: number): number {
+  if (!Number.isFinite(dutyFactor) || dutyFactor <= 0) return Number.NaN;
+  if (dutyFactor >= 0.5) {
+    // Walking carries a double-support phase and never loads like running.
+    return clamp(1.05 + (0.6 - dutyFactor), 1, 1.4);
+  }
+  return 0.55 / dutyFactor + 0.65;
+}
 
 export type PoseFrame = {
   t: number;
@@ -609,6 +625,13 @@ type RawLanding = {
 // tracking dropout, not from the runner.
 const MIN_CONTACT_S = 0.06;
 const MAX_CONTACT_S = 0.4;
+/**
+ * Thresholding the foot height always clips the roll-in at heel strike and the
+ * peel-off at the toe, because the foot is neither at its lowest nor fully
+ * still through those phases. That truncation shortens stance and therefore
+ * inflates the force estimate, so add back a fixed allowance for the two edges.
+ */
+const STANCE_EDGE_ALLOWANCE_S = 0.04;
 const MIN_STEP_S = 0.15;
 const MAX_STEP_S = 0.7;
 
@@ -686,11 +709,14 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     // A single stance is measured to within a frame or two, so keep each
     // contact near the clip's median rather than letting one noisy frame
     // produce a five-bodyweight outlier.
-    const contactS = Number.isFinite(raw.contactS)
+    const measuredContactS = Number.isFinite(raw.contactS)
       ? Number.isFinite(medianContactS)
         ? clamp(raw.contactS, medianContactS * 0.75, medianContactS * 1.35)
         : raw.contactS
       : medianContactS;
+    const contactS = Number.isFinite(measuredContactS)
+      ? measuredContactS + STANCE_EDGE_ALLOWANCE_S
+      : measuredContactS;
     const gaitBased =
       Number.isFinite(contactS) &&
       Number.isFinite(stepPeriodS) &&
@@ -700,11 +726,9 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     const vImp = Math.abs(raw.impactVel);
     const peakAcc = Math.max(0, acc[raw.peakIdx]);
     const measuredGrfBw = 1 + peakAcc / G;
-    // One foot carries the whole body over a step period, so the mean force in
-    // that stance is bodyweight scaled by stepPeriod/contactTime. A shorter
-    // contact with more airtime is what makes a fast pace hit harder.
+    const dutyForForce = gaitBased ? contactS / (2 * stepPeriodS) : Number.NaN;
     const peakGrfBw = gaitBased
-      ? clamp((PEAK_OVER_MEAN * stepPeriodS) / contactS, 1.05, 4.5)
+      ? clamp(peakForceFromDuty(dutyForForce), 1.05, 4.5)
       : clamp(measuredGrfBw, 1.05, 4);
 
     const absorptionMs = (series[raw.absorbIdx].t - series[raw.contactIdx].t) * 1000;
@@ -829,31 +853,51 @@ function footIntervals(
   // The ground line drifts as the runner crosses the frame, so track it in a
   // window rather than assuming one level for the whole clip.
   const ground = rollingPercentile(foot, Math.max(4, Math.round(0.7 / dt)), 0.92);
-  // The hip drops through mid-stance, so this band has to be wide enough to
-  // hold the whole stance. Foot stillness is what keeps it out of the swing.
-  const tolerance = Math.max(0.02, swing * 0.35);
+  // Hysteresis. A single threshold clips the partly loaded frames at heel
+  // strike and toe-off, which shortens stance and inflates the force estimate.
+  // Find the clearly planted core, then grow it over the looser band.
+  const coreTolerance = Math.max(0.02, swing * 0.22);
+  const growTolerance = Math.max(0.03, swing * 0.5);
   const swingSpeed = percentile(speed.filter(Number.isFinite), 0.8);
   const stillSpeed =
     Number.isFinite(swingSpeed) && swingSpeed > 0
       ? Math.max(0.24, swingSpeed * 0.9)
       : Number.POSITIVE_INFINITY;
-  const grounded = foot.map(
+  const core = foot.map(
     (value, i) =>
       Number.isFinite(value) &&
-      value >= ground[i] - tolerance &&
+      value >= ground[i] - coreTolerance &&
+      (!Number.isFinite(speed[i]) || speed[i] <= stillSpeed),
+  );
+  // Growth relaxes only the height band. The foot must still be moving slowly,
+  // which is what keeps a short sprint stance from swallowing its own swing.
+  const loose = foot.map(
+    (value, i) =>
+      Number.isFinite(value) &&
+      value >= ground[i] - growTolerance &&
       (!Number.isFinite(speed[i]) || speed[i] <= stillSpeed),
   );
 
   const minFrames = Math.max(2, Math.round(MIN_CONTACT_S / dt));
   const maxFrames = Math.ceil(MAX_CONTACT_S / dt) + 1;
   const maxGapFrames = Math.max(1, Math.round(0.05 / dt));
+  // Rolling onto the heel and pushing off the toe take a few tens of
+  // milliseconds each, so allow only that much beyond the planted core.
+  const maxGrow = Math.max(1, Math.round(0.06 / dt));
+
   const spans: Array<[number, number]> = [];
   let start = -1;
-  for (let i = 0; i <= grounded.length; i++) {
-    const on = i < grounded.length && grounded[i];
+  for (let i = 0; i <= core.length; i++) {
+    const on = i < core.length && core[i];
     if (on && start < 0) start = i;
     if (!on && start >= 0) {
-      spans.push([start, i - 1]);
+      let from = start;
+      let to = i - 1;
+      for (let k = 0; k < maxGrow && from > 0 && loose[from - 1]; k++) from -= 1;
+      for (let k = 0; k < maxGrow && to < core.length - 1 && loose[to + 1]; k++) {
+        to += 1;
+      }
+      spans.push([from, to]);
       start = -1;
     }
   }

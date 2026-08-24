@@ -98,13 +98,22 @@ function runningHipY(
   return 0.43 + 0.014 * Math.cos(2 * Math.PI * phase);
 }
 
+// A real foot is not planted instantly. It rolls in at heel strike and peels
+// off at the toe, so the height signal eases into and out of the ground over a
+// few tens of milliseconds. Threshold detectors clip those edges, and the
+// fixture has to reproduce that or it will not test the same problem.
+const ROLL_S = 0.04;
+
 function runningFootY(
   t: number,
   starts: number[],
   contactS: number,
 ): number {
   for (const start of starts) {
+    if (t < start - ROLL_S || t > start + contactS + ROLL_S) continue;
     if (t >= start && t <= start + contactS) return GROUND_Y;
+    const edge = t < start ? (start - t) / ROLL_S : (t - start - contactS) / ROLL_S;
+    return GROUND_Y - FOOT_LIFT * 0.6 * edge;
   }
   const prevEnd = Math.max(
     ...starts.filter((s) => s + contactS < t).map((s) => s + contactS),
