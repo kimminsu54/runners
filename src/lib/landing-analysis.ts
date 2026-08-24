@@ -487,6 +487,21 @@ function gaitPlausibility(result: AnalysisResult): number {
   if (contactS >= 0.08 && contactS <= 0.32) score += 0.4;
   if (Number.isFinite(duty) && duty >= 0.18 && duty <= 0.48) score += 0.3;
   score += (landings.filter((l) => l.gaitBased).length / landings.length) * 0.4;
+
+  // Limb speed is an independent check on the clock, since it comes from the
+  // body scale rather than from any contact timing. A swinging foot travels
+  // several metres per second relative to the hip, so a factor that leaves it
+  // far below that is reading slow-motion footage as if it were real time.
+  const swingSpeed = percentile(
+    [
+      ...result.series.map((s) => Math.abs(s.leftFootVel)),
+      ...result.series.map((s) => Math.abs(s.rightFootVel)),
+    ].filter(Number.isFinite),
+    0.9,
+  );
+  if (swingSpeed >= 3.5 && swingSpeed <= 11) score += 0.5;
+  else if (swingSpeed > 11 || swingSpeed < 2) score -= 0.6;
+
   return score;
 }
 
