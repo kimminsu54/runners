@@ -4,6 +4,7 @@ import {
   compareHint,
   footStrikeLabel,
   formatSeconds,
+  formatTimingMs,
   riskLabel,
   type Landing,
 } from "@/lib/landing-analysis";
@@ -59,7 +60,7 @@ export function LandingCard({
             label="착지 주법"
             value={
               trusted && landing.footStrike !== "unknown"
-                ? `${footStrikeLabel[landing.footStrike]} · ${landing.footStrikeAngleDeg > 0 ? "+" : ""}${landing.footStrikeAngleDeg.toFixed(0)}°`
+                ? `${footStrikeLabel[landing.footStrike]} · 약 ${landing.footStrikeAngleDeg > 0 ? "+" : ""}${Math.round(landing.footStrikeAngleDeg)}°`
                 : "판정 불가"
             }
           />
@@ -70,16 +71,25 @@ export function LandingCard({
           <Metric
             label="접지 시간"
             value={
-              landing.gaitBased ? `${Math.round(landing.contactMs)} ms` : "측정 불가"
+              trusted && landing.gaitBased
+                ? formatTimingMs(landing.contactMs)
+                : "측정 불가"
             }
           />
           <Metric
             label="체공 시간"
             value={
-              landing.gaitBased ? `${Math.round(landing.flightMs)} ms` : "측정 불가"
+              trusted && landing.gaitBased
+                ? formatTimingMs(landing.flightMs)
+                : "측정 불가"
             }
           />
-          <Metric label="착지 속도" value={`${landing.impactVelocity.toFixed(1)} m/s`} />
+          <Metric
+            label="착지 속도"
+            value={
+              trusted ? `${landing.impactVelocity.toFixed(1)} m/s` : "측정 불가"
+            }
+          />
         </CardContent>
         <p className="px-4 pb-4 text-sm text-muted-foreground">
           {trusted

@@ -166,7 +166,11 @@ export function riskLabel(risk: Risk): string {
   }
 }
 
-function damageScore(input: {
+/**
+ * Per-landing load score. Short contact / low duty is pace, not damage, so
+ * the scale uses peak force, loading rate, and knee give only.
+ */
+export function landingLoadScore(input: {
   peakGrfBw: number;
   loadingRateBwS: number;
   dutyFactor: number;
@@ -177,21 +181,16 @@ function damageScore(input: {
   const bwTerm = clamp(((input.peakGrfBw - 1.7) / 2.8) * 45, 0, 45);
   const rateTerm = clamp(((input.loadingRateBwS - 12) / 70) * 25, 0, 25);
   const stiffKnee = clamp((55 - input.kneeFlexContact) / 55, 0, 1) * 15;
-  const duty = input.dutyFactor;
-  const flightTerm = !Number.isFinite(duty)
-    ? 0
-    : duty < 0.25
-      ? 15
-      : duty < 0.3
-        ? 10
-        : duty < 0.35
-          ? 5
-          : 0;
-  return clamp(
-    Math.round(bwTerm + rateTerm + stiffKnee + flightTerm),
-    0,
-    100,
-  );
+  return clamp(Math.round(bwTerm + rateTerm + stiffKnee), 0, 100);
+}
+
+function damageScore(input: {
+  peakGrfBw: number;
+  loadingRateBwS: number;
+  dutyFactor: number;
+  kneeFlexContact: number;
+}): number {
+  return landingLoadScore(input);
 }
 
 function landingNote(l: Omit<Landing, "note" | "index">): string {
@@ -203,7 +202,7 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
   }
   if (Number.isFinite(l.contactMs) && l.contactMs > 0) {
     bits.push(
-      `접지 ${Math.round(l.contactMs)} ms · 체공 ${Math.round(l.flightMs)} ms.`,
+      `접지 ${formatTimingMs(l.contactMs)} · 체공 ${formatTimingMs(l.flightMs)}.`,
     );
   }
   if (l.peakGrfBw >= 3.4) {
@@ -264,12 +263,14 @@ function assessQuality(
   const gaps = landings
     .slice(1)
     .map((l, i) => l.tContact - landings[i].tContact);
-  const typical = median(gaps);
+  const stepGaps = gaps.filter((gap) => gap >= 0.15 && gap <= 0.7);
+  const typical = median(stepGaps.length ? stepGaps : gaps);
   const cadenceConsistency =
     gaps.length >= 3 && Number.isFinite(typical) && typical > 0
       ? gaps.filter((g) => Math.abs(g - typical) <= typical * 0.3).length /
         gaps.length
       : Number.NaN;
+  const missedLandings = estimateMissedLandings(gaps, typical);
 
   const reasons: string[] = [];
   if (!(subjectHeightRatio >= 0.2)) {
@@ -287,16 +288,23 @@ function assessQuality(
       "정면·사선에 가까워 발바닥 각도로 착지 주법을 분류할 수 없습니다. 정확한 옆모습으로 찍어 주세요.",
     );
   }
-  if (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.55) {
+  if (missedLandings >= 2) {
+    reasons.push(
+      `착지 간격으로 보면 약 ${missedLandings}회를 놓친 것으로 보입니다. 전신이 계속 보이게, 같은 속도로 곧게 달리는 구간이 좋습니다.`,
+    );
+  } else if (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.55) {
     reasons.push(
       "착지 간격이 고르지 않아 일부 착지를 놓쳤을 수 있습니다. 같은 속도로 곧게 달리는 구간이 좋습니다.",
     );
   }
 
+  const expected = landings.length + missedLandings;
+  const missedRatio = expected > 0 ? missedLandings / expected : 0;
   const severe =
     !(subjectHeightRatio >= 0.2) ||
     detectedRatio < 0.75 ||
-    (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.45);
+    (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.45) ||
+    missedRatio >= 0.3;
   const level: QualityLevel = severe ? "poor" : reasons.length ? "fair" : "good";
   return {
     level,
@@ -306,6 +314,14 @@ function assessQuality(
     sideViewRatio,
     reasons,
   };
+}
+
+function estimateMissedLandings(gaps: number[], typical: number): number {
+  if (!Number.isFinite(typical) || typical <= 0 || gaps.length < 2) return 0;
+  return gaps.reduce((missed, gap) => {
+    if (!(gap > typical * 1.7)) return missed;
+    return missed + Math.max(1, Math.round(gap / typical) - 1);
+  }, 0);
 }
 
 export function analyzeLandings(
@@ -556,7 +572,11 @@ export function analyzeLandingsAuto(
         ? best.factor
         : undefined;
     return {
-      result: chosen,
+      result: applyClockToQuality(chosen, {
+        suggestedFactor,
+        chosenScore,
+        bestScore: best?.score,
+      }),
       slowMotionFactor: options.slowMotionFactor,
       autoDetected: false,
       suggestedFactor,
@@ -581,7 +601,9 @@ export function analyzeLandingsAuto(
     score: 0,
   };
   return {
-    result: chosen.result,
+    result: applyClockToQuality(chosen.result, {
+      chosenScore: chosen.score,
+    }),
     slowMotionFactor: chosen.factor,
     autoDetected: chosen.factor !== 1,
   };
@@ -649,8 +671,9 @@ function withoutFootStrike(landing: Landing): Landing {
 }
 
 function withoutGaitTiming(landing: Landing): Landing {
-  if (!landing.gaitBased) return landing;
-  const fallbackGrf = clamp(landing.peakGrfBw, 1.05, 3);
+  const fallbackGrf = landing.gaitBased
+    ? clamp(landing.peakGrfBw, 1.05, 3)
+    : landing.peakGrfBw;
   const score = damageScore({
     peakGrfBw: fallbackGrf,
     loadingRateBwS: landing.loadingRateBwS,
@@ -660,7 +683,10 @@ function withoutGaitTiming(landing: Landing): Landing {
   return {
     ...landing,
     peakGrfBw: fallbackGrf,
-    peakForceN: (landing.peakForceN / landing.peakGrfBw) * fallbackGrf,
+    peakForceN:
+      landing.gaitBased && landing.peakGrfBw
+        ? (landing.peakForceN / landing.peakGrfBw) * fallbackGrf
+        : landing.peakForceN,
     contactMs: Number.NaN,
     flightMs: Number.NaN,
     dutyFactor: Number.NaN,
@@ -670,6 +696,62 @@ function withoutGaitTiming(landing: Landing): Landing {
     footStrikeConfidence: "low",
     damageScore: score,
     risk: riskFromScore(score),
+  };
+}
+
+/**
+ * Capture-rate choice and quality grade are one decision. A wrong slow-motion
+ * factor stretches every duration, so do not publish those numbers as a run.
+ */
+function applyClockToQuality(
+  result: AnalysisResult,
+  clock: {
+    suggestedFactor?: number;
+    chosenScore: number;
+    bestScore?: number;
+  },
+): AnalysisResult {
+  const reasons = [...result.quality.reasons];
+  let level = result.quality.level;
+  const warnings = [...result.warnings];
+
+  if (clock.suggestedFactor) {
+    const label =
+      clock.suggestedFactor === 1
+        ? "일반 속도"
+        : `${clock.suggestedFactor}배 슬로우`;
+    reasons.push(
+      `선택한 촬영 배속으로는 접지·케이던스가 사람 보행 범위를 벗어납니다. ${label}로 다시 분석해 보세요.`,
+    );
+    const implausible =
+      clock.chosenScore < 1.2 ||
+      (clock.bestScore !== undefined &&
+        clock.bestScore > clock.chosenScore + 0.5);
+    if (implausible) level = "poor";
+    else if (level === "good") level = "fair";
+  } else if (result.landings.length >= 4 && clock.chosenScore < 0.7) {
+    reasons.push(
+      "접지·케이던스가 사람 보행 범위와 맞지 않아 숫자를 내지 않습니다. 촬영 배속과 촬영 거리를 확인해 주세요.",
+    );
+    level = "poor";
+  }
+
+  const landings =
+    level === "poor" && result.quality.level !== "poor"
+      ? result.landings.map(withoutGaitTiming)
+      : result.landings;
+
+  if (level === "poor" && result.quality.level !== "poor" && landings.length) {
+    warnings.push(
+      `촬영 조건이 부족해 접지·체공 시간과 페이스는 표시하지 않습니다. ${reasons.at(-1) ?? ""}`.trim(),
+    );
+  }
+
+  return {
+    ...result,
+    quality: { ...result.quality, level, reasons },
+    landings,
+    warnings,
   };
 }
 
@@ -1228,6 +1310,38 @@ export function formatSeconds(t: number): string {
   const s = t - m * 60;
   if (m) return `${m}:${s.toFixed(2).padStart(5, "0")}`;
   return `${s.toFixed(2)}s`;
+}
+
+/** 30 fps is one sample every 33 ms; display to the nearest 30 ms. */
+export const DISPLAY_FRAME_MS = 30;
+
+export function quantizeMs(ms: number): number {
+  if (!Number.isFinite(ms)) return Number.NaN;
+  return Math.round(ms / DISPLAY_FRAME_MS) * DISPLAY_FRAME_MS;
+}
+
+export function formatTimingMs(ms: number): string {
+  if (!Number.isFinite(ms)) return "측정 불가";
+  return `약 ${quantizeMs(ms)} ms`;
+}
+
+export function formatTimingPair(contactMs: number, flightMs: number): string {
+  if (!Number.isFinite(contactMs) || !Number.isFinite(flightMs)) {
+    return "측정 불가";
+  }
+  return `약 ${quantizeMs(contactMs)} / ${quantizeMs(flightMs)} ms`;
+}
+
+/** Cadence from the typical short step, not first-to-last span (missed contacts). */
+export function cadenceSpm(landings: Array<{ tContact: number }>): number {
+  if (landings.length < 2) return Number.NaN;
+  const gaps = landings
+    .slice(1)
+    .map((landing, i) => landing.tContact - landings[i].tContact)
+    .filter((gap) => gap >= MIN_STEP_S && gap <= MAX_STEP_S);
+  // A missed contact doubles one gap. The shorter cluster is the real step.
+  const step = percentile(gaps, 0.4);
+  return Number.isFinite(step) && step > 0 ? 60 / step : Number.NaN;
 }
 
 export function compareHint(score: number): string {

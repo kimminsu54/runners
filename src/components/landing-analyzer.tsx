@@ -538,7 +538,7 @@ export function LandingAnalyzer() {
                     {warning}
                   </p>
                 ))}
-                {summary ? (
+                {summary && result.quality.level !== "poor" ? (
                   <div className="mb-4 grid grid-cols-3 gap-3 text-sm">
                     <div>
                       <p className="text-xs text-muted-foreground">착지 횟수</p>
@@ -556,7 +556,11 @@ export function LandingAnalyzer() {
                     </div>
                   </div>
                 ) : (
-                  <p className="mb-4 text-sm text-muted-foreground">착지가 감지되지 않았습니다.</p>
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    {result.landings.length
+                      ? "촬영 품질이 부족해 착지 점수와 반력 숫자는 표시하지 않습니다."
+                      : "착지가 감지되지 않았습니다."}
+                  </p>
                 )}
                 {result.quality.level === "poor" ? (
                   <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border px-6 text-center text-sm text-muted-foreground">

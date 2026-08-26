@@ -12,7 +12,7 @@ import {
   type GuidanceLevel,
 } from "@/lib/training-guidance";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Dumbbell, Stethoscope } from "lucide-react";
+import { Activity, AlertTriangle, Dumbbell } from "lucide-react";
 
 const levelLabel: Record<GuidanceLevel, string> = {
   monitor: "관찰",
@@ -33,8 +33,8 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
     <Card className="rounded-2xl border-border bg-white">
       <CardHeader>
         <div className="flex items-center gap-2">
-          <Stethoscope className="size-4 text-primary" aria-hidden />
-          <CardTitle>부담 가능 부위와 훈련 제안</CardTitle>
+          <Activity className="size-4 text-primary" aria-hidden />
+          <CardTitle>착지 패턴과 훈련 제안</CardTitle>
         </div>
         <CardDescription>
           선택한 착지의 하중·흡수 시간·무릎 굽힘을 바탕으로 한 패턴 설명입니다.

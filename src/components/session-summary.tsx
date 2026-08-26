@@ -56,7 +56,7 @@ export function SessionSummaryCard({
   const qualityLabel = {
     good: "측정 품질 좋음",
     fair: "측정 오차 큼",
-    poor: "페이스 판정 불가",
+    poor: "측정 불가",
   }[result.quality.level];
   const qualityClass = {
     good: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -111,10 +111,10 @@ export function SessionSummaryCard({
             <div className="mb-2 flex items-baseline justify-between">
               <h3 className="text-sm font-medium">페이스 위치</h3>
               <span className="text-xs text-muted-foreground">
-                듀티 팩터가 낮을수록 빠른 페이스이고 충격이 커집니다
+                듀티 팩터가 낮을수록 빠른 페이스입니다. 충격량은 반력으로 따로 봅니다.
               </span>
             </div>
-            <div className="grid grid-cols-6 gap-1">
+            <div className="grid grid-cols-3 gap-1 sm:grid-cols-6">
               {PACE_SCALE.map((step) => {
                 const active = step.band === summary.pace;
                 return (

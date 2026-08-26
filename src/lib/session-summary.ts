@@ -1,7 +1,10 @@
 import { summarizeFootStrikes } from "@/lib/Footstrike";
 import {
+  cadenceSpm,
   footStrikeLabel,
   formatSeconds,
+  formatTimingMs,
+  formatTimingPair,
   riskLabel,
   type AnalysisResult,
   type FootStrike,
@@ -161,16 +164,18 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     (l) => l.risk === "elevated" || l.risk === "high" || l.risk === "severe",
   ).length;
 
-  const first = landings[0].tContact;
-  const last = landings[landings.length - 1].tContact;
-  const cadence =
-    landings.length >= 2 && last > first
-      ? ((landings.length - 1) / (last - first)) * 60
-      : Number.NaN;
-
   const meanContactMs = mean(landings.map((l) => l.contactMs));
   const meanFlightMs = mean(landings.map((l) => l.flightMs));
   const meanDutyFactor = mean(landings.map((l) => l.dutyFactor));
+  const cadence = cadenceSpm(landings);
+  const timingCadence =
+    Number.isFinite(meanContactMs) && Number.isFinite(meanFlightMs)
+      ? 60_000 / (meanContactMs + meanFlightMs)
+      : Number.NaN;
+  const cadenceAgrees =
+    !Number.isFinite(timingCadence) ||
+    !Number.isFinite(cadence) ||
+    Math.abs(cadence - timingCadence) <= 15;
   const hasReportedPace =
     Number.isFinite(result.reportedPaceMinPerKm) &&
     (result.reportedPaceMinPerKm ?? 0) > 0;
@@ -289,7 +294,9 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     .map((row) => row.pattern);
 
   const cadenceText = Number.isFinite(cadence)
-    ? `분당 약 ${Math.round(cadence)}보`
+    ? cadenceAgrees
+      ? `분당 약 ${Math.round(cadence)}보`
+      : `분당 약 ${Math.round(cadence)}보(착지 간격이 고르지 않아 참고값)`
     : "케이던스는 착지가 더 있어야 계산됩니다";
 
   const trendBits = [
@@ -311,7 +318,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     : "";
   const paceText = Number.isFinite(meanContactMs)
     ? reportedText +
-      `접지 ${Math.round(meanContactMs)} ms · 체공 ${Math.round(meanFlightMs)} ms · 듀티 ${meanDutyFactor.toFixed(2)}입니다.` +
+      `접지 ${formatTimingMs(meanContactMs)} · 체공 ${formatTimingMs(meanFlightMs)} · 듀티 ${meanDutyFactor.toFixed(2)}입니다.` +
       (looksSlowMotion
         ? " 케이던스가 사람이 낼 수 없을 만큼 낮습니다. 슬로우 모션 영상이라면 위에서 촬영 배속을 지정해 주세요."
         : "")
@@ -334,7 +341,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     paceText,
     strikeText,
     forceTrusted
-      ? `평균 추정 지면반력은 ${avgGrf.toFixed(1)} BW, 흡수 시간은 ${Math.round(avgAbsorb)} ms, 착지 순간 무릎은 ${avgKnee.toFixed(0)}°입니다. 가장 센 착지는 ${formatSeconds(peak.tContact)}의 ${peak.peakGrfBw.toFixed(1)} BW(점수 ${peak.damageScore})입니다.`
+      ? `평균 추정 지면반력은 ${avgGrf.toFixed(1)} BW, 흡수 시간은 ${formatTimingMs(avgAbsorb)}, 착지 순간 무릎은 ${avgKnee.toFixed(0)}°입니다. 가장 센 착지는 ${formatSeconds(peak.tContact)}의 ${peak.peakGrfBw.toFixed(1)} BW(점수 ${peak.damageScore})입니다.`
       : "사람이 작거나 자세 추적이 끊겨 충격량은 숫자로 평가하지 않았습니다. 더 가까이서 다시 촬영해야 합니다.",
     trendBits.length
       ? trendBits.join(" ")
@@ -389,10 +396,8 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     },
     {
       label: "접지 / 체공",
-      value: Number.isFinite(meanContactMs)
-        ? `${Math.round(meanContactMs)} / ${Math.round(meanFlightMs)} ms`
-        : "측정 불가",
-      hint: "짧은 접지·긴 체공일수록 큰 충격",
+      value: formatTimingPair(meanContactMs, meanFlightMs),
+      hint: "접지 시간은 페이스와 함께 움직입니다. 충격량은 반력으로 봅니다.",
     },
     {
       label: "평균 반력",

@@ -1,9 +1,13 @@
 import {
   analyzeLandings,
   analyzeLandingsAuto,
+  cadenceSpm,
   classifyFootStrike,
   clampedPeakGrfBw,
+  formatTimingMs,
+  landingLoadScore,
   peakForceFromDuty,
+  quantizeMs,
 } from "./landing-analysis";
 import { buildSessionSummary, paceLabel, type SessionSummary } from "./session-summary";
 import {
@@ -223,7 +227,37 @@ const rightFactor = analyzeLandingsAuto(slowFrames, {
 if (rightFactor.suggestedFactor !== undefined) {
   throw new Error("a correct capture rate should not be second-guessed");
 }
-console.log("slow-motion mismatch warning ok");
+if (rightFactor.result.quality.level === "poor") {
+  throw new Error("a correct capture rate must keep a usable quality grade");
+}
+if (wrongFactor.result.quality.level !== "poor") {
+  throw new Error(
+    `wrong capture rate must be poor, got ${wrongFactor.result.quality.level}`,
+  );
+}
+if (
+  wrongFactor.result.landings.some(
+    (landing) =>
+      landing.gaitBased ||
+      Number.isFinite(landing.contactMs) ||
+      Number.isFinite(landing.flightMs) ||
+      landing.footStrike !== "unknown",
+  )
+) {
+  throw new Error("wrong capture rate must not publish gait timing or a strike");
+}
+const wrongSummary = buildSessionSummary(wrongFactor.result);
+if (
+  Number.isFinite(wrongSummary.meanPeakGrfBw) ||
+  Number.isFinite(wrongSummary.meanContactMs) ||
+  Number.isFinite(wrongSummary.meanDutyFactor)
+) {
+  throw new Error("wrong capture rate session averages must stay empty");
+}
+console.log("slow-motion mismatch warning ok", {
+  quality: wrongFactor.result.quality.level,
+  reasons: wrongFactor.result.quality.reasons.slice(-1),
+});
 
 // Duty extremes must not invent a 10 BW sprint or a sub-bodyweight walk.
 for (const duty of [0, -1, Number.NaN]) {
@@ -511,6 +545,75 @@ if (photoGaps.length) {
       .join(", ")}`,
   );
 }
+const sameLoadFast = landingLoadScore({
+  peakGrfBw: 2.4,
+  loadingRateBwS: 22,
+  dutyFactor: 0.2,
+  kneeFlexContact: 28,
+});
+const sameLoadEasy = landingLoadScore({
+  peakGrfBw: 2.4,
+  loadingRateBwS: 22,
+  dutyFactor: 0.38,
+  kneeFlexContact: 28,
+});
+if (sameLoadFast !== sameLoadEasy) {
+  throw new Error(
+    `duty alone must not change the load score: ${sameLoadFast} vs ${sameLoadEasy}`,
+  );
+}
+if (formatTimingMs(217) !== "약 210 ms" || quantizeMs(33) !== 30) {
+  throw new Error(
+    `timing display must snap to ~30 ms, got ${formatTimingMs(217)} / ${quantizeMs(33)}`,
+  );
+}
+const regularCadence = cadenceSpm([
+  { tContact: 0 },
+  { tContact: 0.32 },
+  { tContact: 0.64 },
+  { tContact: 0.96 },
+  { tContact: 1.28 },
+]);
+const skippedCadence = cadenceSpm([
+  { tContact: 0 },
+  { tContact: 0.32 },
+  { tContact: 0.96 },
+  { tContact: 1.28 },
+]);
+if (Math.abs(regularCadence - 187.5) > 8) {
+  throw new Error(`regular cadence should be ~188 spm, got ${regularCadence}`);
+}
+if (Math.abs(skippedCadence - regularCadence) > 12) {
+  throw new Error(
+    `cadence must ignore a missed contact: ${skippedCadence} vs ${regularCadence}`,
+  );
+}
+const skippedSpan = (3 / 1.28) * 60;
+if (Math.abs(skippedCadence - skippedSpan) < 20) {
+  throw new Error("cadence must not follow the first-to-last span after a miss");
+}
+
+const gappyFrames = syntheticRunningFrames({
+  steps: 10,
+  contactS: 0.2,
+  flightS: 0.14,
+});
+const gappy = analyzeLandings(
+  gappyFrames.filter((frame) => frame.t < 0.85 || frame.t > 1.7),
+  { statureM: 1.7, massKg: 70, width: 1280, height: 720 },
+);
+if (
+  !gappy.quality.reasons.some((reason) => reason.includes("놓친")) &&
+  gappy.quality.level === "good"
+) {
+  throw new Error("dropped contacts should lower quality or name the misses");
+}
+console.log("timing, score, and cadence gates ok", {
+  score: sameLoadFast,
+  cadence: Math.round(regularCadence),
+  gappy: gappy.quality.level,
+});
+
 console.log("shoe photos ok", {
   primary: syntheticRec.picks.map((pick) => shoeImageSrc(pick.shoe)),
   secondary: syntheticRec.secondaryPicks.map((pick) => shoeImageSrc(pick.shoe)),
