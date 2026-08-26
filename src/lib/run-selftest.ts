@@ -26,6 +26,7 @@ import {
   assertDetectsRunningSteps,
   syntheticRunningFrames,
 } from "./synthetic-jump";
+import { liveMomentAt } from "./live-readout";
 import { buildLandingGuidance } from "./training-guidance";
 
 const hit = assertDetectsLanding();
@@ -612,6 +613,40 @@ console.log("timing, score, and cadence gates ok", {
   score: sameLoadFast,
   cadence: Math.round(regularCadence),
   gappy: gappy.quality.level,
+});
+
+const liveRun = analyzeSyntheticRun();
+const firstHit = liveRun.landings[0];
+if (!firstHit) throw new Error("live readout needs a contact");
+const liveStance = liveMomentAt(liveRun, firstHit.tContact + 0.03);
+if (liveStance.phase !== "stance") {
+  throw new Error(`expected stance at contact, got ${liveStance.phase}`);
+}
+if (!liveStance.headline.includes("접지")) {
+  throw new Error(`stance headline should mention 접지, got ${liveStance.headline}`);
+}
+if (Number.isFinite(firstHit.flightMs) && firstHit.flightMs > 40) {
+  const liveFlight = liveMomentAt(
+    liveRun,
+    firstHit.tContact + firstHit.contactMs / 1000 + 0.03,
+  );
+  if (liveFlight.phase !== "flight" && liveFlight.phase !== "air") {
+    throw new Error(`expected flight after toe-off, got ${liveFlight.phase}`);
+  }
+}
+const livePoor = liveMomentAt(
+  tinyRunner,
+  tinyRunner.landings[0]?.tContact ?? tinyRunner.series[0]?.t ?? 0,
+);
+if (livePoor.trusted) {
+  throw new Error("poor footage must not trust live GRF");
+}
+if (Number.isFinite(livePoor.grfBw)) {
+  throw new Error("poor live readout must not publish GRF");
+}
+console.log("live readout ok", {
+  phase: liveStance.phase,
+  knee: Math.round(liveStance.kneeFlex),
 });
 
 console.log("shoe photos ok", {

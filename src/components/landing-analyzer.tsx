@@ -4,21 +4,30 @@ import { AnalysisDetails, AnalysisDetailsProvider } from "@/components/analysis-
 import { ImpactChart } from "@/components/impact-chart";
 import { InjuryGuidance } from "@/components/injury-guidance";
 import { LandingCard } from "@/components/landing-card";
+import { LiveReadout } from "@/components/live-readout";
 import { SessionSummaryCard } from "@/components/session-summary";
-import { PoseOverlay } from "@/components/pose-overlay";
+import { PoseOverlay, PoseSketch } from "@/components/pose-overlay";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
+  analyzeLandings,
   analyzeLandingsAuto,
   formatSeconds,
   type AnalysisResult,
+  type PoseFrame,
 } from "@/lib/landing-analysis";
+import {
+  analysisTimeFromVideo,
+  liveMomentAt,
+  nearestPoseFrame,
+  videoTimeFromAnalysis,
+} from "@/lib/live-readout";
 import type { Landmark } from "@/lib/pose";
 import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
-import { analyzeSyntheticRun } from "@/lib/synthetic-jump";
+import { syntheticRunningFrames } from "@/lib/synthetic-jump";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -57,6 +66,12 @@ export function LandingAnalyzer() {
   const [slowMotionFactor, setSlowMotionFactor] = useState(8);
   const [detectedSlowMotion, setDetectedSlowMotion] = useState<number | null>(null);
   const [suggestedSlowMotion, setSuggestedSlowMotion] = useState<number | null>(null);
+  const [playheadT, setPlayheadT] = useState(0);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [demoPlaying, setDemoPlaying] = useState(false);
+  const poseFramesRef = useRef<PoseFrame[]>([]);
+  const clockFactor =
+    detectedSlowMotion && detectedSlowMotion > 0 ? detectedSlowMotion : 1;
 
   useEffect(() => {
     if (!videoUrl) return;
@@ -68,10 +83,22 @@ export function LandingAnalyzer() {
     if (new URLSearchParams(window.location.search).get("demo") !== "report") {
       return;
     }
-    const demo = analyzeSyntheticRun();
+    const frames = syntheticRunningFrames();
+    const demo = analyzeLandings(frames, {
+      statureM: 1.7,
+      massKg: 70,
+      width: 1280,
+      height: 720,
+    });
+    poseFramesRef.current = frames;
     setFileName("샘플 세션");
     setResult(demo);
+    setDetectedSlowMotion(1);
     setStatus("done");
+    const start = demo.landings[0]?.tContact ?? 0;
+    setPlayheadT(start);
+    setOverlay(nearestPoseFrame(frames, start)?.landmarks ?? null);
+    setDemoPlaying(true);
   }, []);
 
   useEffect(() => {
@@ -80,11 +107,14 @@ export function LandingAnalyzer() {
   }, []);
 
   const attachFile = useCallback((file: File) => {
+    poseFramesRef.current = [];
     setResult(null);
     setError(null);
     setStatus("idle");
     setSelected(0);
     setOverlay(null);
+    setPlayheadT(0);
+    setDemoPlaying(false);
     setFileName(file.name);
     setVideoUrl(URL.createObjectURL(file));
   }, []);
@@ -120,6 +150,8 @@ export function LandingAnalyzer() {
       streamRef.current = stream;
       setCameraOn(true);
       setResult(null);
+      poseFramesRef.current = [];
+      setDemoPlaying(false);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -181,7 +213,7 @@ export function LandingAnalyzer() {
         Math.max(MIN_FPS, FRAME_BUDGET / duration),
       );
       const n = Math.min(Math.round(duration * sampleFps), FRAME_BUDGET);
-      const frames = [];
+      const frames: PoseFrame[] = [];
       for (let i = 0; i < n; i++) {
         const t = (i / Math.max(1, n - 1)) * duration;
         await seekVideo(video, t);
@@ -189,6 +221,7 @@ export function LandingAnalyzer() {
         frames.push({ t, landmarks: det.landmarks[0] ?? null });
         if (i % 2 === 0) setProgress(Math.round(((i + 1) / n) * 100));
       }
+      poseFramesRef.current = frames;
       const {
         result: analysis,
         slowMotionFactor: usedFactor,
@@ -214,11 +247,17 @@ export function LandingAnalyzer() {
       setSelected(0);
       setStatus("done");
       setProgress(100);
+      const factor = usedFactor > 0 ? usedFactor : 1;
       if (analysis.landings[0]) {
-        await seekVideo(video, analysis.landings[0].tContact);
+        const analysisT = analysis.landings[0].tContact;
+        setPlayheadT(analysisT);
+        await seekVideo(video, videoTimeFromAnalysis(analysisT, factor));
         video.pause();
-        const det = landmarker.detect(video);
-        setOverlay(det.landmarks[0] ?? null);
+        const frame = nearestPoseFrame(
+          frames,
+          videoTimeFromAnalysis(analysisT, factor),
+        );
+        setOverlay(frame?.landmarks ?? null);
       }
     } catch (e) {
       setStatus("error");
@@ -227,12 +266,32 @@ export function LandingAnalyzer() {
   };
 
   const selectedLanding = result?.landings[selected];
+  const liveMoment = useMemo(
+    () => (result ? liveMomentAt(result, playheadT, overlay) : null),
+    [result, playheadT, overlay],
+  );
 
-  const jumpTo = async (t: number) => {
+  const jumpTo = async (analysisT: number) => {
+    setPlayheadT(analysisT);
     const video = videoRef.current;
-    if (!video) return;
-    await seekVideo(video, t);
-    video.pause();
+    const videoT = videoTimeFromAnalysis(analysisT, clockFactor);
+    if (video && videoUrl) {
+      await seekVideo(video, videoT);
+      video.pause();
+      setVideoPlaying(false);
+    }
+    const frame = nearestPoseFrame(
+      poseFramesRef.current,
+      videoUrl ? videoT : analysisT,
+    );
+    if (frame?.landmarks) {
+      setOverlay(frame.landmarks);
+      return;
+    }
+    if (!video) {
+      setOverlay(null);
+      return;
+    }
     try {
       const landmarker = await getPoseLandmarker();
       const det = landmarker.detect(video);
@@ -241,6 +300,83 @@ export function LandingAnalyzer() {
       setOverlay(null);
     }
   };
+
+  const toggleLivePlay = async () => {
+    const video = videoRef.current;
+    if (video && videoUrl) {
+      if (video.paused) await video.play();
+      else video.pause();
+      setVideoPlaying(!video.paused);
+      return;
+    }
+    setDemoPlaying((playing) => !playing);
+  };
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !result || !videoUrl) return;
+
+    const apply = () => {
+      const analysisT = analysisTimeFromVideo(video.currentTime, clockFactor);
+      setPlayheadT(analysisT);
+      const frame = nearestPoseFrame(poseFramesRef.current, video.currentTime);
+      if (frame?.landmarks) setOverlay(frame.landmarks);
+    };
+
+    video.addEventListener("timeupdate", apply);
+    video.addEventListener("seeked", apply);
+    const onPlay = () => {
+      setVideoPlaying(true);
+      apply();
+    };
+    const onPause = () => setVideoPlaying(false);
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
+    let raf = 0;
+    const tick = () => {
+      if (!video.paused) apply();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      video.removeEventListener("timeupdate", apply);
+      video.removeEventListener("seeked", apply);
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+    };
+  }, [result, videoUrl, clockFactor]);
+
+  useEffect(() => {
+    if (!demoPlaying || videoUrl || !result) return;
+    const duration = result.series.at(-1)?.t ?? 0;
+    let last = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      setPlayheadT((time) => {
+        if (duration <= 0) return time;
+        const next = time + dt;
+        return next > duration ? 0 : next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [demoPlaying, videoUrl, result]);
+
+  useEffect(() => {
+    if (videoUrl) return;
+    const frame = nearestPoseFrame(poseFramesRef.current, playheadT);
+    if (frame?.landmarks) setOverlay(frame.landmarks);
+  }, [playheadT, videoUrl]);
+
+  useEffect(() => {
+    if (liveMoment?.phase === "stance" && liveMoment.landingIndex >= 0) {
+      setSelected(liveMoment.landingIndex);
+    }
+  }, [liveMoment?.phase, liveMoment?.landingIndex]);
 
   const summary = useMemo(() => {
     if (!result?.landings.length) return null;
@@ -257,7 +393,9 @@ export function LandingAnalyzer() {
           <div
             className={cn(
               "relative aspect-video transition",
-              videoUrl || cameraOn ? "bg-neutral-900" : "bg-neutral-50",
+              videoUrl || cameraOn || (status === "done" && Boolean(result))
+                ? "bg-neutral-900"
+                : "bg-neutral-50",
               dragging && "ring-2 ring-primary ring-inset",
             )}
             onDragOver={(e) => {
@@ -278,7 +416,10 @@ export function LandingAnalyzer() {
             <video
               ref={videoRef}
               src={cameraOn ? undefined : videoUrl ?? undefined}
-              className="h-full w-full object-contain"
+              className={cn(
+                "h-full w-full object-contain",
+                !videoUrl && !cameraOn && "hidden",
+              )}
               playsInline
               controls={!cameraOn && Boolean(videoUrl)}
               muted
@@ -290,12 +431,19 @@ export function LandingAnalyzer() {
                 );
               }}
             />
-            <PoseOverlay
-              videoRef={videoRef}
-              landmarks={overlay}
-              className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-            />
-            {!videoUrl && !cameraOn ? (
+            {status === "done" && result && !videoUrl && !cameraOn ? (
+              <PoseSketch
+                landmarks={overlay}
+                className="absolute inset-0 h-full w-full object-contain"
+              />
+            ) : (
+              <PoseOverlay
+                videoRef={videoRef}
+                landmarks={overlay}
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+              />
+            )}
+            {!videoUrl && !cameraOn && status !== "done" ? (
               <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-2 px-6 text-center">
                 <input
                   type="file"
@@ -324,6 +472,9 @@ export function LandingAnalyzer() {
           <CardContent className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="truncate text-sm text-muted-foreground">
               {fileName ?? (cameraOn ? "카메라 미리보기" : "선택된 영상 없음")}
+              {status === "done" && result
+                ? " · 재생하면 오른쪽이 그 순간을 따라갑니다"
+                : ""}
             </p>
             <div className="flex flex-wrap gap-2">
               <label className={buttonVariants({ variant: "outline", size: "sm" })}>
@@ -356,6 +507,36 @@ export function LandingAnalyzer() {
             </div>
           </CardContent>
         </Card>
+
+        <div className="flex min-h-0 flex-col gap-4">
+          {status === "done" && result && liveMoment ? (
+            <LiveReadout
+              result={result}
+              moment={liveMoment}
+              playing={videoUrl ? videoPlaying : demoPlaying}
+              canPlay
+              onTogglePlay={() => {
+                void toggleLivePlay();
+              }}
+              onSeek={(time) => {
+                void jumpTo(time);
+              }}
+            />
+          ) : null}
+
+        <details
+          className={
+            status === "done" && result
+              ? "rounded-2xl border border-border bg-white"
+              : "contents"
+          }
+          open={status === "done" && result ? undefined : true}
+        >
+          {status === "done" && result ? (
+            <summary className="cursor-pointer px-5 py-3 text-sm font-medium">
+              러너 세팅 바꾸기
+            </summary>
+          ) : null}
 
         <Card className="rounded-2xl border-border bg-white">
           <CardHeader className="border-b border-border pb-4">
@@ -508,6 +689,8 @@ export function LandingAnalyzer() {
             </ul>
           </CardContent>
         </Card>
+        </details>
+        </div>
       </div>
 
       {status === "done" && result ? (
