@@ -2,20 +2,23 @@ import type { FootStrike } from "@/lib/landing-analysis";
 import {
   PRIORITY_BRANDS,
   isPreferredBrand,
-  preferredInPriorityOrder,
+  recommendShoes as rankShoes,
+  shoeFitsStrike,
+  type CatalogStrike,
 } from "@/lib/Shoeranking";
 import type { PaceBand, SessionSummary } from "@/lib/session-summary";
 import catalog from "@/data/shoes.json";
 // Catalog source of truth for editors: src/data/shoes.csv. Re-emit JSON if that file changes.
 
 export type ShoeCategory = "쿠션화" | "안정화" | "제어화";
-export type ShoeStrikeFit = "rearfoot" | "midfoot" | "any" | "unspecified";
+export type ShoeStrikeFit = CatalogStrike | "unspecified";
 
 export type Shoe = {
   brand: string;
   model: string;
   category: ShoeCategory;
   recommendedStrike: ShoeStrikeFit;
+  recommendedStrikes: CatalogStrike[];
   heelDropMm: number | null;
   weightG: number | null;
   features: string;
@@ -36,6 +39,8 @@ export type MatchedShoeRecommendation = {
   targetStrike: Exclude<FootStrike, "unknown"> | "mixed";
   headline: string;
   note: string;
+  primary: ShoePick[];
+  others: ShoePick[];
   picks: ShoePick[];
   secondaryPicks: ShoePick[];
 };
@@ -100,6 +105,7 @@ const SHOE_PHOTOS = new Set([
   "hoka-mach-6",
   "mizuno-wave-horizon-7",
   "mizuno-wave-inspire-20",
+  "mizuno-wave-rebellion-flash-2",
   "mizuno-wave-rebellion-pro-2",
   "new-balance-fresh-foam-x-880-v14",
   "new-balance-fresh-foam-x-vongo-v6",
@@ -112,6 +118,7 @@ const SHOE_PHOTOS = new Set([
   "on-cloudboom-echo-3",
   "on-cloudboom-strike",
   "on-cloudrunner-2",
+  "on-cloudsurfer",
   "puma-deviate-nitro-3",
   "puma-foreverrun-nitro",
   "saucony-endorphin-pro-4",
@@ -142,15 +149,19 @@ export function recommendShoes(
     summary.patterns.some((pattern) => pattern.level !== "monitor");
   const scored = SHOES.flatMap((shoe) => {
     const pick = scoreShoe(shoe, target, summary.pace, preferStability);
-    return pick ? [pick] : [];
-  }).sort((a, b) => b.score - a.score || brandModel(a) - brandModel(b));
-
-  const picks = preferredInPriorityOrder(scored, limit);
-  const secondaryPicks = diversify(
-    scored.filter((pick) => !isPreferredBrand(pick.shoe.brand)),
-    limit,
-  );
-  if (!picks.length && !secondaryPicks.length) return { kind: "general" };
+    return pick
+      ? [
+          {
+            ...pick,
+            brand: shoe.brand,
+            score: pick.score,
+            strikes: shoe.recommendedStrikes,
+          },
+        ]
+      : [];
+  });
+  const ranked = rankShoes(scored, target, limit);
+  if (ranked.kind === "general") return { kind: "general" };
 
   return {
     kind: "matched",
@@ -159,12 +170,11 @@ export function recommendShoes(
       target === "mixed"
         ? "혼합 주법에는 착지를 가리지 않는 신발을 먼저 봅니다."
         : `${STRIKE_LABEL[target]} 착지에 구조가 맞는 신발을 골랐습니다.`,
-    note:
-      target === "forefoot"
-        ? "카탈로그에는 포어풋 전용 라벨이 없어, 저드롭·전족 전환이 빠른 미드풋 계열을 올렸습니다. 나이키·아식스·아디다스를 앞에 두고, 다른 브랜드는 다음 순위로 둡니다."
-        : "나이키·아식스·아디다스를 우선하고, 그다음 다른 브랜드를 둡니다. 주법에 맞는 드롭과 롤링일 뿐 피팅을 대신하지 않습니다.",
-    picks,
-    secondaryPicks,
+    note: "나이키·아식스·아디다스를 우선하고, 그다음 다른 브랜드를 둡니다. 주법에 맞는 드롭과 롤링일 뿐 피팅을 대신하지 않습니다.",
+    primary: ranked.primary,
+    others: ranked.others,
+    picks: ranked.primary,
+    secondaryPicks: ranked.others,
   };
 }
 
@@ -174,46 +184,33 @@ export function scoreShoe(
   pace: PaceBand,
   preferStability: boolean,
 ): ShoePick | null {
-  if (shoe.recommendedStrike === "unspecified") return null;
+  const strikes = shoe.recommendedStrikes ?? [];
+  if (!strikes.length || shoe.recommendedStrike === "unspecified") return null;
+  if (!shoeFitsStrike(strikes, target)) return null;
   if (shoe.category === "제어화" && !preferStability) return null;
   if (target === "rearfoot" && REARFOOT_AVOID.test(shoe.features)) return null;
-  if (
-    target === "forefoot" &&
-    shoe.recommendedStrike === "rearfoot" &&
-    (shoe.heelDropMm == null || shoe.heelDropMm >= 8)
-  ) {
-    return null;
-  }
 
   let score = 0;
   const reasons: string[] = [];
 
   if (target === "mixed") {
-    if (shoe.recommendedStrike === "any") {
+    if (strikes.includes("any")) {
       score += 40;
       reasons.push("리어풋·미드풋 모두 받는 전 주법 대응");
     } else {
       score += 16;
       reasons.push(
-        shoe.recommendedStrike === "rearfoot"
+        strikes.includes("rearfoot")
           ? "혼합 주법 중 리어풋 구간에 맞춤"
           : "혼합 주법 중 미드풋·전족 구간에 맞춤",
       );
     }
-  } else if (shoe.recommendedStrike === target) {
+  } else if (strikes.includes(target)) {
     score += 40;
     reasons.push(`${STRIKE_LABEL[target]} 착지용으로 분류된 모델`);
-  } else if (target === "forefoot" && shoe.recommendedStrike === "midfoot") {
-    score += 34;
-    reasons.push("포어풋과 가까운 미드풋·전족 전환 구조");
-  } else if (shoe.recommendedStrike === "any") {
+  } else if (strikes.includes("any")) {
     score += 24;
     reasons.push("착지 위치를 가리지 않는 롤링");
-  } else if (target === "midfoot" && shoe.recommendedStrike === "rearfoot") {
-    score += 8;
-  } else if (target === "rearfoot" && shoe.recommendedStrike === "midfoot") {
-    if (shoe.heelDropMm != null && shoe.heelDropMm <= 3) return null;
-    score += 10;
   } else {
     return null;
   }
@@ -299,23 +296,6 @@ export function scoreShoe(
   return { shoe, score, reasons: unique(reasons).slice(0, 3) };
 }
 
-function diversify(picks: ShoePick[], limit: number): ShoePick[] {
-  const chosen: ShoePick[] = [];
-  const brands = new Set<string>();
-  for (const pick of picks) {
-    if (brands.has(pick.shoe.brand)) continue;
-    chosen.push(pick);
-    brands.add(pick.shoe.brand);
-    if (chosen.length >= limit) return chosen;
-  }
-  for (const pick of picks) {
-    if (chosen.includes(pick)) continue;
-    chosen.push(pick);
-    if (chosen.length >= limit) break;
-  }
-  return chosen;
-}
-
 function isEasyPace(pace: PaceBand) {
   return pace === "walk" || pace === "easy" || pace === "steady";
 }
@@ -337,8 +317,4 @@ function strikeFitLabel(fit: ShoeStrikeFit) {
 
 function unique(values: string[]) {
   return [...new Set(values)];
-}
-
-function brandModel(pick: ShoePick) {
-  return `${pick.shoe.brand} ${pick.shoe.model}`.localeCompare(" ");
 }

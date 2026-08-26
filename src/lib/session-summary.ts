@@ -1,3 +1,4 @@
+import { summarizeFootStrikes } from "@/lib/Footstrike";
 import {
   footStrikeLabel,
   formatSeconds,
@@ -211,17 +212,21 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
           landing.footStrikeConfidence !== "low",
       )
     : [];
+  const strikeSummary = summarizeFootStrikes(
+    knownStrikes.map((landing) => ({ type: landing.footStrike })),
+  );
   const strikeCounts = strikeOrder
     .map((type) => {
-      const count = knownStrikes.filter((landing) => landing.footStrike === type).length;
+      if (type === "unknown") return null;
+      const count = strikeSummary.counts[type];
       return {
         type,
         label: footStrikeLabel[type],
         count,
-        percent: pct(count, knownStrikes.length),
+        percent: strikeSummary.percents[type],
       };
     })
-    .filter((row) => row.count > 0);
+    .filter((row): row is NonNullable<typeof row> => Boolean(row && row.count > 0));
   const topStrike = strikeCounts.reduce<(typeof strikeCounts)[number] | null>(
     (best, row) => (!best || row.count > best.count ? row : best),
     null,

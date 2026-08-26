@@ -384,8 +384,9 @@ if (!midRec.picks.length) throw new Error("midfoot should receive shoes");
 if (
   midRec.picks.some(
     (pick) =>
-      pick.shoe.recommendedStrike !== "midfoot" &&
-      pick.shoe.recommendedStrike !== "any",
+      !pick.shoe.recommendedStrikes.some(
+        (strike) => strike === "midfoot" || strike === "any",
+      ),
   )
 ) {
   throw new Error("midfoot list included a dedicated rearfoot shoe");

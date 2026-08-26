@@ -1,4 +1,9 @@
-import { classifyFootStrike, type FootStrike, type StrikeConfidence } from "@/lib/Footstrike";
+import {
+  classifyFootStrike,
+  type CameraView,
+  type FootStrike,
+  type StrikeConfidence,
+} from "@/lib/Footstrike";
 import {
   distPx,
   isVisible,
@@ -475,7 +480,8 @@ export function analyzeLandings(
     };
   });
 
-  const detectedLandings = detectLandings(series, options.massKg);
+  const cameraView = Number.isFinite(sideViewRatio) && sideViewRatio > 0.14 ? "front" : "side";
+  const detectedLandings = detectLandings(series, options.massKg, cameraView);
   const quality = assessQuality(
     subjectHeightRatio,
     detectedRatio,
@@ -804,7 +810,11 @@ const STANCE_EDGE_ALLOWANCE_S = 0.04;
 const MIN_STEP_S = 0.15;
 const MAX_STEP_S = 0.7;
 
-function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
+function detectLandings(
+  series: SeriesPoint[],
+  massKg: number,
+  view: CameraView = "side",
+): Landing[] {
   if (series.length < 8) return [];
   const acc = series.map((s) => s.acc);
   const vel = series.map((s) => s.vel);
@@ -924,7 +934,7 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     });
     const side = raw.side;
     const footStrikeAngle = strikeAngleAt(series, raw.strikeIdx, side);
-    const strike = classifyFootStrike(footStrikeAngle);
+    const strike = classifyFootStrike(footStrikeAngle, view);
     const landing: Landing = {
       index: raw.peakIdx,
       tContact: series[raw.contactIdx].t,

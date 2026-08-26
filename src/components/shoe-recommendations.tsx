@@ -45,24 +45,24 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
         </span>
       </div>
 
-      {rec.picks.length ? (
+      {rec.primary.length ? (
         <ShoePickGrid
           title="나이키 · 아식스 · 아디다스"
           caption="주법에 맞는 우선 브랜드"
-          picks={rec.picks}
+          picks={rec.primary}
           startIndex={1}
           showDetails={showDetails}
           featured
         />
       ) : null}
 
-      {rec.secondaryPicks.length ? (
-        <div className={rec.picks.length ? "mt-5" : undefined}>
+      {rec.others.length ? (
+        <div className={rec.primary.length ? "mt-5" : undefined}>
           <ShoePickGrid
             title="다른 브랜드"
             caption="같은 주법의 다음 순위"
-            picks={rec.secondaryPicks}
-            startIndex={rec.picks.length + 1}
+            picks={rec.others}
+            startIndex={rec.primary.length + 1}
             showDetails={showDetails}
           />
         </div>
