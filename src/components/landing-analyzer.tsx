@@ -18,6 +18,7 @@ import {
 } from "@/lib/landing-analysis";
 import type { Landmark } from "@/lib/pose";
 import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
+import { analyzeSyntheticRun } from "@/lib/synthetic-jump";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -61,6 +62,17 @@ export function LandingAnalyzer() {
     if (!videoUrl) return;
     return () => URL.revokeObjectURL(videoUrl);
   }, [videoUrl]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("demo") !== "report") {
+      return;
+    }
+    const demo = analyzeSyntheticRun();
+    setFileName("샘플 세션");
+    setResult(demo);
+    setStatus("done");
+  }, []);
 
   useEffect(() => {
     const stream = streamRef.current;
