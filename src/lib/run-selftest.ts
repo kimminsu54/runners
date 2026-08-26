@@ -4,7 +4,7 @@ import {
   classifyFootStrike,
 } from "./landing-analysis";
 import { buildSessionSummary, paceLabel, type SessionSummary } from "./session-summary";
-import { listShoes, recommendShoes } from "./shoes";
+import { listShoes, recommendShoes, shoeImageSrc, shoeSlug } from "./shoes";
 import {
   analyzeSyntheticRun,
   assertDetectsLanding,
@@ -313,3 +313,43 @@ console.log(
   "shoe recommendations ok",
   syntheticRec.picks.map((pick) => `${pick.shoe.brand} ${pick.shoe.model}`),
 );
+
+const slugs = new Set(catalog.map((shoe) => shoeSlug(shoe)));
+if (slugs.size !== catalog.length) {
+  throw new Error("shoe slugs must be unique");
+}
+const photoGaps = (
+  ["rearfoot", "midfoot", "forefoot", "mixed"] as const
+).flatMap((dominantStrike) =>
+  (["easy", "steady", "brisk", "fast"] as const).flatMap((pace) =>
+    [false, true].flatMap((preferStability) =>
+      (
+        recommendShoes({
+          dominantStrike,
+          strikeCounts: [],
+          pace,
+          meanPeakGrfBw: preferStability ? 3.1 : 2.2,
+          patterns: preferStability
+            ? [
+                {
+                  area: "하체 전반",
+                  title: "부하",
+                  evidence: "반복",
+                  meaning: "",
+                  level: "attention",
+                },
+              ]
+            : [],
+        })?.picks ?? []
+      ).filter((pick) => !shoeImageSrc(pick.shoe)),
+    ),
+  ),
+);
+if (photoGaps.length) {
+  throw new Error(
+    `recommended shoes missing photos: ${photoGaps
+      .map((pick) => `${pick.shoe.brand} ${pick.shoe.model}`)
+      .join(", ")}`,
+  );
+}
+console.log("shoe photos ok", syntheticRec.picks.map((pick) => shoeImageSrc(pick.shoe)));

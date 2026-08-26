@@ -1,7 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import type { SessionSummary } from "@/lib/session-summary";
-import { recommendShoes } from "@/lib/shoes";
+import { recommendShoes, shoeImageSrc } from "@/lib/shoes";
 import { Footprints } from "lucide-react";
+import Image from "next/image";
 
 export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
   const rec = recommendShoes(summary);
@@ -36,34 +37,56 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
         </span>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        {rec.picks.map((pick, index) => (
-          <article
-            key={`${pick.shoe.brand}-${pick.shoe.model}`}
-            className="flex flex-col rounded-2xl border border-border bg-neutral-50 p-4"
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <Badge variant="outline">{pick.shoe.category}</Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">{pick.shoe.brand}</p>
-            <p className="text-base font-medium leading-6">{pick.shoe.model}</p>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">
-              {pick.shoe.heelDropMm != null
-                ? `드롭 ${pick.shoe.heelDropMm}mm`
-                : "드롭 미표기"}
-              {pick.shoe.weightG != null ? ` · ${pick.shoe.weightG}g` : ""}
-            </p>
-            <ul className="mt-3 space-y-1.5 text-xs leading-5 text-muted-foreground">
-              {pick.reasons.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-          </article>
-        ))}
+        {rec.picks.map((pick, index) => {
+          const photo = shoeImageSrc(pick.shoe);
+          return (
+            <article
+              key={`${pick.shoe.brand}-${pick.shoe.model}`}
+              className="flex flex-col overflow-hidden rounded-2xl border border-border bg-white"
+            >
+              <div className="relative aspect-[4/3] bg-neutral-50">
+                {photo ? (
+                  <Image
+                    src={photo}
+                    alt={`${pick.shoe.brand} ${pick.shoe.model}`}
+                    fill
+                    sizes="(min-width: 768px) 30vw, 90vw"
+                    className="object-contain p-3"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">
+                    <Footprints className="size-8" aria-hidden />
+                  </div>
+                )}
+                <span className="absolute top-3 left-3 font-mono text-[10px] text-muted-foreground">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <Badge variant="outline" className="absolute top-3 right-3 bg-white/90">
+                  {pick.shoe.category}
+                </Badge>
+              </div>
+              <div className="flex flex-1 flex-col px-4 pt-3 pb-4">
+                <p className="text-xs text-muted-foreground">{pick.shoe.brand}</p>
+                <p className="text-base font-medium leading-6">{pick.shoe.model}</p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  {pick.shoe.heelDropMm != null
+                    ? `드롭 ${pick.shoe.heelDropMm}mm`
+                    : "드롭 미표기"}
+                  {pick.shoe.weightG != null ? ` · ${pick.shoe.weightG}g` : ""}
+                </p>
+                <ul className="mt-3 space-y-1.5 text-xs leading-5 text-muted-foreground">
+                  {pick.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              </div>
+            </article>
+          );
+        })}
       </div>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">{rec.note}</p>
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">
+        {rec.note} 사진은 카탈로그용 생성 컷이며 실제 시즌 컬러와 다를 수 있습니다.
+      </p>
     </div>
   );
 }

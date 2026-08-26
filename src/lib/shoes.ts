@@ -49,6 +49,53 @@ export function listShoes(): Shoe[] {
   return SHOES;
 }
 
+export function shoeSlug(shoe: Pick<Shoe, "brand" | "model">): string {
+  return `${shoe.brand} ${shoe.model}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+const SHOE_PHOTOS = new Set([
+  "adidas-adizero-boston-12",
+  "altra-fwd-via",
+  "altra-provision-8",
+  "altra-vanish-carbon-2",
+  "asics-gel-kayano-30",
+  "asics-novablast-4",
+  "brooks-glycerin-21",
+  "brooks-glycerin-gts-21",
+  "brooks-hyperion-elite-4",
+  "brooks-launch-10",
+  "hoka-arahi-7",
+  "hoka-bondi-8",
+  "hoka-cielo-x1",
+  "hoka-clifton-9",
+  "hoka-mach-6",
+  "mizuno-wave-horizon-7",
+  "mizuno-wave-rebellion-pro-2",
+  "new-balance-fresh-foam-x-vongo-v6",
+  "new-balance-fuelcell-sc-trainer-v3",
+  "nike-pegasus-plus",
+  "nike-streakfly",
+  "nike-structure-25",
+  "nike-vomero-17",
+  "on-cloudboom-echo-3",
+  "on-cloudboom-strike",
+  "on-cloudrunner-2",
+  "puma-deviate-nitro-3",
+  "saucony-endorphin-pro-4",
+  "saucony-hurricane-24",
+  "saucony-kinvara-14",
+  "saucony-tempus",
+  "saucony-triumph-22",
+]);
+
+export function shoeImageSrc(shoe: Pick<Shoe, "brand" | "model">): string | null {
+  const slug = shoeSlug(shoe);
+  return SHOE_PHOTOS.has(slug) ? `/images/shoes/${slug}.jpg` : null;
+}
+
 export function recommendShoes(
   summary: Pick<
     SessionSummary,
