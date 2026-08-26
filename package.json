@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start -p 43217",
     "lint": "eslint",
-    "test:analysis": "npx tsx src/lib/run-selftest.ts",
-    "check:language": "npx tsx scripts/check-language.ts"
+    "test:analysis": "npx tsx src/lib/Footstrike.test.ts && npx tsx src/lib/Shoeranking.test.ts && npx tsx src/lib/run-selftest.ts",
+    "check:language": "node scripts/check-language.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

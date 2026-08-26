@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { extname, join, relative } from "node:path";
+import { dirname, extname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = join(import.meta.dirname, "..");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN_DIRS = ["src", "README.md"];
-const TEXT_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".md"]);
+const TEXT_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".md"]);
 
 const FORBIDDEN = [
   "피로골절",
@@ -19,17 +20,15 @@ const FORBIDDEN = [
 const DISCLAIMER =
   /아닙니다|아니며|수는 없습니다|것은 아닙니다|지표는 아닙니다/;
 
-type Hit = { file: string; line: number; text: string };
-
-function isViolation(sentence: string): boolean {
+function isViolation(sentence) {
   const trimmed = sentence.replace(/\s+/g, " ").trim();
   if (!trimmed) return false;
   if (!FORBIDDEN.some((term) => trimmed.includes(term))) return false;
   return !DISCLAIMER.test(trimmed);
 }
 
-function findHits(source: string, file: string): Hit[] {
-  const hits: Hit[] = [];
+function findHits(source, file) {
+  const hits = [];
   const lines = source.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -39,7 +38,7 @@ function findHits(source: string, file: string): Hit[] {
   return hits;
 }
 
-function walk(path: string, files: string[]) {
+function walk(path, files) {
   const stats = statSync(path);
   if (stats.isDirectory()) {
     if (path.includes("node_modules") || path.includes("/mediapipe/")) return;
@@ -83,7 +82,7 @@ function selfTest() {
 
 selfTest();
 
-const files: string[] = [];
+const files = [];
 for (const entry of SCAN_DIRS) {
   walk(join(ROOT, entry), files);
 }

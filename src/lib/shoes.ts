@@ -1,4 +1,9 @@
 import type { FootStrike } from "@/lib/landing-analysis";
+import {
+  PRIORITY_BRANDS,
+  isPreferredBrand,
+  preferredInPriorityOrder,
+} from "@/lib/Shoeranking";
 import type { PaceBand, SessionSummary } from "@/lib/session-summary";
 import catalog from "@/data/shoes.json";
 // Catalog source of truth for editors: src/data/shoes.csv. Re-emit JSON if that file changes.
@@ -39,14 +44,7 @@ export type ShoeRecommendation =
   | GeneralShoeRecommendation
   | MatchedShoeRecommendation;
 
-/** Display order for the first rank. Reversing the catalog must not change this. */
-export const PRIORITY_BRANDS = ["Nike", "Asics", "Adidas"] as const;
-
-export function isPreferredBrand(brand: string) {
-  return PRIORITY_BRANDS.some(
-    (preferred) => preferred.toLowerCase() === brand.toLowerCase(),
-  );
-}
+export { PRIORITY_BRANDS, isPreferredBrand };
 
 const SHOES = catalog as Shoe[];
 
@@ -168,22 +166,6 @@ export function recommendShoes(
     picks,
     secondaryPicks,
   };
-}
-
-function preferredInPriorityOrder(scored: ShoePick[], limit: number): ShoePick[] {
-  const bestByBrand = new Map<string, ShoePick>();
-  for (const pick of scored) {
-    if (!isPreferredBrand(pick.shoe.brand)) continue;
-    const key = pick.shoe.brand.toLowerCase();
-    if (!bestByBrand.has(key)) bestByBrand.set(key, pick);
-  }
-  const ordered: ShoePick[] = [];
-  for (const brand of PRIORITY_BRANDS) {
-    const pick = bestByBrand.get(brand.toLowerCase());
-    if (pick) ordered.push(pick);
-    if (ordered.length >= limit) break;
-  }
-  return ordered;
 }
 
 export function scoreShoe(
