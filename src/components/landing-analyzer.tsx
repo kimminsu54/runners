@@ -1,5 +1,6 @@
 "use client";
 
+import { AnalysisDetails, AnalysisDetailsProvider } from "@/components/analysis-details";
 import { ImpactChart } from "@/components/impact-chart";
 import { InjuryGuidance } from "@/components/injury-guidance";
 import { LandingCard } from "@/components/landing-card";
@@ -498,6 +499,7 @@ export function LandingAnalyzer() {
       </div>
 
       {status === "done" && result ? (
+        <AnalysisDetailsProvider>
         <div className="flex flex-col gap-6">
         <SessionSummaryCard
           result={result}
@@ -507,6 +509,7 @@ export function LandingAnalyzer() {
             if (landing) void jumpTo(landing.tContact);
           }}
         />
+        <AnalysisDetails>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-6">
             <Card className="rounded-2xl border-border bg-white">
@@ -591,7 +594,9 @@ export function LandingAnalyzer() {
             )}
           </div>
         </div>
+        </AnalysisDetails>
         </div>
+        </AnalysisDetailsProvider>
       ) : null}
     </div>
   );

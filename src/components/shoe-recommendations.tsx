@@ -1,3 +1,6 @@
+"use client";
+
+import { useAnalysisDetailsOpen } from "@/components/analysis-details";
 import { Badge } from "@/components/ui/badge";
 import type { SessionSummary } from "@/lib/session-summary";
 import { recommendShoes, shoeImageSrc } from "@/lib/shoes";
@@ -5,6 +8,7 @@ import { Footprints } from "lucide-react";
 import Image from "next/image";
 
 export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
+  const showDetails = useAnalysisDetailsOpen();
   const rec = recommendShoes(summary);
 
   if (!rec) {
@@ -74,19 +78,23 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
                     : "드롭 미표기"}
                   {pick.shoe.weightG != null ? ` · ${pick.shoe.weightG}g` : ""}
                 </p>
-                <ul className="mt-3 space-y-1.5 text-xs leading-5 text-muted-foreground">
-                  {pick.reasons.map((reason) => (
-                    <li key={reason}>{reason}</li>
-                  ))}
-                </ul>
+                {showDetails ? (
+                  <ul className="mt-3 space-y-1.5 text-xs leading-5 text-muted-foreground">
+                    {pick.reasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             </article>
           );
         })}
       </div>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        {rec.note} 사진은 카탈로그용 생성 컷이며 실제 시즌 컬러와 다를 수 있습니다.
-      </p>
+      {showDetails ? (
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          {rec.note} 사진은 카탈로그용 생성 컷이며 실제 시즌 컬러와 다를 수 있습니다.
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -1,3 +1,6 @@
+"use client";
+
+import { AnalysisDetails, AnalysisDetailsButton } from "@/components/analysis-details";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -86,24 +89,7 @@ export function SessionSummaryCard({
             자세 포착 {Math.round(result.quality.detectedRatio * 100)}%
           </span>
         </div>
-        {result.quality.reasons.length ? (
-          <ul className="list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-7 py-3 text-xs leading-5 text-amber-900">
-            {result.quality.reasons.map((reason, index) => (
-              <li key={`${index}-${reason}`}>{reason}</li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="space-y-2">
-          <p className="text-lg font-medium leading-7">{summary.headline}</p>
-          {summary.paragraphs.map((paragraph, index) => (
-            <p
-              key={`${index}-${paragraph}`}
-              className="text-sm leading-6 text-muted-foreground"
-            >
-              {paragraph}
-            </p>
-          ))}
-        </div>
+        <p className="text-lg font-medium leading-7">{summary.headline}</p>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {summary.metrics.map((metric) => (
@@ -193,7 +179,28 @@ export function SessionSummaryCard({
         ) : null}
 
         <ShoeRecommendations summary={summary} />
+        <AnalysisDetailsButton />
 
+        <AnalysisDetails className="space-y-5">
+        {result.quality.reasons.length ? (
+          <ul className="list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-7 py-3 text-xs leading-5 text-amber-900">
+            {result.quality.reasons.map((reason, index) => (
+              <li key={`${index}-${reason}`}>{reason}</li>
+            ))}
+          </ul>
+        ) : null}
+        {summary.paragraphs.length ? (
+          <div className="space-y-2">
+            {summary.paragraphs.map((paragraph, index) => (
+              <p
+                key={`${index}-${paragraph}`}
+                className="text-sm leading-6 text-muted-foreground"
+              >
+                {paragraph}
+              </p>
+            ))}
+          </div>
+        ) : null}
         {summary.riskCounts.length ? (
           <div className="flex flex-wrap gap-2">
             {summary.riskCounts.map((row) => (
@@ -257,8 +264,9 @@ export function SessionSummaryCard({
                 </div>
               </li>
             ))}
-          </ol>
-        ) : null}
+            </ol>
+          ) : null}
+        </AnalysisDetails>
       </CardContent>
     </Card>
   );
