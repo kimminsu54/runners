@@ -714,12 +714,17 @@ export function classifyFootStrike(angleDeg: number): {
   type: FootStrike;
   confidence: StrikeConfidence;
 } {
+  // NaN loses every comparison, so a missing landmark would otherwise fall
+  // through to midfoot. Outer bands are classified first: a midfoot-first
+  // `angle <= 8` would swallow the +8° forefoot edge.
   if (!Number.isFinite(angleDeg) || Math.abs(angleDeg) > 40) {
     return { type: "unknown", confidence: "low" };
   }
+  let type: FootStrike;
+  if (angleDeg <= -8) type = "rearfoot";
+  else if (angleDeg >= 8) type = "forefoot";
+  else type = "midfoot";
   const magnitude = Math.abs(angleDeg);
-  const type: FootStrike =
-    angleDeg <= -8 ? "rearfoot" : angleDeg >= 8 ? "forefoot" : "midfoot";
   const confidence: StrikeConfidence =
     type === "midfoot"
       ? magnitude <= 4

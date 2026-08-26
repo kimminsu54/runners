@@ -7,11 +7,14 @@ import {
 } from "./landing-analysis";
 import { buildSessionSummary, paceLabel, type SessionSummary } from "./session-summary";
 import {
+  PRIORITY_BRANDS,
   isPreferredBrand,
   listShoes,
   recommendShoes,
   shoeImageSrc,
   shoeSlug,
+  type MatchedShoeRecommendation,
+  type ShoeRecommendation,
 } from "./shoes";
 import {
   analyzeSyntheticRun,
@@ -64,6 +67,7 @@ if (session.metrics.length < 4) {
 console.log("session summary ok", session.headline);
 
 for (const [angle, expected] of [
+  [Number.NaN, "unknown"],
   [-16, "rearfoot"],
   [-8, "rearfoot"],
   [-7.9, "midfoot"],
@@ -221,14 +225,6 @@ if (rightFactor.suggestedFactor !== undefined) {
 }
 console.log("slow-motion mismatch warning ok");
 
-// ±8° is inclusive: heel-first at -8, toe-first at +8, anything between is midfoot.
-if (classifyFootStrike(-8).type !== "rearfoot") {
-  throw new Error("exactly -8° must be rearfoot");
-}
-if (classifyFootStrike(8).type !== "forefoot") {
-  throw new Error("exactly +8° must be forefoot");
-}
-
 // Duty extremes must not invent a 10 BW sprint or a sub-bodyweight walk.
 for (const duty of [0, -1, Number.NaN]) {
   if (Number.isFinite(peakForceFromDuty(duty))) {
@@ -318,7 +314,7 @@ for (const label of ["평균 반력", "평균 점수", "접지 / 체공"] as con
     throw new Error(`${label} should read 측정 불가 when quality is poor`);
   }
 }
-if (recommendShoes(poorSummary)) {
+if (recommendShoes(poorSummary).kind !== "general") {
   throw new Error("poor footage must not invent a shoe list");
 }
 console.log("poor-quality blank output ok", poorSummary.headline);
@@ -347,12 +343,21 @@ function stubSummary(
   };
 }
 
-if (recommendShoes(stubSummary({ dominantStrike: "unknown" }))) {
+if (recommendShoes(stubSummary({ dominantStrike: "unknown" })).kind !== "general") {
   throw new Error("unknown strike must not invent a shoe list");
 }
 
-const rearRec = recommendShoes(stubSummary({ dominantStrike: "rearfoot", pace: "easy" }));
-if (!rearRec || rearRec.picks.length !== 3) {
+function matchedRec(rec: ShoeRecommendation): MatchedShoeRecommendation {
+  if (rec.kind !== "matched") {
+    throw new Error("expected a matched shoe list");
+  }
+  return rec;
+}
+
+const rearRec = matchedRec(
+  recommendShoes(stubSummary({ dominantStrike: "rearfoot", pace: "easy" })),
+);
+if (rearRec.picks.length !== 3) {
   throw new Error("rearfoot should receive three shoes");
 }
 if (
@@ -374,8 +379,8 @@ if (
   throw new Error("rearfoot list drifted away from heel-strike shoes");
 }
 
-const midRec = recommendShoes(stubSummary({ dominantStrike: "midfoot" }));
-if (!midRec?.picks.length) throw new Error("midfoot should receive shoes");
+const midRec = matchedRec(recommendShoes(stubSummary({ dominantStrike: "midfoot" })));
+if (!midRec.picks.length) throw new Error("midfoot should receive shoes");
 if (
   midRec.picks.some(
     (pick) =>
@@ -386,10 +391,10 @@ if (
   throw new Error("midfoot list included a dedicated rearfoot shoe");
 }
 
-const foreRec = recommendShoes(
-  stubSummary({ dominantStrike: "forefoot", pace: "fast" }),
+const foreRec = matchedRec(
+  recommendShoes(stubSummary({ dominantStrike: "forefoot", pace: "fast" })),
 );
-if (!foreRec?.picks.length) throw new Error("forefoot should receive shoes");
+if (!foreRec.picks.length) throw new Error("forefoot should receive shoes");
 if (
   foreRec.picks.some(
     (pick) =>
@@ -409,8 +414,8 @@ if (
   throw new Error("forefoot should lean on low-drop midfoot geometry");
 }
 
-const mixedRec = recommendShoes(stubSummary({ dominantStrike: "mixed" }));
-if (mixedRec?.picks[0]?.shoe.recommendedStrike !== "any") {
+const mixedRec = matchedRec(recommendShoes(stubSummary({ dominantStrike: "mixed" })));
+if (mixedRec.picks[0]?.shoe.recommendedStrike !== "any") {
   throw new Error("mixed strike should lead with a shoe that accepts any landing");
 }
 
@@ -420,7 +425,6 @@ for (const [name, rec] of [
   ["forefoot", foreRec],
   ["mixed", mixedRec],
 ] as const) {
-  if (!rec) throw new Error(`${name} should receive a recommendation`);
   if (rec.picks.length !== 3) {
     throw new Error(`${name} should lead with three preferred-brand shoes`);
   }
@@ -441,10 +445,16 @@ for (const [name, rec] of [
   if (otherBrands.size !== rec.secondaryPicks.length) {
     throw new Error(`${name} secondary list stacked the same brand`);
   }
+  const brandOrder = rec.picks.map((pick) => pick.shoe.brand);
+  if (brandOrder.join() !== PRIORITY_BRANDS.join()) {
+    throw new Error(
+      `${name} primary order must stay ${PRIORITY_BRANDS.join(" → ")}, got ${brandOrder.join(" → ")}`,
+    );
+  }
 }
 
-const syntheticRec = recommendShoes(session);
-if (!syntheticRec || syntheticRec.targetStrike !== "midfoot") {
+const syntheticRec = matchedRec(recommendShoes(session));
+if (syntheticRec.targetStrike !== "midfoot") {
   throw new Error("level synthetic gait should recommend for midfoot");
 }
 console.log(
@@ -485,7 +495,9 @@ const photoGaps = (
                 ]
               : [],
           });
-          return [...(rec?.picks ?? []), ...(rec?.secondaryPicks ?? [])];
+          return rec.kind === "matched"
+            ? [...rec.picks, ...rec.secondaryPicks]
+            : [];
         })()
       ).filter((pick) => !shoeImageSrc(pick.shoe)),
     ),

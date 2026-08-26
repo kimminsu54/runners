@@ -15,7 +15,7 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
   const showDetails = useAnalysisDetailsOpen();
   const rec = recommendShoes(summary);
 
-  if (!rec) {
+  if (rec.kind === "general") {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-neutral-50 px-4 py-4">
         <div className="mb-1 flex items-center gap-2">

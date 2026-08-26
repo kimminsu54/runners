@@ -22,18 +22,28 @@ export type ShoePick = {
   reasons: string[];
 };
 
-export type ShoeRecommendation = {
-  targetStrike: FootStrike | "mixed";
+export type GeneralShoeRecommendation = {
+  kind: "general";
+};
+
+export type MatchedShoeRecommendation = {
+  kind: "matched";
+  targetStrike: Exclude<FootStrike, "unknown"> | "mixed";
   headline: string;
   note: string;
   picks: ShoePick[];
   secondaryPicks: ShoePick[];
 };
 
-const PREFERRED_BRANDS = ["Nike", "Asics", "Adidas"] as const;
+export type ShoeRecommendation =
+  | GeneralShoeRecommendation
+  | MatchedShoeRecommendation;
+
+/** Display order for the first rank. Reversing the catalog must not change this. */
+export const PRIORITY_BRANDS = ["Nike", "Asics", "Adidas"] as const;
 
 export function isPreferredBrand(brand: string) {
-  return PREFERRED_BRANDS.some(
+  return PRIORITY_BRANDS.some(
     (preferred) => preferred.toLowerCase() === brand.toLowerCase(),
   );
 }
@@ -125,9 +135,9 @@ export function recommendShoes(
     "dominantStrike" | "strikeCounts" | "pace" | "meanPeakGrfBw" | "patterns"
   >,
   limit = 3,
-): ShoeRecommendation | null {
+): ShoeRecommendation {
   const target = summary.dominantStrike;
-  if (target === "unknown") return null;
+  if (target === "unknown") return { kind: "general" };
 
   const preferStability =
     summary.meanPeakGrfBw >= 2.8 ||
@@ -137,17 +147,15 @@ export function recommendShoes(
     return pick ? [pick] : [];
   }).sort((a, b) => b.score - a.score || brandModel(a) - brandModel(b));
 
-  const picks = diversify(
-    scored.filter((pick) => isPreferredBrand(pick.shoe.brand)),
-    limit,
-  );
+  const picks = preferredInPriorityOrder(scored, limit);
   const secondaryPicks = diversify(
     scored.filter((pick) => !isPreferredBrand(pick.shoe.brand)),
     limit,
   );
-  if (!picks.length && !secondaryPicks.length) return null;
+  if (!picks.length && !secondaryPicks.length) return { kind: "general" };
 
   return {
+    kind: "matched",
     targetStrike: target,
     headline:
       target === "mixed"
@@ -160,6 +168,22 @@ export function recommendShoes(
     picks,
     secondaryPicks,
   };
+}
+
+function preferredInPriorityOrder(scored: ShoePick[], limit: number): ShoePick[] {
+  const bestByBrand = new Map<string, ShoePick>();
+  for (const pick of scored) {
+    if (!isPreferredBrand(pick.shoe.brand)) continue;
+    const key = pick.shoe.brand.toLowerCase();
+    if (!bestByBrand.has(key)) bestByBrand.set(key, pick);
+  }
+  const ordered: ShoePick[] = [];
+  for (const brand of PRIORITY_BRANDS) {
+    const pick = bestByBrand.get(brand.toLowerCase());
+    if (pick) ordered.push(pick);
+    if (ordered.length >= limit) break;
+  }
+  return ordered;
 }
 
 export function scoreShoe(
