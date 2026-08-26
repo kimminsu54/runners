@@ -50,7 +50,7 @@ npm run test:analysis
 npm run check:language
 ```
 
-주법 판정·브랜드 순위·금지어 검사는 `src/lib/Footstrike.ts`, `src/lib/Shoeranking.ts`, `scripts/check-language.mjs` 입니다. 설명은 `src/lib/Readme.md`에 있습니다.
+주법 판정·브랜드 순위·금지어 검사는 `src/lib/Footstrike.ts`, `src/lib/Shoeranking.ts`, `scripts/check-language.mjs` 입니다. 설명은 `src/lib/Readme.md`에 있습니다. 브라우저에서는 [http://127.0.0.1:43217/downloads](http://127.0.0.1:43217/downloads) 에서 받을 수 있습니다.
 
 브라우저에서 [http://127.0.0.1:43217](http://127.0.0.1:43217) 을 엽니다.
 

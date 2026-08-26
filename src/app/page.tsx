@@ -45,8 +45,16 @@ export default function Home() {
         </svg>
 
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="display-type flex items-baseline gap-2 text-xl text-foreground">
-            STRIDE<span className="text-primary">/</span>LAB
+          <div className="flex items-center gap-3">
+            <div className="display-type flex items-baseline gap-2 text-xl text-foreground">
+              STRIDE<span className="text-primary">/</span>LAB
+            </div>
+            <a
+              href="/downloads"
+              className="rounded-full border border-border bg-white/80 px-3 py-1 text-xs text-foreground backdrop-blur-sm hover:bg-white"
+            >
+              파일 받기
+            </a>
           </div>
           <div className="hidden items-center gap-6 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase sm:flex">
             <span>Form analysis</span>
