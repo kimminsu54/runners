@@ -27,7 +27,16 @@ export type ShoeRecommendation = {
   headline: string;
   note: string;
   picks: ShoePick[];
+  secondaryPicks: ShoePick[];
 };
+
+const PREFERRED_BRANDS = ["Nike", "Asics", "Adidas"] as const;
+
+export function isPreferredBrand(brand: string) {
+  return PREFERRED_BRANDS.some(
+    (preferred) => preferred.toLowerCase() === brand.toLowerCase(),
+  );
+}
 
 const SHOES = catalog as Shoe[];
 
@@ -57,15 +66,24 @@ export function shoeSlug(shoe: Pick<Shoe, "brand" | "model">): string {
 }
 
 const SHOE_PHOTOS = new Set([
+  "adidas-adizero-adios-pro-4",
   "adidas-adizero-boston-12",
+  "adidas-adizero-sl-2",
+  "adidas-supernova-rise",
+  "adidas-supernova-solution",
   "altra-fwd-via",
   "altra-provision-8",
   "altra-vanish-carbon-2",
+  "asics-gel-cumulus-26",
   "asics-gel-kayano-30",
+  "asics-gt-1000-12",
+  "asics-magic-speed-4",
+  "asics-metaspeed-sky-paris",
   "asics-novablast-4",
   "brooks-glycerin-21",
   "brooks-glycerin-gts-21",
   "brooks-hyperion-elite-4",
+  "brooks-hyperion-max-2",
   "brooks-launch-10",
   "hoka-arahi-7",
   "hoka-bondi-8",
@@ -73,8 +91,11 @@ const SHOE_PHOTOS = new Set([
   "hoka-clifton-9",
   "hoka-mach-6",
   "mizuno-wave-horizon-7",
+  "mizuno-wave-inspire-20",
   "mizuno-wave-rebellion-pro-2",
+  "new-balance-fresh-foam-x-880-v14",
   "new-balance-fresh-foam-x-vongo-v6",
+  "new-balance-fuelcell-sc-pacer-v2",
   "new-balance-fuelcell-sc-trainer-v3",
   "nike-pegasus-plus",
   "nike-streakfly",
@@ -84,9 +105,11 @@ const SHOE_PHOTOS = new Set([
   "on-cloudboom-strike",
   "on-cloudrunner-2",
   "puma-deviate-nitro-3",
+  "puma-foreverrun-nitro",
   "saucony-endorphin-pro-4",
   "saucony-hurricane-24",
   "saucony-kinvara-14",
+  "saucony-ride-17",
   "saucony-tempus",
   "saucony-triumph-22",
 ]);
@@ -114,8 +137,15 @@ export function recommendShoes(
     return pick ? [pick] : [];
   }).sort((a, b) => b.score - a.score || brandModel(a) - brandModel(b));
 
-  const picks = diversify(scored, limit);
-  if (!picks.length) return null;
+  const picks = diversify(
+    scored.filter((pick) => isPreferredBrand(pick.shoe.brand)),
+    limit,
+  );
+  const secondaryPicks = diversify(
+    scored.filter((pick) => !isPreferredBrand(pick.shoe.brand)),
+    limit,
+  );
+  if (!picks.length && !secondaryPicks.length) return null;
 
   return {
     targetStrike: target,
@@ -125,9 +155,10 @@ export function recommendShoes(
         : `${STRIKE_LABEL[target]} 착지에 구조가 맞는 신발을 골랐습니다.`,
     note:
       target === "forefoot"
-        ? "카탈로그에는 포어풋 전용 라벨이 없어, 저드롭·전족 전환이 빠른 미드풋 계열을 올렸습니다. 피팅과 부상 병력이 최종 기준입니다."
-        : "주법에 맞는 드롭과 롤링일 뿐, 발 모양·부상 병력·코스를 대신하지 않습니다. 매장에서 신어 보세요.",
+        ? "카탈로그에는 포어풋 전용 라벨이 없어, 저드롭·전족 전환이 빠른 미드풋 계열을 올렸습니다. 나이키·아식스·아디다스를 앞에 두고, 다른 브랜드는 다음 순위로 둡니다."
+        : "나이키·아식스·아디다스를 우선하고, 그다음 다른 브랜드를 둡니다. 주법에 맞는 드롭과 롤링일 뿐 피팅을 대신하지 않습니다.",
     picks,
+    secondaryPicks,
   };
 }
 

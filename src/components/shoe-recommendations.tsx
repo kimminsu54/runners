@@ -3,7 +3,11 @@
 import { useAnalysisDetailsOpen } from "@/components/analysis-details";
 import { Badge } from "@/components/ui/badge";
 import type { SessionSummary } from "@/lib/session-summary";
-import { recommendShoes, shoeImageSrc } from "@/lib/shoes";
+import {
+  recommendShoes,
+  shoeImageSrc,
+  type ShoePick,
+} from "@/lib/shoes";
 import { Footprints } from "lucide-react";
 import Image from "next/image";
 
@@ -40,13 +44,71 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
           04 / Shoe match
         </span>
       </div>
+
+      {rec.picks.length ? (
+        <ShoePickGrid
+          title="나이키 · 아식스 · 아디다스"
+          caption="주법에 맞는 우선 브랜드"
+          picks={rec.picks}
+          startIndex={1}
+          showDetails={showDetails}
+          featured
+        />
+      ) : null}
+
+      {rec.secondaryPicks.length ? (
+        <div className={rec.picks.length ? "mt-5" : undefined}>
+          <ShoePickGrid
+            title="다른 브랜드"
+            caption="같은 주법의 다음 순위"
+            picks={rec.secondaryPicks}
+            startIndex={rec.picks.length + 1}
+            showDetails={showDetails}
+          />
+        </div>
+      ) : null}
+
+      {showDetails ? (
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          {rec.note} 사진은 카탈로그용 생성 컷이며 실제 시즌 컬러와 다를 수 있습니다.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ShoePickGrid({
+  title,
+  caption,
+  picks,
+  startIndex,
+  showDetails,
+  featured = false,
+}: {
+  title: string;
+  caption: string;
+  picks: ShoePick[];
+  startIndex: number;
+  showDetails: boolean;
+  featured?: boolean;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h4 className="text-sm font-medium">{title}</h4>
+        <span className="text-xs text-muted-foreground">{caption}</span>
+      </div>
       <div className="grid gap-3 md:grid-cols-3">
-        {rec.picks.map((pick, index) => {
+        {picks.map((pick, index) => {
           const photo = shoeImageSrc(pick.shoe);
           return (
             <article
               key={`${pick.shoe.brand}-${pick.shoe.model}`}
-              className="flex flex-col overflow-hidden rounded-2xl border border-border bg-white"
+              className={
+                featured
+                  ? "flex flex-col overflow-hidden rounded-2xl border border-primary/25 bg-white"
+                  : "flex flex-col overflow-hidden rounded-2xl border border-border bg-white"
+              }
             >
               <div className="relative aspect-[4/3] bg-neutral-50">
                 {photo ? (
@@ -63,7 +125,7 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
                   </div>
                 )}
                 <span className="absolute top-3 left-3 font-mono text-[10px] text-muted-foreground">
-                  {String(index + 1).padStart(2, "0")}
+                  {String(startIndex + index).padStart(2, "0")}
                 </span>
                 <Badge variant="outline" className="absolute top-3 right-3 bg-white/90">
                   {pick.shoe.category}
@@ -90,11 +152,6 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
           );
         })}
       </div>
-      {showDetails ? (
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          {rec.note} 사진은 카탈로그용 생성 컷이며 실제 시즌 컬러와 다를 수 있습니다.
-        </p>
-      ) : null}
     </div>
   );
 }

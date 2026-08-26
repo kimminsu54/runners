@@ -4,7 +4,13 @@ import {
   classifyFootStrike,
 } from "./landing-analysis";
 import { buildSessionSummary, paceLabel, type SessionSummary } from "./session-summary";
-import { listShoes, recommendShoes, shoeImageSrc, shoeSlug } from "./shoes";
+import {
+  isPreferredBrand,
+  listShoes,
+  recommendShoes,
+  shoeImageSrc,
+  shoeSlug,
+} from "./shoes";
 import {
   analyzeSyntheticRun,
   assertDetectsLanding,
@@ -300,9 +306,33 @@ if (mixedRec?.picks[0]?.shoe.recommendedStrike !== "any") {
   throw new Error("mixed strike should lead with a shoe that accepts any landing");
 }
 
-const brands = new Set((rearRec?.picks ?? []).map((pick) => pick.shoe.brand));
-if (brands.size !== (rearRec?.picks.length ?? 0)) {
-  throw new Error("recommendations should not stack the same brand");
+for (const [name, rec] of [
+  ["rearfoot", rearRec],
+  ["midfoot", midRec],
+  ["forefoot", foreRec],
+  ["mixed", mixedRec],
+] as const) {
+  if (!rec) throw new Error(`${name} should receive a recommendation`);
+  if (rec.picks.length !== 3) {
+    throw new Error(`${name} should lead with three preferred-brand shoes`);
+  }
+  if (rec.secondaryPicks.length !== 3) {
+    throw new Error(`${name} should follow with three other-brand shoes`);
+  }
+  if (rec.picks.some((pick) => !isPreferredBrand(pick.shoe.brand))) {
+    throw new Error(`${name} primary list must stay Nike, Asics, or Adidas`);
+  }
+  if (rec.secondaryPicks.some((pick) => isPreferredBrand(pick.shoe.brand))) {
+    throw new Error(`${name} secondary list leaked a preferred brand`);
+  }
+  const primaryBrands = new Set(rec.picks.map((pick) => pick.shoe.brand));
+  const otherBrands = new Set(rec.secondaryPicks.map((pick) => pick.shoe.brand));
+  if (primaryBrands.size !== rec.picks.length) {
+    throw new Error(`${name} primary list stacked the same brand`);
+  }
+  if (otherBrands.size !== rec.secondaryPicks.length) {
+    throw new Error(`${name} secondary list stacked the same brand`);
+  }
 }
 
 const syntheticRec = recommendShoes(session);
@@ -311,7 +341,12 @@ if (!syntheticRec || syntheticRec.targetStrike !== "midfoot") {
 }
 console.log(
   "shoe recommendations ok",
-  syntheticRec.picks.map((pick) => `${pick.shoe.brand} ${pick.shoe.model}`),
+  {
+    primary: syntheticRec.picks.map((pick) => `${pick.shoe.brand} ${pick.shoe.model}`),
+    secondary: syntheticRec.secondaryPicks.map(
+      (pick) => `${pick.shoe.brand} ${pick.shoe.model}`,
+    ),
+  },
 );
 
 const slugs = new Set(catalog.map((shoe) => shoeSlug(shoe)));
@@ -324,23 +359,26 @@ const photoGaps = (
   (["easy", "steady", "brisk", "fast"] as const).flatMap((pace) =>
     [false, true].flatMap((preferStability) =>
       (
-        recommendShoes({
-          dominantStrike,
-          strikeCounts: [],
-          pace,
-          meanPeakGrfBw: preferStability ? 3.1 : 2.2,
-          patterns: preferStability
-            ? [
-                {
-                  area: "하체 전반",
-                  title: "부하",
-                  evidence: "반복",
-                  meaning: "",
-                  level: "attention",
-                },
-              ]
-            : [],
-        })?.picks ?? []
+        (() => {
+          const rec = recommendShoes({
+            dominantStrike,
+            strikeCounts: [],
+            pace,
+            meanPeakGrfBw: preferStability ? 3.1 : 2.2,
+            patterns: preferStability
+              ? [
+                  {
+                    area: "하체 전반",
+                    title: "부하",
+                    evidence: "반복",
+                    meaning: "",
+                    level: "attention",
+                  },
+                ]
+              : [],
+          });
+          return [...(rec?.picks ?? []), ...(rec?.secondaryPicks ?? [])];
+        })()
       ).filter((pick) => !shoeImageSrc(pick.shoe)),
     ),
   ),
@@ -352,4 +390,7 @@ if (photoGaps.length) {
       .join(", ")}`,
   );
 }
-console.log("shoe photos ok", syntheticRec.picks.map((pick) => shoeImageSrc(pick.shoe)));
+console.log("shoe photos ok", {
+  primary: syntheticRec.picks.map((pick) => shoeImageSrc(pick.shoe)),
+  secondary: syntheticRec.secondaryPicks.map((pick) => shoeImageSrc(pick.shoe)),
+});
