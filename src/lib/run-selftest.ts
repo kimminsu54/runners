@@ -2,6 +2,8 @@ import {
   analyzeLandings,
   analyzeLandingsAuto,
   classifyFootStrike,
+  clampedPeakGrfBw,
+  peakForceFromDuty,
 } from "./landing-analysis";
 import { buildSessionSummary, paceLabel, type SessionSummary } from "./session-summary";
 import {
@@ -63,7 +65,11 @@ console.log("session summary ok", session.headline);
 
 for (const [angle, expected] of [
   [-16, "rearfoot"],
+  [-8, "rearfoot"],
+  [-7.9, "midfoot"],
   [0, "midfoot"],
+  [7.9, "midfoot"],
+  [8, "forefoot"],
   [16, "forefoot"],
   [55, "unknown"],
 ] as const) {
@@ -214,6 +220,108 @@ if (rightFactor.suggestedFactor !== undefined) {
   throw new Error("a correct capture rate should not be second-guessed");
 }
 console.log("slow-motion mismatch warning ok");
+
+// ±8° is inclusive: heel-first at -8, toe-first at +8, anything between is midfoot.
+if (classifyFootStrike(-8).type !== "rearfoot") {
+  throw new Error("exactly -8° must be rearfoot");
+}
+if (classifyFootStrike(8).type !== "forefoot") {
+  throw new Error("exactly +8° must be forefoot");
+}
+
+// Duty extremes must not invent a 10 BW sprint or a sub-bodyweight walk.
+for (const duty of [0, -1, Number.NaN]) {
+  if (Number.isFinite(peakForceFromDuty(duty))) {
+    throw new Error(`duty ${duty} should not produce a force`);
+  }
+  if (Number.isFinite(clampedPeakGrfBw(duty))) {
+    throw new Error(`duty ${duty} should stay empty after the clamp`);
+  }
+}
+const sprintDuty = 0.05;
+if (!(peakForceFromDuty(sprintDuty) > 4.5)) {
+  throw new Error("a tiny duty must exceed the published cap before clamping");
+}
+if (clampedPeakGrfBw(sprintDuty) !== 4.5) {
+  throw new Error(`tiny duty should clamp to 4.5 BW, got ${clampedPeakGrfBw(sprintDuty)}`);
+}
+const walkDuty = 0.85;
+if (!(peakForceFromDuty(walkDuty) < 1.05)) {
+  throw new Error("walking duty must undershoot 1.05 BW so the publish clamp lifts it");
+}
+if (clampedPeakGrfBw(walkDuty) !== 1.05) {
+  throw new Error(`walking duty should clamp up to 1.05 BW, got ${clampedPeakGrfBw(walkDuty)}`);
+}
+const extremeSprint = analyzeSyntheticRun({ contactS: 0.08, flightS: 0.28 });
+if (
+  extremeSprint.landings.some(
+    (landing) => landing.gaitBased && (landing.peakGrfBw < 1.05 || landing.peakGrfBw > 4.5),
+  )
+) {
+  throw new Error("gait-based peaks must stay inside the 1.05–4.5 BW clamp");
+}
+console.log("duty-factor clamp ok", {
+  sprint: clampedPeakGrfBw(sprintDuty),
+  walk: clampedPeakGrfBw(walkDuty),
+});
+
+const tinyRunner = analyzeLandings(
+  syntheticRunningFrames().map((frame) => {
+    if (!frame.landmarks) return frame;
+    return {
+      ...frame,
+      landmarks: frame.landmarks.map((point) => ({
+        ...point,
+        x: 0.5 + (point.x - 0.5) * 0.2,
+        y: 0.5 + (point.y - 0.5) * 0.2,
+      })),
+    };
+  }),
+  { statureM: 1.7, massKg: 70, width: 1280, height: 720 },
+);
+if (tinyRunner.quality.level !== "poor") {
+  throw new Error(
+    `a subject under 20% of the frame must be poor, got ${tinyRunner.quality.level}`,
+  );
+}
+if (
+  tinyRunner.landings.some(
+    (landing) =>
+      landing.gaitBased ||
+      landing.footStrike !== "unknown" ||
+      Number.isFinite(landing.contactMs) ||
+      Number.isFinite(landing.flightMs) ||
+      Number.isFinite(landing.dutyFactor),
+  )
+) {
+  throw new Error("poor footage must not publish gait timing or a strike label");
+}
+const poorSummary = buildSessionSummary(tinyRunner);
+if (
+  Number.isFinite(poorSummary.meanPeakGrfBw) ||
+  Number.isFinite(poorSummary.meanContactMs) ||
+  Number.isFinite(poorSummary.meanDutyFactor)
+) {
+  throw new Error("poor session averages must stay empty");
+}
+if (
+  poorSummary.strikeCounts.length ||
+  poorSummary.riskCounts.length ||
+  poorSummary.patterns.length ||
+  poorSummary.dominantStrike !== "unknown"
+) {
+  throw new Error("poor sessions must not emit strike, risk, or load-pattern lists");
+}
+for (const label of ["평균 반력", "평균 점수", "접지 / 체공"] as const) {
+  const metric = poorSummary.metrics.find((row) => row.label === label);
+  if (metric?.value !== "측정 불가") {
+    throw new Error(`${label} should read 측정 불가 when quality is poor`);
+  }
+}
+if (recommendShoes(poorSummary)) {
+  throw new Error("poor footage must not invent a shoe list");
+}
+console.log("poor-quality blank output ok", poorSummary.headline);
 
 const catalog = listShoes();
 if (catalog.length !== 104) {

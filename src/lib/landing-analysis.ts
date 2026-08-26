@@ -30,13 +30,19 @@ export const G = 9.80665;
  * jog near duty 0.38, 2.4 BW for a steady run near 0.32, and 3.7 BW for a
  * sprint near 0.18.
  */
-function peakForceFromDuty(dutyFactor: number): number {
+export function peakForceFromDuty(dutyFactor: number): number {
   if (!Number.isFinite(dutyFactor) || dutyFactor <= 0) return Number.NaN;
   if (dutyFactor >= 0.5) {
     // Walking carries a double-support phase and never loads like running.
     return clamp(1.05 + (0.6 - dutyFactor), 1, 1.4);
   }
   return 0.55 / dutyFactor + 0.65;
+}
+
+/** Published peak GRF from duty: the curve, then the 1.05–4.5 BW cap. */
+export function clampedPeakGrfBw(dutyFactor: number): number {
+  const raw = peakForceFromDuty(dutyFactor);
+  return Number.isFinite(raw) ? clamp(raw, 1.05, 4.5) : raw;
 }
 
 export type PoseFrame = {
@@ -912,7 +918,7 @@ function detectLandings(series: SeriesPoint[], massKg: number): Landing[] {
     const measuredGrfBw = 1 + peakAcc / G;
     const dutyForForce = gaitBased ? contactS / (2 * stepPeriodS) : Number.NaN;
     const peakGrfBw = gaitBased
-      ? clamp(peakForceFromDuty(dutyForForce), 1.05, 4.5)
+      ? clampedPeakGrfBw(dutyForForce)
       : clamp(measuredGrfBw, 1.05, 4);
 
     const absorptionMs = (series[raw.absorbIdx].t - series[raw.contactIdx].t) * 1000;
