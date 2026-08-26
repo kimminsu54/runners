@@ -3,7 +3,8 @@ import {
   analyzeLandingsAuto,
   classifyFootStrike,
 } from "./landing-analysis";
-import { buildSessionSummary, paceLabel } from "./session-summary";
+import { buildSessionSummary, paceLabel, type SessionSummary } from "./session-summary";
+import { listShoes, recommendShoes } from "./shoes";
 import {
   analyzeSyntheticRun,
   assertDetectsLanding,
@@ -207,3 +208,108 @@ if (rightFactor.suggestedFactor !== undefined) {
   throw new Error("a correct capture rate should not be second-guessed");
 }
 console.log("slow-motion mismatch warning ok");
+
+const catalog = listShoes();
+if (catalog.length !== 104) {
+  throw new Error(`expected 104 shoes, got ${catalog.length}`);
+}
+if (!catalog.some((shoe) => shoe.brand === "Nike" && shoe.model === "Pegasus 40")) {
+  throw new Error("catalog is missing a known daily trainer");
+}
+
+function stubSummary(
+  override: Partial<SessionSummary>,
+): Pick<
+  SessionSummary,
+  "dominantStrike" | "strikeCounts" | "pace" | "meanPeakGrfBw" | "patterns"
+> {
+  return {
+    dominantStrike: "midfoot",
+    strikeCounts: [],
+    pace: "steady",
+    meanPeakGrfBw: 2.3,
+    patterns: [],
+    ...override,
+  };
+}
+
+if (recommendShoes(stubSummary({ dominantStrike: "unknown" }))) {
+  throw new Error("unknown strike must not invent a shoe list");
+}
+
+const rearRec = recommendShoes(stubSummary({ dominantStrike: "rearfoot", pace: "easy" }));
+if (!rearRec || rearRec.picks.length !== 3) {
+  throw new Error("rearfoot should receive three shoes");
+}
+if (
+  rearRec.picks.some(
+    (pick) =>
+      pick.shoe.recommendedStrike === "midfoot" &&
+      (pick.shoe.heelDropMm ?? 99) <= 3,
+  )
+) {
+  throw new Error("rearfoot must not get a near-zero-drop midfoot shoe");
+}
+if (
+  !rearRec.picks.some(
+    (pick) =>
+      pick.shoe.recommendedStrike === "rearfoot" ||
+      pick.shoe.recommendedStrike === "any",
+  )
+) {
+  throw new Error("rearfoot list drifted away from heel-strike shoes");
+}
+
+const midRec = recommendShoes(stubSummary({ dominantStrike: "midfoot" }));
+if (!midRec?.picks.length) throw new Error("midfoot should receive shoes");
+if (
+  midRec.picks.some(
+    (pick) =>
+      pick.shoe.recommendedStrike !== "midfoot" &&
+      pick.shoe.recommendedStrike !== "any",
+  )
+) {
+  throw new Error("midfoot list included a dedicated rearfoot shoe");
+}
+
+const foreRec = recommendShoes(
+  stubSummary({ dominantStrike: "forefoot", pace: "fast" }),
+);
+if (!foreRec?.picks.length) throw new Error("forefoot should receive shoes");
+if (
+  foreRec.picks.some(
+    (pick) =>
+      pick.shoe.recommendedStrike === "rearfoot" &&
+      (pick.shoe.heelDropMm ?? 0) >= 8,
+  )
+) {
+  throw new Error("forefoot received a high-drop rearfoot shoe");
+}
+if (
+  !foreRec.picks.some(
+    (pick) =>
+      pick.shoe.recommendedStrike === "midfoot" ||
+      (pick.shoe.heelDropMm != null && pick.shoe.heelDropMm <= 6.5),
+  )
+) {
+  throw new Error("forefoot should lean on low-drop midfoot geometry");
+}
+
+const mixedRec = recommendShoes(stubSummary({ dominantStrike: "mixed" }));
+if (mixedRec?.picks[0]?.shoe.recommendedStrike !== "any") {
+  throw new Error("mixed strike should lead with a shoe that accepts any landing");
+}
+
+const brands = new Set((rearRec?.picks ?? []).map((pick) => pick.shoe.brand));
+if (brands.size !== (rearRec?.picks.length ?? 0)) {
+  throw new Error("recommendations should not stack the same brand");
+}
+
+const syntheticRec = recommendShoes(session);
+if (!syntheticRec || syntheticRec.targetStrike !== "midfoot") {
+  throw new Error("level synthetic gait should recommend for midfoot");
+}
+console.log(
+  "shoe recommendations ok",
+  syntheticRec.picks.map((pick) => `${pick.shoe.brand} ${pick.shoe.model}`),
+);

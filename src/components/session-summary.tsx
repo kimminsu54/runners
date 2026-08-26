@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ShoeRecommendations } from "@/components/shoe-recommendations";
 import type { AnalysisResult } from "@/lib/landing-analysis";
 import { buildSessionSummary, paceLabel, type PaceBand } from "@/lib/session-summary";
 import type { GuidanceLevel } from "@/lib/training-guidance";
@@ -190,6 +191,8 @@ export function SessionSummaryCard({
             </div>
           </div>
         ) : null}
+
+        <ShoeRecommendations summary={summary} />
 
         {summary.riskCounts.length ? (
           <div className="flex flex-wrap gap-2">
