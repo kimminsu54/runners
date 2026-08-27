@@ -5,6 +5,12 @@ export type CameraView = "side" | "front" | "unknown";
 /** Inclusive. 40° still classifies; 40.1° is unknown. */
 export const MAX_PLAUSIBLE_ANGLE_DEG = 40;
 
+/** Inclusive: exactly -8° is rearfoot. */
+export const REARFOOT_MAX_ANGLE_DEG = -8;
+
+/** Inclusive: exactly +8° is forefoot. */
+export const FOREFOOT_MIN_ANGLE_DEG = 8;
+
 export function classifyFootStrike(
   angleDeg: number,
   view: CameraView = "side",
@@ -23,8 +29,8 @@ export function classifyFootStrike(
     return { type: "unknown", confidence: "low" };
   }
   let type: FootStrike;
-  if (angleDeg <= -8) type = "rearfoot";
-  else if (angleDeg >= 8) type = "forefoot";
+  if (angleDeg <= REARFOOT_MAX_ANGLE_DEG) type = "rearfoot";
+  else if (angleDeg >= FOREFOOT_MIN_ANGLE_DEG) type = "forefoot";
   else type = "midfoot";
   const magnitude = Math.abs(angleDeg);
   // 4 / 15 / 35 are display-only confidence bands; source is not documented.

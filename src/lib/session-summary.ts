@@ -82,6 +82,11 @@ export type SessionSummary = {
   dominantStrike: FootStrike | "mixed";
 };
 
+/** The precision BW values are printed at. */
+function roundToTenth(value: number): number {
+  return Number.isFinite(value) ? Math.round(value * 10) / 10 : value;
+}
+
 function mean(values: number[]): number {
   const xs = values.filter(Number.isFinite);
   if (!xs.length) return Number.NaN;
@@ -203,10 +208,15 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   const leftGrf = mean(left.map((l) => l.peakGrfBw));
   const rightGrf = mean(right.map((l) => l.peakGrfBw));
   const bothSides = left.length >= 2 && right.length >= 2;
-  const pairMean = (leftGrf + rightGrf) / 2;
+  // L/R print to one decimal, so derive the gap from those same printed values.
+  // Off the raw means, "L 2.0 / R 2.1" comes with "차이 8%" and a reader who
+  // does the division gets 5% — the number looks miscalculated.
+  const leftShown = roundToTenth(leftGrf);
+  const rightShown = roundToTenth(rightGrf);
+  const pairMean = (leftShown + rightShown) / 2;
   const asymmetryPct =
     bothSides && pairMean > 0
-      ? (Math.abs(leftGrf - rightGrf) / pairMean) * 100
+      ? (Math.abs(leftShown - rightShown) / pairMean) * 100
       : Number.NaN;
 
   const strikeOrder: FootStrike[] = ["rearfoot", "midfoot", "forefoot"];
@@ -307,7 +317,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       ? `착지의 ${pct(highImpactCount, landings.length)}%는 비교적 큰 충격·부하율입니다.`
       : "",
     Number.isFinite(asymmetryPct) && asymmetryPct >= 12
-      ? `왼발 ${left.length}회 ${leftGrf.toFixed(1)} BW, 오른발 ${right.length}회 ${rightGrf.toFixed(1)} BW로 좌우 차이가 약 ${Math.round(asymmetryPct)}%입니다.`
+      ? `왼발 ${left.length}회 ${leftShown.toFixed(1)} BW, 오른발 ${right.length}회 ${rightShown.toFixed(1)} BW로 좌우 차이가 약 ${Math.round(asymmetryPct)}%입니다.`
       : bothSides
         ? `왼발 ${left.length}회, 오른발 ${right.length}회이며 좌우 충격 차이는 ${Math.round(asymmetryPct)}%로 크지 않습니다.`
         : "",
@@ -417,7 +427,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   if (bothSides && forceTrusted) {
     metrics.push({
       label: "좌우",
-      value: `L ${leftGrf.toFixed(1)} / R ${rightGrf.toFixed(1)}`,
+      value: `L ${leftShown.toFixed(1)} / R ${rightShown.toFixed(1)}`,
       hint: Number.isFinite(asymmetryPct)
         ? `차이 ${Math.round(asymmetryPct)}%`
         : undefined,

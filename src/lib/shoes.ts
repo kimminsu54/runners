@@ -144,11 +144,17 @@ export function recommendShoes(
   const target = summary.dominantStrike;
   if (target === "unknown") return { kind: "general" };
 
-  const preferStability =
-    summary.meanPeakGrfBw >= 2.8 ||
-    summary.patterns.some((pattern) => pattern.level !== "monitor");
+  // Two different findings ask for a stability shoe, and they do not mean the
+  // same thing. Keep them apart so the card can say which one it saw: a 2.0 BW
+  // session flagged only by a pattern must not be told its impact was large.
+  const stability: StabilityReason =
+    summary.meanPeakGrfBw >= 2.8
+      ? "impact"
+      : summary.patterns.some((pattern) => pattern.level !== "monitor")
+        ? "pattern"
+        : "none";
   const scored = SHOES.flatMap((shoe) => {
-    const pick = scoreShoe(shoe, target, summary.pace, preferStability);
+    const pick = scoreShoe(shoe, target, summary.pace, stability);
     return pick
       ? [
           {
@@ -178,12 +184,20 @@ export function recommendShoes(
   };
 }
 
+/**
+ * Why a stability shoe is being favoured, or `"none"` if it is not.
+ * `"impact"` is a high mean GRF; `"pattern"` is a flagged load pattern at any
+ * impact level. The reason text on the card depends on which one fired.
+ */
+export type StabilityReason = "none" | "impact" | "pattern";
+
 export function scoreShoe(
   shoe: Shoe,
   target: Exclude<FootStrike, "unknown"> | "mixed",
   pace: PaceBand,
-  preferStability: boolean,
+  stability: StabilityReason,
 ): ShoePick | null {
+  const preferStability = stability !== "none";
   const strikes = shoe.recommendedStrikes ?? [];
   if (!strikes.length || shoe.recommendedStrike === "unspecified") return null;
   if (!shoeFitsStrike(strikes, target)) return null;
@@ -266,7 +280,11 @@ export function scoreShoe(
   if (preferStability) {
     if (shoe.category === "안정화") {
       score += 10;
-      reasons.push("충격이 큰 편이라 안정화 구조를 우선");
+      reasons.push(
+        stability === "impact"
+          ? "추정 반력이 큰 편이라 안정화 구조를 우선"
+          : "반복된 부담 패턴이 있어 안정화 구조를 우선",
+      );
     } else if (shoe.category === "제어화") {
       score += 6;
     } else {

@@ -4,6 +4,9 @@ import {
   cadenceSpm,
   classifyFootStrike,
   clampedPeakGrfBw,
+  formatKneeFlexDeg,
+  formatLoadingRateBwS,
+  formatStrikeAngleDeg,
   formatTimingMs,
   landingLoadScore,
   peakForceFromDuty,
@@ -15,6 +18,7 @@ import {
   isPreferredBrand,
   listShoes,
   recommendShoes,
+  scoreShoe,
   shoeImageSrc,
   shoeSlug,
   type MatchedShoeRecommendation,
@@ -562,6 +566,54 @@ if (sameLoadFast !== sameLoadEasy) {
   throw new Error(
     `duty alone must not change the load score: ${sameLoadFast} vs ${sameLoadEasy}`,
   );
+}
+// The flip side of the rule above: these two DO move the score, so the landing
+// card has to show them. Two cards with the same visible numbers scoring
+// differently is the bug this guards.
+const baseLoad = { peakGrfBw: 2.0, loadingRateBwS: 20, dutyFactor: 0.39, kneeFlexContact: 40 };
+const scoreShift = [
+  ["loadingRateBwS", { ...baseLoad, loadingRateBwS: 60 }],
+  ["kneeFlexContact", { ...baseLoad, kneeFlexContact: 12 }],
+] as const;
+for (const [field, input] of scoreShift) {
+  if (landingLoadScore(input) === landingLoadScore(baseLoad)) {
+    throw new Error(`${field} must move the load score, so the card must show it`);
+  }
+}
+if (
+  formatLoadingRateBwS(19.4) !== "19 BW/s" ||
+  formatKneeFlexDeg(41.2) !== "약 41°" ||
+  formatLoadingRateBwS(Number.NaN) !== "측정 불가"
+) {
+  throw new Error("card metric formatting changed");
+}
+// The printed degree must never fall in a band other than its own label's.
+for (const angle of [-41, -40, -12, -8.4, -8, -7.6, -0.2, 0, 4, 7.6, 8, 12, 40, 41]) {
+  const strike = classifyFootStrike(angle).type;
+  const shown = formatStrikeAngleDeg(angle, strike);
+  if (strike === "unknown") {
+    if (shown !== "측정 불가") {
+      throw new Error(`unknown strike must not print a degree: ${angle} → ${shown}`);
+    }
+    continue;
+  }
+  const printed = Number(shown.replace(/[^0-9+.-]/g, ""));
+  if (classifyFootStrike(printed).type !== strike) {
+    throw new Error(
+      `printed angle contradicts its label: ${angle}° is ${strike} but prints ${shown}`,
+    );
+  }
+}
+// A pattern-only trigger must not claim the impact was large.
+const stabilityShoe = listShoes().find((shoe) => shoe.category === "안정화");
+if (!stabilityShoe) throw new Error("catalog has no 안정화 shoe to test copy with");
+const stabilityCopy = (stability: "impact" | "pattern") =>
+  scoreShoe(stabilityShoe, "rearfoot", "steady", stability)?.reasons.join(" ") ?? "";
+if (stabilityCopy("pattern").includes("반력이 큰")) {
+  throw new Error("pattern-triggered stability must not claim a large impact");
+}
+if (!stabilityCopy("impact").includes("반력이 큰")) {
+  throw new Error("impact-triggered stability lost its reason");
 }
 if (formatTimingMs(217) !== "약 210 ms" || quantizeMs(33) !== 30) {
   throw new Error(

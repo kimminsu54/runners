@@ -1,5 +1,7 @@
 import {
   classifyFootStrike,
+  FOREFOOT_MIN_ANGLE_DEG,
+  REARFOOT_MAX_ANGLE_DEG,
   type CameraView,
   type FootStrike,
   type StrikeConfidence,
@@ -205,10 +207,20 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
       `접지 ${formatTimingMs(l.contactMs)} · 체공 ${formatTimingMs(l.flightMs)}.`,
     );
   }
-  if (l.peakGrfBw >= 3.4) {
-    bits.push("빠른 페이스에서 나타나는 큰 반력입니다.");
-  } else if (l.peakGrfBw < 2) {
-    bits.push("걷기·가벼운 조깅에 가까운 충격 수준입니다.");
+  // How big the landing was overall is `compareHint(score)`'s job, and it is
+  // said once. Repeating it from peakGrfBw alone either duplicates that
+  // sentence or contradicts it: loading rate and knee flexion carry 40 of the
+  // 85 reachable points, so a sub-2 BW landing can still score past the
+  // "walking pace" band. Describe the rate here instead — it is the part of
+  // the score the card would otherwise leave unexplained.
+  if (l.loadingRateBwS >= 55) {
+    bits.push(
+      `힘이 실리는 속도가 ${formatLoadingRateBwS(l.loadingRateBwS)}로 빠른 편입니다.`,
+    );
+  } else if (l.loadingRateBwS <= 20) {
+    bits.push(
+      `힘이 ${formatLoadingRateBwS(l.loadingRateBwS)}로 천천히 실렸습니다.`,
+    );
   }
   if (!bits.length) {
     bits.push("일반적인 달리기 착지 범위에 가깝습니다.");
@@ -1330,6 +1342,40 @@ export function formatTimingPair(contactMs: number, flightMs: number): string {
     return "측정 불가";
   }
   return `약 ${quantizeMs(contactMs)} / ${quantizeMs(flightMs)} ms`;
+}
+
+/** How fast the force arrives. Feeds `rateTerm` in the landing score. */
+export function formatLoadingRateBwS(bwPerS: number): string {
+  if (!Number.isFinite(bwPerS)) return "측정 불가";
+  return `${Math.round(bwPerS)} BW/s`;
+}
+
+/** Pose angles carry a few degrees of noise, so whole degrees is the floor. */
+export function formatKneeFlexDeg(deg: number): string {
+  if (!Number.isFinite(deg)) return "측정 불가";
+  return `약 ${Math.round(deg)}°`;
+}
+
+/**
+ * Print the strike angle so it can never contradict its own label.
+ *
+ * Rounding alone breaks that: 7.6° classifies as midfoot but prints as "+8°",
+ * and rule §3 defines +8° as forefoot. Keep the printed degree inside the band
+ * the classification came from. The nudge is under one degree — smaller than
+ * the pose noise the "약" already admits to — and the bounds come from the
+ * classifier's own constants so the two cannot drift apart.
+ */
+export function formatStrikeAngleDeg(deg: number, strike: FootStrike): string {
+  if (!Number.isFinite(deg) || strike === "unknown") return "측정 불가";
+  let shown = Math.round(deg);
+  if (strike === "rearfoot") {
+    shown = Math.min(shown, REARFOOT_MAX_ANGLE_DEG);
+  } else if (strike === "forefoot") {
+    shown = Math.max(shown, FOREFOOT_MIN_ANGLE_DEG);
+  } else {
+    shown = clamp(shown, REARFOOT_MAX_ANGLE_DEG + 1, FOREFOOT_MIN_ANGLE_DEG - 1);
+  }
+  return `약 ${shown > 0 ? "+" : ""}${shown}°`;
 }
 
 /** Cadence from the typical short step, not first-to-last span (missed contacts). */

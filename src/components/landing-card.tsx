@@ -3,7 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   compareHint,
   footStrikeLabel,
+  formatKneeFlexDeg,
+  formatLoadingRateBwS,
   formatSeconds,
+  formatStrikeAngleDeg,
   formatTimingMs,
   riskLabel,
   type Landing,
@@ -55,18 +58,34 @@ export function LandingCard({
             <Badge variant="outline">품질 부족</Badge>
           )}
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+        {/* Rule §UI: a score on screen shows the values that move it. The load
+            score is peakGrfBw + loadingRateBwS + kneeFlexContact, so all three
+            sit here. Impact velocity was dropped — it reads as an input but
+            never enters the score. */}
+        <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
           <Metric
             label="착지 주법"
             value={
               trusted && landing.footStrike !== "unknown"
-                ? `${footStrikeLabel[landing.footStrike]} · 약 ${landing.footStrikeAngleDeg > 0 ? "+" : ""}${Math.round(landing.footStrikeAngleDeg)}°`
+                ? `${footStrikeLabel[landing.footStrike]} · ${formatStrikeAngleDeg(landing.footStrikeAngleDeg, landing.footStrike)}`
                 : "판정 불가"
             }
           />
           <Metric
             label="추정 최대 반력"
             value={trusted ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가"}
+          />
+          <Metric
+            label="부하율"
+            value={
+              trusted ? formatLoadingRateBwS(landing.loadingRateBwS) : "측정 불가"
+            }
+          />
+          <Metric
+            label="접지 순간 무릎"
+            value={
+              trusted ? formatKneeFlexDeg(landing.kneeFlexContact) : "측정 불가"
+            }
           />
           <Metric
             label="접지 시간"
@@ -82,12 +101,6 @@ export function LandingCard({
               trusted && landing.gaitBased
                 ? formatTimingMs(landing.flightMs)
                 : "측정 불가"
-            }
-          />
-          <Metric
-            label="착지 속도"
-            value={
-              trusted ? `${landing.impactVelocity.toFixed(1)} m/s` : "측정 불가"
             }
           />
         </CardContent>
