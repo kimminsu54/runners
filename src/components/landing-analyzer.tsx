@@ -31,7 +31,17 @@ import type { Landmark } from "@/lib/pose";
 import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
 import { syntheticRunningFrames } from "@/lib/synthetic-jump";
 import { cn } from "@/lib/utils";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+
+/** The query string does not change while the analyzer is mounted. */
+const subscribeNever = () => () => {};
 
 type Status = "idle" | "loading-model" | "analyzing" | "done" | "error";
 
@@ -71,7 +81,9 @@ export function LandingAnalyzer() {
   const [playheadT, setPlayheadT] = useState(0);
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [demoPlaying, setDemoPlaying] = useState(false);
-  const poseFramesRef = useRef<PoseFrame[]>([]);
+  // Rendering reads these (the sketch overlay follows the playhead), so they are
+  // state, not a ref.
+  const [poseFrames, setPoseFrames] = useState<PoseFrame[]>([]);
   const clockFactor =
     detectedSlowMotion && detectedSlowMotion > 0 ? detectedSlowMotion : 1;
 
@@ -80,11 +92,18 @@ export function LandingAnalyzer() {
     return () => URL.revokeObjectURL(videoUrl);
   }, [videoUrl]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("demo") !== "report") {
-      return;
-    }
+  // `?demo=report` seeds the sample session. The query string is client-only,
+  // so it is read through the store hook and the seeding happens during render
+  // rather than in a mount effect — the effect version set seven pieces of
+  // state after the first paint, which flashed the empty upload state and is
+  // the shape React warns about.
+  const demoRequested = useSyncExternalStore(
+    subscribeNever,
+    () => new URLSearchParams(window.location.search).get("demo") === "report",
+    () => false,
+  );
+  const [demoSeeded, setDemoSeeded] = useState(false);
+  if (demoRequested && !demoSeeded) {
     const frames = syntheticRunningFrames();
     const demo = analyzeLandings(frames, {
       statureM: 1.7,
@@ -92,16 +111,15 @@ export function LandingAnalyzer() {
       width: 1280,
       height: 720,
     });
-    poseFramesRef.current = frames;
+    setDemoSeeded(true);
+    setPoseFrames(frames);
     setFileName("샘플 세션");
     setResult(demo);
     setDetectedSlowMotion(1);
     setStatus("done");
-    const start = demo.landings[0]?.tContact ?? 0;
-    setPlayheadT(start);
-    setOverlay(nearestPoseFrame(frames, start)?.landmarks ?? null);
+    setPlayheadT(demo.landings[0]?.tContact ?? 0);
     setDemoPlaying(true);
-  }, []);
+  }
 
   useEffect(() => {
     const stream = streamRef.current;
@@ -109,7 +127,7 @@ export function LandingAnalyzer() {
   }, []);
 
   const attachFile = useCallback((file: File) => {
-    poseFramesRef.current = [];
+    setPoseFrames([]);
     setResult(null);
     setError(null);
     setStatus("idle");
@@ -152,7 +170,7 @@ export function LandingAnalyzer() {
       streamRef.current = stream;
       setCameraOn(true);
       setResult(null);
-      poseFramesRef.current = [];
+      setPoseFrames([]);
       setDemoPlaying(false);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -223,7 +241,7 @@ export function LandingAnalyzer() {
         frames.push({ t, landmarks: det.landmarks[0] ?? null });
         if (i % 2 === 0) setProgress(Math.round(((i + 1) / n) * 100));
       }
-      poseFramesRef.current = frames;
+      setPoseFrames(frames);
       const {
         result: analysis,
         slowMotionFactor: usedFactor,
@@ -267,10 +285,24 @@ export function LandingAnalyzer() {
     }
   };
 
+  /**
+   * Without a video element the pose comes from the frames we already have, so
+   * it is a function of the playhead — derived, not stored. Storing it meant an
+   * effect calling setOverlay on every animation frame, which React counts as a
+   * cascading update and eventually refuses ("Maximum update depth exceeded").
+   * The video and camera paths still own `overlay`, since theirs arrives from
+   * async detection.
+   */
+  const shownOverlay = useMemo(() => {
+    if (videoUrl) return overlay;
+    const frame = nearestPoseFrame(poseFrames, playheadT);
+    return frame?.landmarks ?? overlay;
+  }, [videoUrl, playheadT, overlay, poseFrames]);
+
   const selectedLanding = result?.landings[selected];
   const liveMoment = useMemo(
-    () => (result ? liveMomentAt(result, playheadT, overlay) : null),
-    [result, playheadT, overlay],
+    () => (result ? liveMomentAt(result, playheadT, shownOverlay) : null),
+    [result, playheadT, shownOverlay],
   );
 
   const jumpTo = async (analysisT: number) => {
@@ -283,7 +315,7 @@ export function LandingAnalyzer() {
       setVideoPlaying(false);
     }
     const frame = nearestPoseFrame(
-      poseFramesRef.current,
+      poseFrames,
       videoUrl ? videoT : analysisT,
     );
     if (frame?.landmarks) {
@@ -321,7 +353,7 @@ export function LandingAnalyzer() {
     const apply = () => {
       const analysisT = analysisTimeFromVideo(video.currentTime, clockFactor);
       setPlayheadT(analysisT);
-      const frame = nearestPoseFrame(poseFramesRef.current, video.currentTime);
+      const frame = nearestPoseFrame(poseFrames, video.currentTime);
       if (frame?.landmarks) setOverlay(frame.landmarks);
     };
 
@@ -347,7 +379,7 @@ export function LandingAnalyzer() {
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
     };
-  }, [result, videoUrl, clockFactor]);
+  }, [result, videoUrl, clockFactor, poseFrames]);
 
   useEffect(() => {
     if (!demoPlaying || videoUrl || !result) return;
@@ -368,17 +400,20 @@ export function LandingAnalyzer() {
     return () => cancelAnimationFrame(raf);
   }, [demoPlaying, videoUrl, result]);
 
-  useEffect(() => {
-    if (videoUrl) return;
-    const frame = nearestPoseFrame(poseFramesRef.current, playheadT);
-    if (frame?.landmarks) setOverlay(frame.landmarks);
-  }, [playheadT, videoUrl]);
-
-  useEffect(() => {
-    if (liveMoment?.phase === "stance" && liveMoment.landingIndex >= 0) {
-      setSelected(liveMoment.landingIndex);
-    }
-  }, [liveMoment?.phase, liveMoment?.landingIndex]);
+  // Follow the landing being played, without an effect: adjusting state during
+  // render is the supported way to react to a changing value, and it does not
+  // commit an extra frame the way setState-in-effect does. `followedIndex`
+  // remembers what playback last moved to, so a landing the runner clicked
+  // stays selected until playback reaches a different one.
+  const playingIndex =
+    liveMoment?.phase === "stance" && liveMoment.landingIndex >= 0
+      ? liveMoment.landingIndex
+      : -1;
+  const [followedIndex, setFollowedIndex] = useState(-1);
+  if (playingIndex >= 0 && playingIndex !== followedIndex) {
+    setFollowedIndex(playingIndex);
+    setSelected(playingIndex);
+  }
 
   const summary = useMemo(() => {
     if (!result?.landings.length) return null;
@@ -435,13 +470,13 @@ export function LandingAnalyzer() {
             />
             {status === "done" && result && !videoUrl && !cameraOn ? (
               <PoseSketch
-                landmarks={overlay}
+                landmarks={shownOverlay}
                 className="absolute inset-0 h-full w-full object-contain"
               />
             ) : (
               <PoseOverlay
                 videoRef={videoRef}
-                landmarks={overlay}
+                landmarks={shownOverlay}
                 className="pointer-events-none absolute inset-0 h-full w-full object-contain"
               />
             )}
