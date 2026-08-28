@@ -11,7 +11,10 @@ import {
 } from "@/lib/session-store";
 import { Check, Save } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+
+/** Storage support cannot change while the page is open. */
+const subscribeNever = () => () => {};
 
 export function SaveSessionButton({
   result,
@@ -24,17 +27,25 @@ export function SaveSessionButton({
 }) {
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const [supported, setSupported] = useState(true);
 
-  // storageAvailable() reads `indexedDB`, which does not exist while the page
-  // is being prerendered on the server.
-  useEffect(() => setSupported(storageAvailable()), []);
+  // `indexedDB` does not exist while the page is prerendered on the server, so
+  // this is read through the store hook rather than an effect. The server
+  // snapshot assumes support so the button does not flash a fallback first.
+  const supported = useSyncExternalStore(
+    subscribeNever,
+    storageAvailable,
+    () => true,
+  );
 
-  // A new clip is a new session; let it be saved on its own.
-  useEffect(() => {
+  // A new clip is a new session, so it gets its own save. This is the "adjust
+  // state when a prop changes" pattern: doing it in an effect would render the
+  // stale "저장됨" once before correcting itself.
+  const [seenResult, setSeenResult] = useState(result);
+  if (seenResult !== result) {
+    setSeenResult(result);
     setState("idle");
     setMessage(null);
-  }, [result]);
+  }
 
   if (!supported) {
     return (

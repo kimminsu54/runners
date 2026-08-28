@@ -228,6 +228,97 @@ export function compareSnapshots(
   return { kind: "ready", changes };
 }
 
+// ---------------------------------------------------------------------------
+// Export / import
+// ---------------------------------------------------------------------------
+
+export const BUNDLE_KIND = "stride-lab-sessions";
+
+export type SnapshotBundle = {
+  kind: typeof BUNDLE_KIND;
+  version: number;
+  exportedAt: number;
+  sessions: SessionSnapshot[];
+};
+
+export function toBundle(
+  sessions: SessionSnapshot[],
+  exportedAt: number,
+): SnapshotBundle {
+  return { kind: BUNDLE_KIND, version: SNAPSHOT_VERSION, exportedAt, sessions };
+}
+
+const NUMBER_FIELDS = [
+  "savedAt",
+  "durationS",
+  "landingCount",
+  "cadenceSpm",
+  "meanDutyFactor",
+  "meanContactMs",
+  "meanFlightMs",
+  "meanPeakGrfBw",
+  "meanLoadingRateBwS",
+  "meanKneeFlexContact",
+  "meanScore",
+  "asymmetryPct",
+] as const;
+
+function isSnapshot(value: unknown): value is SessionSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const s = value as Record<string, unknown>;
+  if (s.version !== SNAPSHOT_VERSION) return false;
+  if (typeof s.id !== "string" || !s.id) return false;
+  if (typeof s.label !== "string") return false;
+  if (s.quality !== "good" && s.quality !== "fair" && s.quality !== "poor") return false;
+  // NaN is expected (a gated field), so only the type is checked here.
+  for (const key of NUMBER_FIELDS) {
+    if (typeof s[key] !== "number") return false;
+  }
+  const p = s.strikePercents as Record<string, unknown> | undefined;
+  if (!p || typeof p !== "object") return false;
+  for (const key of ["rearfoot", "midfoot", "forefoot"]) {
+    if (typeof p[key] !== "number") return false;
+  }
+  return true;
+}
+
+/**
+ * Parse a file someone hands back to the app. It is untrusted input from
+ * outside the browser, so every field is checked rather than cast — a bad file
+ * should say so, not surface as `NaN` halfway down a comparison.
+ */
+export function parseBundle(
+  text: string,
+): { ok: true; sessions: SessionSnapshot[] } | { ok: false; reason: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "JSON 파일이 아닙니다." };
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, reason: "내용을 읽을 수 없는 파일입니다." };
+  }
+  const bundle = parsed as Record<string, unknown>;
+  if (bundle.kind !== BUNDLE_KIND) {
+    return { ok: false, reason: "이 앱에서 내보낸 파일이 아닙니다." };
+  }
+  if (bundle.version !== SNAPSHOT_VERSION) {
+    return {
+      ok: false,
+      reason: `저장 형식이 다릅니다 (파일 v${String(bundle.version)}, 현재 v${SNAPSHOT_VERSION}).`,
+    };
+  }
+  if (!Array.isArray(bundle.sessions)) {
+    return { ok: false, reason: "세션 목록이 없습니다." };
+  }
+  const sessions = bundle.sessions.filter(isSnapshot);
+  if (!sessions.length) {
+    return { ok: false, reason: "가져올 수 있는 세션이 없습니다." };
+  }
+  return { ok: true, sessions };
+}
+
 /** One sentence over the whole comparison. Counts only the scored metrics. */
 export function comparisonHeadline(changes: MetricChange[]): string {
   const softer = changes.filter((c) => c.direction === "softer").length;

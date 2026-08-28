@@ -6,6 +6,7 @@ import { InjuryGuidance } from "@/components/injury-guidance";
 import { LandingCard } from "@/components/landing-card";
 import { LiveReadout } from "@/components/live-readout";
 import { SessionSummaryCard } from "@/components/session-summary";
+import { SideBreakdown } from "@/components/side-breakdown";
 import { PoseOverlay, PoseSketch } from "@/components/pose-overlay";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ import {
   type AnalysisResult,
   type PoseFrame,
 } from "@/lib/landing-analysis";
+import { buildSessionSummary } from "@/lib/session-summary";
 import {
   analysisTimeFromVideo,
   liveMomentAt,
@@ -734,8 +736,12 @@ export function LandingAnalyzer() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">가장 센 착지</p>
+                      {/* Every landing card reads "착지 N · 점수 M". Printing the
+                          score first here made it read as a landing number, and
+                          the two are often the same value. */}
                       <p className="text-lg font-semibold tabular-nums">
-                        {summary.worst.damageScore} · {formatSeconds(summary.worst.tContact)}
+                        {formatSeconds(summary.worst.tContact)} · 점수{" "}
+                        {summary.worst.damageScore}
                       </p>
                     </div>
                   </div>
@@ -762,6 +768,9 @@ export function LandingAnalyzer() {
                 )}
               </CardContent>
             </Card>
+            {result.quality.level !== "poor" ? (
+              <SideBreakdown summary={buildSessionSummary(result)} />
+            ) : null}
             {selectedLanding && result.quality.level !== "poor" ? (
               <InjuryGuidance landing={selectedLanding} />
             ) : null}

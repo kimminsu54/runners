@@ -13,6 +13,8 @@ import { footStrikeLabel } from "@/lib/landing-analysis";
 import {
   comparisonHeadline,
   compareSnapshots,
+  parseBundle,
+  toBundle,
   type MetricChange,
   type SessionSnapshot,
 } from "@/lib/session-snapshot";
@@ -21,11 +23,23 @@ import {
   clearSnapshots,
   deleteSnapshot,
   listSnapshots,
+  saveSnapshot,
   storageAvailable,
 } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
-import { ArrowDown, ArrowRight, ArrowUp, Minus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  Download,
+  Minus,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+
+/** Storage support cannot change while the page is open. */
+const subscribeNever = () => () => {};
 
 const directionTone: Record<MetricChange["direction"], string> = {
   softer: "text-emerald-700",
@@ -70,13 +84,18 @@ export function CompareSessions() {
   const [error, setError] = useState<string | null>(null);
   const [beforeId, setBeforeId] = useState<string | null>(null);
   const [afterId, setAfterId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Read through the store hook, not an effect: `indexedDB` is absent during
+  // prerender, and doing it in the effect meant reload() set state
+  // synchronously before its first await.
+  const supported = useSyncExternalStore(
+    subscribeNever,
+    storageAvailable,
+    () => true,
+  );
 
   const reload = useCallback(async () => {
-    if (!storageAvailable()) {
-      setError("이 브라우저에서는 저장된 세션을 읽을 수 없습니다.");
-      setSnapshots([]);
-      return;
-    }
     try {
       const rows = await listSnapshots();
       setSnapshots(rows);
@@ -90,9 +109,64 @@ export function CompareSessions() {
     }
   }, []);
 
+  // The initial load reads its own state so the effect never touches state
+  // before awaiting, and drops the result if the page navigated away mid-read.
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (!supported) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await listSnapshots();
+        if (cancelled) return;
+        setSnapshots(rows);
+        setError(null);
+        setAfterId((current) => current ?? rows[0]?.id ?? null);
+        setBeforeId((current) => current ?? rows[1]?.id ?? null);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "저장된 세션을 읽지 못했습니다.");
+        setSnapshots([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supported]);
+
+  const exportAll = async () => {
+    const rows = await listSnapshots();
+    const blob = new Blob([JSON.stringify(toBundle(rows, Date.now()), null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `stride-lab-sessions-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setNotice(`${rows.length}개 세션을 내보냈습니다.`);
+  };
+
+  const importFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Let the same file be picked again after a failed import.
+    event.target.value = "";
+    if (!file) return;
+    const parsed = parseBundle(await file.text());
+    if (!parsed.ok) {
+      setNotice(parsed.reason);
+      return;
+    }
+    let added = 0;
+    for (const session of parsed.sessions) {
+      // A re-import of the same file must not duplicate rows, so the id from
+      // the file is kept and simply overwrites.
+      await saveSnapshot(session);
+      added += 1;
+    }
+    await reload();
+    setNotice(`${added}개 세션을 가져왔습니다.`);
+  };
 
   const remove = async (id: string) => {
     await deleteSnapshot(id);
@@ -100,6 +174,15 @@ export function CompareSessions() {
     if (afterId === id) setAfterId(null);
     await reload();
   };
+
+  if (!supported) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        이 브라우저에서는 저장된 세션을 읽을 수 없습니다. 시크릿 창이라면 일반 창에서
+        다시 열어 주세요.
+      </p>
+    );
+  }
 
   if (snapshots === null) {
     return <p className="text-sm text-muted-foreground">저장된 세션을 읽는 중입니다…</p>;
@@ -109,18 +192,76 @@ export function CompareSessions() {
     return <p className="text-sm text-rose-700">{error}</p>;
   }
 
+  // The toolbar renders in both states on purpose: importing a file is most
+  // useful precisely when this browser has nothing saved yet.
+  const toolbar = (
+    <>
+      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={exportAll}
+          disabled={!snapshots.length}
+        >
+          <Download />
+          파일로 내보내기
+        </Button>
+        <label
+          className={cn(
+            "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border",
+            "px-3 py-1.5 text-sm font-medium hover:bg-neutral-50",
+          )}
+        >
+          <Upload className="size-4" />
+          파일에서 가져오기
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            onChange={importFile}
+          />
+        </label>
+        {snapshots.length ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              await clearSnapshots();
+              setBeforeId(null);
+              setAfterId(null);
+              await reload();
+            }}
+          >
+            <Trash2 />
+            전체 삭제
+          </Button>
+        ) : null}
+        {notice ? <span className="text-xs text-muted-foreground">{notice}</span> : null}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        내보낸 파일에는 숫자만 들어 있고 영상은 포함되지 않습니다. 다른 브라우저나 기기로
+        세션을 옮길 때 쓰세요.
+      </p>
+    </>
+  );
+
   if (snapshots.length < 2) {
     return (
-      <Card className="rounded-2xl border-dashed border-border bg-white">
-        <CardHeader>
-          <CardTitle>비교하려면 세션이 두 개 필요합니다</CardTitle>
-          <CardDescription>
-            지금 저장된 세션은 {snapshots.length}개입니다. 리포트 위쪽의{" "}
-            <span className="font-medium">이 세션 저장</span> 을 눌러 두 번 이상 모아
-            주세요. 같은 코스에서 한 가지만 바꿔 찍은 두 클립이 가장 잘 비교됩니다.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <div className="flex flex-col gap-6">
+        <Card className="rounded-2xl border-dashed border-border bg-white">
+          <CardHeader>
+            <CardTitle>비교하려면 세션이 두 개 필요합니다</CardTitle>
+            <CardDescription>
+              지금 저장된 세션은 {snapshots.length}개입니다. 리포트 위쪽의{" "}
+              <span className="font-medium">이 세션 저장</span> 을 눌러 두 번 이상 모아
+              주세요. 같은 코스에서 한 가지만 바꿔 찍은 두 클립이 가장 잘 비교됩니다.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+        {toolbar}
+      </div>
     );
   }
 
@@ -222,22 +363,7 @@ export function CompareSessions() {
         <p className="text-sm text-muted-foreground">비교할 두 세션을 골라 주세요.</p>
       )}
 
-      <div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            await clearSnapshots();
-            setBeforeId(null);
-            setAfterId(null);
-            await reload();
-          }}
-        >
-          <Trash2 />
-          저장된 세션 전체 삭제
-        </Button>
-      </div>
+      {toolbar}
     </div>
   );
 }

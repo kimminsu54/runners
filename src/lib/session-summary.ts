@@ -8,6 +8,7 @@ import {
   riskLabel,
   type AnalysisResult,
   type FootStrike,
+  type Landing,
   type Risk,
 } from "@/lib/landing-analysis";
 import {
@@ -82,6 +83,14 @@ export type SessionSummary = {
   meanScore: number;
   /** Left/right gap in percent, from the one-decimal values shown on screen. */
   asymmetryPct: number;
+  /** Null when one foot was not seen often enough to average. */
+  sides: {
+    left: SideStats;
+    right: SideStats;
+    /** Landings the tracker could not assign to a foot. Shown, not hidden:
+     *  left + right + unassigned has to equal the landing count on screen. */
+    unassigned: number;
+  } | null;
   paceSource: "reported" | "gait" | "unknown";
   strikeCounts: Array<{ type: FootStrike; label: string; count: number; percent: number }>;
   dominantStrike: FootStrike | "mixed";
@@ -90,6 +99,48 @@ export type SessionSummary = {
 /** The precision BW values are printed at. */
 function roundToTenth(value: number): number {
   return Number.isFinite(value) ? Math.round(value * 10) / 10 : value;
+}
+
+export type SideStats = {
+  count: number;
+  meanPeakGrfBw: number;
+  meanLoadingRateBwS: number;
+  meanKneeFlexContact: number;
+  meanContactMs: number;
+  meanScore: number;
+  dominantStrike: FootStrike;
+};
+
+/**
+ * One foot's share of the run. The pair is only ever shown together, and only
+ * when both feet were seen enough times to average — a single landing on one
+ * side is a tracking artefact, not a side.
+ */
+function sideStats(landings: Landing[], trusted: boolean): SideStats {
+  const strikes = summarizeFootStrikes(
+    landings
+      .filter((l) => l.footStrike !== "unknown" && l.footStrikeConfidence !== "low")
+      .map((l) => ({ type: l.footStrike })),
+  );
+  let dominantStrike: FootStrike = "unknown";
+  let best = 0;
+  for (const type of ["rearfoot", "midfoot", "forefoot"] as const) {
+    if (strikes.counts[type] > best) {
+      best = strikes.counts[type];
+      dominantStrike = type;
+    }
+  }
+  const avg = (pick: (l: Landing) => number) =>
+    trusted ? mean(landings.map(pick)) : Number.NaN;
+  return {
+    count: landings.length,
+    meanPeakGrfBw: avg((l) => l.peakGrfBw),
+    meanLoadingRateBwS: avg((l) => l.loadingRateBwS),
+    meanKneeFlexContact: avg((l) => l.kneeFlexContact),
+    meanContactMs: avg((l) => l.contactMs),
+    meanScore: avg((l) => l.damageScore),
+    dominantStrike: trusted ? dominantStrike : "unknown",
+  };
 }
 
 function mean(values: number[]): number {
@@ -147,6 +198,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       meanKneeFlexContact: Number.NaN,
       meanScore: Number.NaN,
       asymmetryPct: Number.NaN,
+      sides: null,
       paceSource: "unknown",
       strikeCounts: [],
       dominantStrike: "unknown",
@@ -470,6 +522,13 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     meanKneeFlexContact: forceTrusted ? avgKnee : Number.NaN,
     meanScore: forceTrusted ? avgScore : Number.NaN,
     asymmetryPct: forceTrusted ? asymmetryPct : Number.NaN,
+    sides: bothSides
+      ? {
+          left: sideStats(left, forceTrusted),
+          right: sideStats(right, forceTrusted),
+          unassigned: landings.length - left.length - right.length,
+        }
+      : null,
     paceSource,
     strikeCounts,
     dominantStrike,

@@ -17,6 +17,8 @@ import {
   buildSnapshot,
   compareSnapshots,
   comparisonHeadline,
+  parseBundle,
+  toBundle,
 } from "./session-snapshot";
 import {
   PRIORITY_BRANDS,
@@ -635,6 +637,38 @@ if (!stabilityCopy("impact").includes("반력이 큰")) {
   throw new Error("impact-triggered stability lost its reason");
 }
 
+// --- per-side breakdown -----------------------------------------------------
+if (!realSummary.sides) {
+  throw new Error("a two-footed run must produce per-side stats");
+}
+{
+  const { left, right, unassigned } = realSummary.sides;
+  // Nothing may vanish: a landing the tracker could not assign is counted, not
+  // dropped, so the table can never disagree with the landing count above it.
+  if (left.count + right.count + unassigned !== realTime.landings.length) {
+    throw new Error(
+      `sides must account for every landing: ${left.count} + ${right.count} + ${unassigned} of ${realTime.landings.length}`,
+    );
+  }
+  if (unassigned < 0) throw new Error("unassigned landings cannot be negative");
+  for (const [name, side] of [["left", left], ["right", right]] as const) {
+    if (!Number.isFinite(side.meanPeakGrfBw) || !Number.isFinite(side.meanScore)) {
+      throw new Error(`${name} side lost its numbers`);
+    }
+  }
+}
+// A poor clip publishes no numbers, per side included.
+if (poorSummary.sides?.left.meanPeakGrfBw !== undefined) {
+  const blanked = poorSummary.sides === null || !Number.isFinite(poorSummary.sides.left.meanPeakGrfBw);
+  if (!blanked) throw new Error("a poor clip must not publish per-side numbers");
+}
+console.log("side breakdown ok", {
+  left: realSummary.sides.left.count,
+  right: realSummary.sides.right.count,
+  unassigned: realSummary.sides.unassigned,
+  landings: realTime.landings.length,
+});
+
 // --- pace decides purpose, not just geometry --------------------------------
 // Same strike label, same midfoot-friendly drop; only the weight differs.
 const racer: Shoe = {
@@ -731,6 +765,26 @@ if (!comparisonHeadline(jitter.changes).includes("측정 해상도")) {
 const blocked = compareSnapshots(snapA, { ...snapA, id: "e", quality: "poor" });
 if (blocked.kind !== "blocked") {
   throw new Error("a poor session must not be half of a numeric comparison");
+}
+// Export/import round-trips, and a hostile file is refused rather than parsed
+// into NaN halfway down a comparison.
+const bundleText = JSON.stringify(toBundle([snapA, softer], 1700000000000));
+const roundTrip = parseBundle(bundleText);
+if (!roundTrip.ok || roundTrip.sessions.length !== 2) {
+  throw new Error("a bundle must survive a round trip");
+}
+for (const [label, text] of [
+  ["not json", "{{{"],
+  ["wrong kind", JSON.stringify({ kind: "something-else", version: 1, sessions: [snapA] })],
+  ["wrong version", JSON.stringify({ ...toBundle([snapA], 0), version: 99 })],
+  ["no sessions", JSON.stringify(toBundle([], 0))],
+  ["junk rows", JSON.stringify({ ...toBundle([], 0), sessions: [{ id: "x" }, null, 7] })],
+  [
+    "string where a number belongs",
+    JSON.stringify({ ...toBundle([], 0), sessions: [{ ...snapA, meanPeakGrfBw: "2.1" }] }),
+  ],
+] as const) {
+  if (parseBundle(text).ok) throw new Error(`bad bundle accepted: ${label}`);
 }
 console.log("session snapshot ok", {
   bytes: JSON.stringify(snapA).length,
