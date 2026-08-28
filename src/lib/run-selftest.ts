@@ -541,7 +541,7 @@ if (slugs.size !== catalog.length) {
  * explicit so a *new* gap still fails. Pace-aware scoring surfaced these two:
  * add the photos and delete the entries.
  */
-const KNOWN_PHOTO_GAPS = new Set(["nike-zoom-fly-6", "on-cloudmonster-hyper"]);
+const KNOWN_PHOTO_GAPS = new Set(["on-cloudmonster-hyper"]);
 
 const photoGaps = (
   ["rearfoot", "midfoot", "forefoot", "mixed"] as const
