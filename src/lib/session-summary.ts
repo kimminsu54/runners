@@ -119,7 +119,7 @@ export type SideStats = {
 function sideStats(landings: Landing[], trusted: boolean): SideStats {
   const strikes = summarizeFootStrikes(
     landings
-      .filter((l) => l.footStrike !== "unknown" && l.footStrikeConfidence !== "low")
+      .filter((l) => l.footStrike !== "unknown")
       .map((l) => ({ type: l.footStrike })),
   );
   let dominantStrike: FootStrike = "unknown";
@@ -282,11 +282,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
 
   const strikeOrder: FootStrike[] = ["rearfoot", "midfoot", "forefoot"];
   const knownStrikes = forceTrusted
-    ? landings.filter(
-        (landing) =>
-          landing.footStrike !== "unknown" &&
-          landing.footStrikeConfidence !== "low",
-      )
+    ? landings.filter((landing) => landing.footStrike !== "unknown")
     : [];
   const strikeSummary = summarizeFootStrikes(
     knownStrikes.map((landing) => ({ type: landing.footStrike })),

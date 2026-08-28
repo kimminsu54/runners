@@ -26,7 +26,7 @@ const blackHanSans = Black_Han_Sans({
 export const metadata: Metadata = {
   title: "착지 충격 랩",
   description:
-    "달리기·점프 영상에서 자세를 추적해 착지 속도와 추정 지면반력을 가늠합니다.",
+    "러닝 영상에서 자세를 추적해 착지 충격과 추정 지면반력을 가늠합니다.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

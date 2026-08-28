@@ -1262,5 +1262,18 @@
     "heelDropMm": 0,
     "weightG": 263,
     "features": "EVA+TPU 혼합 EGO MAX 폼을 풀렝스로 사용하며 플레이트는 없고 GuideRail 가이던스 구조가 들어간다. 제로드롭(0mm) 플랫폼에 힐·중족부의 큰 내외측 사이드월과 넓은 베이스, 전족부 비틀림 강성으로 중등도 이상 안정화를 구현한다(록커 지오메트리는 미표기)."
+  },
+  {
+    "brand": "Nike",
+    "model": "Zoom Fly 6",
+    "category": "쿠션화",
+    "recommendedStrike": "midfoot",
+    "recommendedStrikes": [
+      "midfoot",
+      "forefoot"
+    ],
+    "heelDropMm": 8,
+    "weightG": 248,
+    "features": "전장 ZoomX 폼과 풀렝스 카본 플레이트를 조합한 템포·데일리 겸용 트레이너로 강한 전족부 록커가 중족 착지에서 전족 푸시오프로 넘어가는 전환을 돕습니다. 레이싱 모델보다 무겁고 아웃솔 커버리지가 넓어 편한 페이스의 반복 주행에도 씁니다."
   }
 ]

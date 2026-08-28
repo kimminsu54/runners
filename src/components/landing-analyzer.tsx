@@ -460,7 +460,7 @@ export function LandingAnalyzer() {
                   영상 업로드
                 </span>
                 <span className="max-w-sm text-sm text-muted-foreground">
-                  전신이 나오는 달리기·점프 영상을 끌어다 놓거나 눌러서 고르세요. 옆모습이 무릎 각도를 더 잘 잡습니다.
+                  전신이 나오는 러닝 영상을 끌어다 놓거나 눌러서 고르세요. 옆모습이 무릎 각도를 더 잘 잡습니다.
                 </span>
               </label>
             ) : null}
@@ -782,7 +782,7 @@ export function LandingAnalyzer() {
                 <CardHeader>
                   <CardTitle>결과 없음</CardTitle>
                   <CardDescription>
-                    점프 후 착지, 또는 제자리 구보처럼 발이 땅에서 떨어졌다가 닿는 장면이 더 잘 잡힙니다.
+                    발이 땅에서 떨어졌다가 닿는 구간이 보여야 합니다. 제자리 구보처럼 반복 착지가 뚜렷한 장면이 더 잘 잡힙니다.
                   </CardDescription>
                 </CardHeader>
               </Card>

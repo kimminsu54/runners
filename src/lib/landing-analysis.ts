@@ -4,7 +4,6 @@ import {
   REARFOOT_MAX_ANGLE_DEG,
   type CameraView,
   type FootStrike,
-  type StrikeConfidence,
 } from "@/lib/Footstrike";
 import {
   distPx,
@@ -78,7 +77,7 @@ export type SeriesPoint = {
 export type Risk = "low" | "moderate" | "elevated" | "high" | "severe";
 
 export type FootSide = "left" | "right" | "unknown";
-export type { FootStrike, StrikeConfidence };
+export type { FootStrike };
 export { classifyFootStrike };
 
 export const footStrikeLabel: Record<FootStrike, string> = {
@@ -109,7 +108,6 @@ export type Landing = {
   gaitBased: boolean;
   footStrike: FootStrike;
   footStrikeAngleDeg: number;
-  footStrikeConfidence: StrikeConfidence;
   note: string;
 };
 
@@ -169,8 +167,19 @@ export function riskLabel(risk: Risk): string {
 }
 
 /**
- * Per-landing load score. Short contact / low duty is pace, not damage, so
- * the scale uses peak force, loading rate, and knee give only.
+ * Weights of the three terms, in points. They sum to 100 so the score really
+ * uses the scale it is displayed on: the old 45 / 25 / 15 topped out at 85, so
+ * `riskFromScore`'s 80+ band was five points wide and the 0–100 clamp never
+ * did anything. The ratio between them is unchanged (9 : 5 : 3), so the terms
+ * still carry the same relative weight.
+ */
+const BW_POINTS = 53;
+const RATE_POINTS = 29;
+const KNEE_POINTS = 18;
+
+/**
+ * Per-landing load score, 0–100. Short contact / low duty is pace, not damage,
+ * so the scale uses peak force, loading rate, and knee give only.
  */
 export function landingLoadScore(input: {
   peakGrfBw: number;
@@ -180,9 +189,13 @@ export function landingLoadScore(input: {
 }): number {
   // Easy jogging sits near 1.8 BW and a sprint near 4.5 BW, so anchor the
   // scale there instead of letting ordinary running saturate the score.
-  const bwTerm = clamp(((input.peakGrfBw - 1.7) / 2.8) * 45, 0, 45);
-  const rateTerm = clamp(((input.loadingRateBwS - 12) / 70) * 25, 0, 25);
-  const stiffKnee = clamp((55 - input.kneeFlexContact) / 55, 0, 1) * 15;
+  const bwTerm = clamp(((input.peakGrfBw - 1.7) / 2.8) * BW_POINTS, 0, BW_POINTS);
+  const rateTerm = clamp(
+    ((input.loadingRateBwS - 12) / 70) * RATE_POINTS,
+    0,
+    RATE_POINTS,
+  );
+  const stiffKnee = clamp((55 - input.kneeFlexContact) / 55, 0, 1) * KNEE_POINTS;
   return clamp(Math.round(bwTerm + rateTerm + stiffKnee), 0, 100);
 }
 
@@ -209,10 +222,10 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
   }
   // How big the landing was overall is `compareHint(score)`'s job, and it is
   // said once. Repeating it from peakGrfBw alone either duplicates that
-  // sentence or contradicts it: loading rate and knee flexion carry 40 of the
-  // 85 reachable points, so a sub-2 BW landing can still score past the
-  // "walking pace" band. Describe the rate here instead — it is the part of
-  // the score the card would otherwise leave unexplained.
+  // sentence or contradicts it: loading rate and knee flexion carry 47 of the
+  // 100 points, so a sub-2 BW landing can still score past the "walking pace"
+  // band. Describe the rate here instead — it is the part of the score the
+  // card would otherwise leave unexplained.
   if (l.loadingRateBwS >= 55) {
     bits.push(
       `힘이 실리는 속도가 ${formatLoadingRateBwS(l.loadingRateBwS)}로 빠른 편입니다.`,
@@ -537,7 +550,7 @@ export function analyzeLandings(
     warnings.push(`측정 오차가 큰 조건입니다. ${quality.reasons[0] ?? ""}`.trim());
   }
   if (!landings.length) {
-    warnings.push("뚜렷한 착지 충격을 찾지 못했습니다. 점프·달리기처럼 발이 떨어졌다 닿는 구간이 보이게 찍어 보세요.");
+    warnings.push("뚜렷한 착지 충격을 찾지 못했습니다. 발이 떨어졌다 닿는 구간이 보이게 찍어 보세요.");
   }
 
   return {
@@ -678,7 +691,6 @@ function withoutFootStrike(landing: Landing): Landing {
     ...landing,
     footStrike: "unknown",
     footStrikeAngleDeg: Number.NaN,
-    footStrikeConfidence: "low",
   };
 }
 
@@ -705,7 +717,6 @@ function withoutGaitTiming(landing: Landing): Landing {
     gaitBased: false,
     footStrike: "unknown",
     footStrikeAngleDeg: Number.NaN,
-    footStrikeConfidence: "low",
     damageScore: score,
     risk: riskFromScore(score),
   };
@@ -1050,7 +1061,6 @@ function detectLandings(
       gaitBased,
       footStrike: strike.type,
       footStrikeAngleDeg: footStrikeAngle,
-      footStrikeConfidence: strike.confidence,
       note: "",
     };
     landing.note = landingNote(landing);

@@ -367,11 +367,27 @@ if (recommendShoes(poorSummary).kind !== "general") {
 console.log("poor-quality blank output ok", poorSummary.headline);
 
 const catalog = listShoes();
-if (catalog.length !== 104) {
-  throw new Error(`expected 104 shoes, got ${catalog.length}`);
+if (catalog.length !== 105) {
+  throw new Error(`expected 105 shoes, got ${catalog.length}`);
 }
 if (!catalog.some((shoe) => shoe.brand === "Nike" && shoe.model === "Pegasus 40")) {
   throw new Error("catalog is missing a known daily trainer");
+}
+// Every priority brand needs a non-racing shoe in each strike pool, or an easy
+// pace has nothing to recommend but a racing flat. Nike's midfoot pool was
+// exactly that gap: three shoes, two of them elite racers.
+for (const brand of PRIORITY_BRANDS) {
+  for (const target of ["rearfoot", "midfoot", "forefoot"] as const) {
+    const daily = catalog.filter(
+      (shoe) =>
+        shoe.brand === brand &&
+        (shoe.recommendedStrikes ?? []).some((s) => s === target || s === "any") &&
+        (shoe.weightG ?? 0) > 215,
+    );
+    if (!daily.length) {
+      throw new Error(`${brand} has no non-racing shoe for ${target}`);
+    }
+  }
 }
 
 function stubSummary(
@@ -527,6 +543,7 @@ if (slugs.size !== catalog.length) {
  */
 const KNOWN_PHOTO_GAPS = new Set([
   "nike-infinity-run-4-infinityrn-4",
+  "nike-zoom-fly-6",
   "on-cloudmonster-hyper",
 ]);
 

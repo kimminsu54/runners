@@ -16,7 +16,12 @@ import {
 import type { PaceBand, SessionSummary } from "./session-summary";
 import type { FootStrike } from "./Footstrike";
 
-export const SNAPSHOT_VERSION = 1;
+/**
+ * 2: the load score was renormalised from a reachable 85 to a full 100, so a
+ * v1 score means something different. Old rows are ignored on read rather than
+ * migrated — a rescaled number would look like a change the runner made.
+ */
+export const SNAPSHOT_VERSION = 2;
 
 export type SessionSnapshot = {
   version: number;

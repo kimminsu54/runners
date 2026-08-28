@@ -58,10 +58,12 @@ export default function Home() {
           </div>
           <div className="hidden items-center gap-6 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase sm:flex">
             <span>Form analysis</span>
-            <span>Community pace</span>
+            <a href="/compare" className="hover:text-foreground">
+              Compare sessions
+            </a>
             <span className="flex items-center gap-2 text-emerald-600">
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              Model online
+              Runs in your browser
             </span>
           </div>
           <div className="rounded-full border border-border bg-white/70 px-3 py-1 font-mono text-[10px] text-muted-foreground backdrop-blur-sm sm:hidden">
@@ -71,19 +73,19 @@ export default function Home() {
 
         <div className="mx-auto w-full max-w-7xl px-4 pt-10 pb-16 sm:px-6 lg:pt-16 lg:pb-28">
           <div className="mb-5 flex items-center gap-3 font-mono text-[10px] tracking-[0.2em] text-primary uppercase">
-            <span>Run together</span>
+            <span>Upload the run</span>
             <span className="h-px w-12 bg-primary" />
-            <span>Land better</span>
+            <span>Read the landing</span>
           </div>
           <h1 className="display-type max-w-4xl text-[clamp(3.5rem,9vw,8rem)] leading-[0.82] text-foreground uppercase">
-            같이 달리고,
+            내 착지를,
             <br />
-            <span className="text-primary">더 잘</span> 착지한다.
+            <span className="text-primary">한 장</span>으로 읽는다.
           </h1>
           <div className="mt-7 grid max-w-2xl gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
             <p className="max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">
-              한 사람의 착지를 숫자로만 보지 않습니다. 러닝 영상 속 리듬을 읽고,
-              반복되는 충격과 발의 주법을 한 장의 세션 리포트로 만듭니다.
+              러닝 영상 속 리듬을 읽고, 반복되는 충격과 발의 주법을 한 장의 세션
+              리포트로 만듭니다. 영상은 업로드되지 않고 브라우저 안에서만 처리됩니다.
             </p>
             <a
               href="#analyze"
@@ -94,44 +96,30 @@ export default function Home() {
             </a>
           </div>
 
+          {/* These read as live numbers, so they say what the app actually does
+              rather than standing in for a run nobody made. */}
           <div className="mt-12 flex flex-wrap items-end gap-x-10 gap-y-6 rounded-2xl border border-border bg-white/75 px-5 py-4 backdrop-blur-sm sm:mt-16 lg:max-w-2xl">
-            <div>
-              <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-                KM / Morning loop
-              </p>
-              <p className="display-type text-4xl text-foreground">5.24</p>
-            </div>
-            <div>
-              <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-                Average pace
-              </p>
-              <p className="font-mono text-lg text-primary">05&apos;24&quot;</p>
-            </div>
-            <div>
-              <p className="mb-1 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-                Crew 08
-              </p>
-              <div className="flex -space-x-2">
-                {["#e0402a", "#1f2430", "#8a93a5", "#c9cfda"].map((color, index) => (
-                  <span
-                    key={color}
-                    className="flex size-7 items-center justify-center rounded-full border-2 border-white font-mono text-[9px] text-white"
-                    style={{ backgroundColor: color }}
-                  >
-                    {index + 1}
-                  </span>
-                ))}
+            {[
+              { label: "Per landing", value: "반력 · 부하율 · 무릎" },
+              { label: "Foot strike", value: "리어 · 미드 · 포어" },
+              { label: "Shoe match", value: "주법 · 페이스 기반" },
+            ].map((item) => (
+              <div key={item.label}>
+                <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+                  {item.label}
+                </p>
+                <p className="text-base font-medium text-foreground">{item.value}</p>
               </div>
-            </div>
+            ))}
             <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-              Seoul 37.5665° N
+              No upload
             </p>
           </div>
         </div>
 
         <div className="relative flex overflow-hidden border-y border-border bg-primary py-2 text-primary-foreground">
           <div className="flex min-w-max items-center gap-5 font-mono text-[11px] font-semibold tracking-[0.14em] uppercase">
-            {["Upload the run", "Read the rhythm", "Know your landing", "Train with intent"].map(
+            {["Upload the run", "Read the rhythm", "Know your landing", "Compare the next one"].map(
               (item) => (
                 <span key={item} className="flex items-center gap-5">
                   {item} <Circle className="size-2 fill-current" />
@@ -165,7 +153,7 @@ export default function Home() {
           <div>
             <p className="display-type text-2xl text-foreground">STRIDE/LAB</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              RUN WITH PEOPLE. TRAIN WITH CONTEXT.
+              READ THE LANDING. CHANGE ONE THING.
             </p>
           </div>
           <p className="max-w-xl text-xs leading-5 text-muted-foreground sm:text-right">
