@@ -698,6 +698,7 @@ export function LandingAnalyzer() {
         <div className="flex flex-col gap-6">
         <SessionSummaryCard
           result={result}
+          label={fileName ?? "세션"}
           onSelectPeak={(index) => {
             setSelected(index);
             const landing = result.landings[index];

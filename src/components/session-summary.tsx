@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { SaveSessionButton } from "@/components/save-session";
 import { ShoeRecommendations } from "@/components/shoe-recommendations";
 import type { AnalysisResult } from "@/lib/landing-analysis";
 import { buildSessionSummary, paceLabel, type PaceBand } from "@/lib/session-summary";
@@ -47,9 +48,12 @@ const riskTone: Record<string, string> = {
 
 export function SessionSummaryCard({
   result,
+  label,
   onSelectPeak,
 }: {
   result: AnalysisResult;
+  /** Clip name, used to tell saved sessions apart in the comparison list. */
+  label?: string;
   onSelectPeak?: (index: number) => void;
 }) {
   const summary = buildSessionSummary(result);
@@ -89,6 +93,11 @@ export function SessionSummaryCard({
             자세 포착 {Math.round(result.quality.detectedRatio * 100)}%
           </span>
         </div>
+        <SaveSessionButton
+          result={result}
+          summary={summary}
+          label={label ?? "세션"}
+        />
         <p className="text-lg font-medium leading-7">{summary.headline}</p>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

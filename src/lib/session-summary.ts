@@ -77,6 +77,11 @@ export type SessionSummary = {
   meanFlightMs: number;
   meanDutyFactor: number;
   meanPeakGrfBw: number;
+  meanLoadingRateBwS: number;
+  meanKneeFlexContact: number;
+  meanScore: number;
+  /** Left/right gap in percent, from the one-decimal values shown on screen. */
+  asymmetryPct: number;
   paceSource: "reported" | "gait" | "unknown";
   strikeCounts: Array<{ type: FootStrike; label: string; count: number; percent: number }>;
   dominantStrike: FootStrike | "mixed";
@@ -138,6 +143,10 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       meanFlightMs: Number.NaN,
       meanDutyFactor: Number.NaN,
       meanPeakGrfBw: Number.NaN,
+      meanLoadingRateBwS: Number.NaN,
+      meanKneeFlexContact: Number.NaN,
+      meanScore: Number.NaN,
+      asymmetryPct: Number.NaN,
       paceSource: "unknown",
       strikeCounts: [],
       dominantStrike: "unknown",
@@ -455,6 +464,12 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     meanFlightMs,
     meanDutyFactor,
     meanPeakGrfBw: forceTrusted ? avgGrf : Number.NaN,
+    // Session comparison reads these. They stay NaN when the clip is not
+    // trusted so a saved session cannot smuggle numbers past the quality gate.
+    meanLoadingRateBwS: forceTrusted ? avgRate : Number.NaN,
+    meanKneeFlexContact: forceTrusted ? avgKnee : Number.NaN,
+    meanScore: forceTrusted ? avgScore : Number.NaN,
+    asymmetryPct: forceTrusted ? asymmetryPct : Number.NaN,
     paceSource,
     strikeCounts,
     dominantStrike,

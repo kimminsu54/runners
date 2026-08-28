@@ -60,6 +60,15 @@ const STRIKE_LABEL: Record<Exclude<FootStrike, "unknown"> | "mixed", string> = {
   mixed: "혼합",
 };
 
+/**
+ * Weight bands, in grams. The catalog's prose mentions plates, but half of the
+ * mentions are "무플레이트" / "플레이트 없는", so weight is the signal that can
+ * actually be trusted for what a shoe is *for*.
+ */
+const RACING_WEIGHT_G = 215;
+const DAILY_TRAINER_MIN_G = 240;
+const DAILY_TRAINER_MAX_G = 320;
+
 const REARFOOT_AVOID =
   /리어풋 (주자|착지).{0,12}(권장되지 않|부적합)|뒤꿈치 착지.{0,8}(부적합|적합하지 않|불리)|힐 스트라이커.{0,8}(부적합|불리|불안정)/;
 const FOREFOOT_HINT =
@@ -294,17 +303,34 @@ export function scoreShoe(
     score += 6;
   }
 
-  if (isEasyPace(pace)) {
-    if (shoe.weightG != null && shoe.weightG >= 240 && shoe.weightG <= 320) {
-      score += 6;
+  if (shoe.weightG != null) {
+    if (isEasyPace(pace)) {
+      if (shoe.weightG <= RACING_WEIGHT_G) {
+        // Purpose has to beat geometry here. A racing flat fits a midfoot
+        // strike on paper — low drop, close to the ground — and collects the
+        // full geometry bonus for it, but it is not the shoe for an easy daily
+        // run. The largest geometry bonus a shoe can gather is 20 (drop 14 +
+        // strike hint 6), so this penalty is sized to outweigh that rather
+        // than picked to taste.
+        score -= 22;
+        reasons.push(`${shoe.weightG}g 레이싱 지향 · 편한 페이스에는 가벼운 편`);
+      } else if (shoe.weightG < DAILY_TRAINER_MIN_G) {
+        // A graded step, not a cliff: the old rule turned on at 200 g, so a
+        // 201 g racer slipped through untouched.
+        score -= 8;
+      } else if (shoe.weightG <= DAILY_TRAINER_MAX_G) {
+        score += 6;
+        reasons.push(`무게 ${shoe.weightG}g · 편한 페이스 데일리 중량`);
+      } else if (shoe.weightG >= 340) {
+        score -= 4;
+      }
+    } else if (isFastPace(pace)) {
+      if (shoe.weightG <= 240) {
+        score += 8;
+        reasons.push(`무게 ${shoe.weightG}g · 빠른 페이스에 부담이 적음`);
+      }
+      if (shoe.weightG >= 310) score -= 6;
     }
-    if (shoe.weightG != null && shoe.weightG <= 200) score -= 6;
-  } else if (isFastPace(pace)) {
-    if (shoe.weightG != null && shoe.weightG <= 240) {
-      score += 8;
-      reasons.push(`무게 ${shoe.weightG}g · 빠른 페이스에 부담이 적음`);
-    }
-    if (shoe.weightG != null && shoe.weightG >= 310) score -= 6;
   }
 
   if (reasons.length === 0) {
