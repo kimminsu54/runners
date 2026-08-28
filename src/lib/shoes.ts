@@ -120,6 +120,7 @@ const SHOE_PHOTOS = new Set([
   "new-balance-fresh-foam-x-vongo-v6",
   "new-balance-fuelcell-sc-pacer-v2",
   "new-balance-fuelcell-sc-trainer-v3",
+  "nike-infinity-run-4-infinityrn-4",
   "nike-pegasus-plus",
   "nike-streakfly",
   "nike-structure-25",
