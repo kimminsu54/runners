@@ -41,6 +41,17 @@ export function parseNumericCell(raw: string | number | null | undefined): numbe
   return Number.isFinite(value) ? value : null;
 }
 
+/**
+ * A yes/no catalog column. Only an explicit yes counts: a blank cell means the
+ * row has not been classified yet, not that the answer is no. Ranking may act
+ * on `true`, but must never read `false` as a verified "no".
+ */
+export function parseFlagCell(raw: string | null | undefined): boolean {
+  if (raw == null) return false;
+  const text = String(raw).trim().toUpperCase();
+  return text === "Y" || text === "YES" || text === "TRUE" || text === "1";
+}
+
 export function parseStrikeCell(raw: string | null | undefined): CatalogStrike[] {
   if (raw == null) return [];
   const text = raw.trim();

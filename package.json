@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start -p 43217",
     "lint": "eslint",
+    "emit:shoes": "npx tsx scripts/emit-shoes-json.ts",
+    "emit:thresholds": "npx tsx scripts/emit-thresholds.ts",
+    "sync:downloads": "npx tsx scripts/sync-downloads.ts",
     "test:analysis": "npx tsx src/lib/Footstrike.test.ts && npx tsx src/lib/Shoeranking.test.ts && npx tsx src/lib/run-selftest.ts",
     "check:language": "node scripts/check-language.mjs"
   },

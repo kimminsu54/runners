@@ -1,5 +1,27 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  FOREFOOT_MIN_ANGLE_DEG,
+  MAX_PLAUSIBLE_ANGLE_DEG,
+  REARFOOT_MAX_ANGLE_DEG,
+} from "./Footstrike";
+import {
+  buildZip,
+  DOWNLOAD_FILES,
+  normalizeText,
+  readZipEntries,
+  sameBytes,
+  ZIP_NAME,
+} from "./downloads-bundle";
+import {
+  isPublishable,
+  THRESHOLDS,
+  threshold,
+  validationLabel,
+  validationMeaning,
+  type ThresholdKey,
+} from "./thresholds";
+import { emitThresholdsModule, VALIDATION_STATUSES } from "./thresholds-source";
 import {
   analyzeLandings,
   analyzeLandingsAuto,
@@ -984,3 +1006,132 @@ console.log("shoe photos ok", {
   primary: syntheticRec.picks.map((pick) => shoeImageSrc(pick.shoe)),
   secondary: syntheticRec.secondaryPicks.map((pick) => shoeImageSrc(pick.shoe)),
 });
+
+// The evidence layer is only worth having if the file on disk cannot disagree
+// with the YAML people edit, and if every value in it actually says where it
+// came from. Both are checked here rather than trusted.
+{
+  const root = join(import.meta.dirname, "../..");
+  const yaml = readFileSync(join(root, "shared/thresholds.yaml"), "utf8");
+  const rendered = normalizeText(emitThresholdsModule(yaml));
+  const onDisk = normalizeText(
+    readFileSync(join(root, "src/lib/thresholds.generated.ts"), "utf8"),
+  );
+  if (rendered !== onDisk) {
+    throw new Error(
+      "src/lib/thresholds.generated.ts is out of date — run `npm run emit:thresholds`",
+    );
+  }
+
+  const records = Object.values(THRESHOLDS);
+  for (const record of records) {
+    if (!record.source.trim()) {
+      throw new Error(`threshold ${record.key} has no source`);
+    }
+    if (!record.note.trim()) {
+      throw new Error(`threshold ${record.key} has no note`);
+    }
+    if (!VALIDATION_STATUSES.includes(record.validationStatus)) {
+      throw new Error(`threshold ${record.key} has an unknown validation status`);
+    }
+    if (!validationLabel[record.validationStatus]) {
+      throw new Error(`no Korean label for status ${record.validationStatus}`);
+    }
+    if (!validationMeaning[record.validationStatus]) {
+      throw new Error(`no explanation for status ${record.validationStatus}`);
+    }
+  }
+
+  // withheld is a behaviour, not a label: it is the one status that must stop a
+  // verdict from being published. If this ever returned true the front-view
+  // eversion readout would start printing a classification nothing supports.
+  for (const record of records) {
+    const expected = record.validationStatus !== "withheld";
+    if (isPublishable(record.key as ThresholdKey) !== expected) {
+      throw new Error(
+        `isPublishable(${record.key}) disagrees with status ${record.validationStatus}`,
+      );
+    }
+  }
+
+  // Footstrike.ts keeps its three bands written out, because /downloads
+  // publishes it as a file that has to compile on its own. That is only safe
+  // while the literals and the YAML say the same thing.
+  const pairs: Array<[ThresholdKey, number]> = [
+    ["foot_strike_rearfoot_max_deg", REARFOOT_MAX_ANGLE_DEG],
+    ["foot_strike_forefoot_min_deg", FOREFOOT_MIN_ANGLE_DEG],
+    ["foot_strike_max_plausible_deg", MAX_PLAUSIBLE_ANGLE_DEG],
+  ];
+  for (const [key, literal] of pairs) {
+    if (threshold(key) !== literal) {
+      throw new Error(
+        `Footstrike.ts has ${literal} where shared/thresholds.yaml has ${threshold(key)} for ${key}`,
+      );
+    }
+  }
+
+  const statuses = new Map<string, number>();
+  for (const record of records) {
+    statuses.set(
+      record.validationStatus,
+      (statuses.get(record.validationStatus) ?? 0) + 1,
+    );
+  }
+  console.log("thresholds ok", {
+    count: records.length,
+    ...Object.fromEntries(statuses),
+  });
+}
+
+// /downloads hands out the rule files as standalone reading. They were hand
+// copies and they had gone stale — the published Footstrike.ts still carried a
+// confidence grade the app had deleted. Compare both the loose files and the
+// bundle, so the page cannot quietly serve rules the app no longer follows.
+{
+  const root = join(import.meta.dirname, "../..");
+  const expected = DOWNLOAD_FILES.map(([from, name]) => ({
+    name,
+    bytes: new TextEncoder().encode(
+      normalizeText(readFileSync(join(root, from), "utf8")),
+    ),
+  }));
+
+  for (const entry of expected) {
+    const published = new Uint8Array(
+      readFileSync(join(root, "public/downloads", entry.name)),
+    );
+    if (!sameBytes(published, entry.bytes)) {
+      throw new Error(
+        `public/downloads/${entry.name} differs from its source — run \`npm run sync:downloads\``,
+      );
+    }
+  }
+
+  const zip = new Uint8Array(
+    readFileSync(join(root, "public/downloads", ZIP_NAME)),
+  );
+  const inZip = readZipEntries(zip);
+  if (inZip.length !== expected.length) {
+    throw new Error(
+      `${ZIP_NAME} holds ${inZip.length} entries, expected ${expected.length} — run \`npm run sync:downloads\``,
+    );
+  }
+  for (let i = 0; i < expected.length; i++) {
+    if (inZip[i].name !== expected[i].name) {
+      throw new Error(
+        `${ZIP_NAME} entry ${i} is ${inZip[i].name}, expected ${expected[i].name}`,
+      );
+    }
+    if (!sameBytes(inZip[i].bytes, expected[i].bytes)) {
+      throw new Error(
+        `${ZIP_NAME} entry ${inZip[i].name} is stale — run \`npm run sync:downloads\``,
+      );
+    }
+  }
+  // The writer and the reader are each other's only check, so confirm the
+  // archive on disk is byte-identical to a fresh build of the same inputs.
+  if (!sameBytes(zip, buildZip(expected))) {
+    throw new Error(`${ZIP_NAME} is not a clean build — run \`npm run sync:downloads\``);
+  }
+  console.log("downloads ok", { files: expected.length, zipBytes: zip.length });
+}

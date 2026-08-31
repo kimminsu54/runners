@@ -7,6 +7,7 @@ import { LandingCard } from "@/components/landing-card";
 import { LiveReadout } from "@/components/live-readout";
 import { SessionSummaryCard } from "@/components/session-summary";
 import { SideBreakdown } from "@/components/side-breakdown";
+import { ThresholdEvidence } from "@/components/threshold-evidence";
 import { PoseOverlay, PoseSketch } from "@/components/pose-overlay";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -809,6 +810,11 @@ export function LandingAnalyzer() {
             {selectedLanding && result.quality.level !== "poor" ? (
               <InjuryGuidance landing={selectedLanding} />
             ) : null}
+            {/* Last in the column on purpose: it explains the numbers above it,
+                and it is the same table whatever the clip turned out to be —
+                including a clip that was refused, where the reader most wants
+                to know which boundary refused it. */}
+            <ThresholdEvidence />
           </div>
 
           <div className="flex flex-col gap-3">

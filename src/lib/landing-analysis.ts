@@ -23,6 +23,7 @@ import {
   percentile,
   rollingPercentile,
 } from "@/lib/signal";
+import { threshold } from "@/lib/thresholds";
 
 export const G = 9.80665;
 
@@ -46,10 +47,12 @@ export function peakForceFromDuty(dutyFactor: number): number {
   return 0.55 / dutyFactor + 0.65;
 }
 
-/** Published peak GRF from duty: the curve, then the 1.05–4.5 BW cap. */
+/** Published peak GRF from duty: the curve, then the reported-range cap. */
 export function clampedPeakGrfBw(dutyFactor: number): number {
   const raw = peakForceFromDuty(dutyFactor);
-  return Number.isFinite(raw) ? clamp(raw, 1.05, 4.5) : raw;
+  return Number.isFinite(raw)
+    ? clamp(raw, threshold("peak_grf_min_bw"), threshold("peak_grf_max_bw"))
+    : raw;
 }
 
 export type PoseFrame = {
@@ -144,10 +147,10 @@ export type AnalyzeOptions = {
 };
 
 function riskFromScore(score: number): Risk {
-  if (score < 25) return "low";
-  if (score < 45) return "moderate";
-  if (score < 65) return "elevated";
-  if (score < 80) return "high";
+  if (score < threshold("load_score_moderate_min")) return "low";
+  if (score < threshold("load_score_elevated_min")) return "moderate";
+  if (score < threshold("load_score_high_min")) return "elevated";
+  if (score < threshold("load_score_severe_min")) return "high";
   return "severe";
 }
 
@@ -279,6 +282,19 @@ function measureSubject(
   };
 }
 
+/**
+ * A profile ratio above the threshold means the shoulders and hips are spread
+ * across the frame, which is a camera in front of the runner rather than beside
+ * them. `NaN` — nobody measured — is not frontal: the side-view path is the one
+ * that degrades gracefully, since every other gate still applies.
+ */
+export function isFrontal(sideViewRatio: number): boolean {
+  return (
+    Number.isFinite(sideViewRatio) &&
+    sideViewRatio > threshold("side_view_max_profile_ratio")
+  );
+}
+
 function assessQuality(
   subjectHeightRatio: number,
   detectedRatio: number,
@@ -298,17 +314,17 @@ function assessQuality(
   const missedLandings = estimateMissedLandings(gaps, typical);
 
   const reasons: string[] = [];
-  if (!(subjectHeightRatio >= 0.2)) {
+  if (!(subjectHeightRatio >= threshold("min_subject_height_ratio"))) {
     reasons.push(
       `사람이 화면 높이의 ${Math.round((subjectHeightRatio || 0) * 100)}%만 차지합니다. 접지 순간을 재려면 25% 이상으로 크게 담아 주세요.`,
     );
   }
-  if (detectedRatio < 0.8) {
+  if (detectedRatio < threshold("min_detected_ratio_fair")) {
     reasons.push(
       `자세가 ${Math.round(detectedRatio * 100)}% 구간에서만 잡혔습니다. 전신이 계속 보이도록 찍어 주세요.`,
     );
   }
-  if (Number.isFinite(sideViewRatio) && sideViewRatio > 0.14) {
+  if (isFrontal(sideViewRatio)) {
     reasons.push(
       "정면·사선에 가까워 발바닥 각도로 착지 주법을 분류할 수 없습니다. 정확한 옆모습으로 찍어 주세요.",
     );
@@ -317,7 +333,10 @@ function assessQuality(
     reasons.push(
       `착지 간격으로 보면 약 ${missedLandings}회를 놓친 것으로 보입니다. 전신이 계속 보이게, 같은 속도로 곧게 달리는 구간이 좋습니다.`,
     );
-  } else if (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.55) {
+  } else if (
+    Number.isFinite(cadenceConsistency) &&
+    cadenceConsistency < threshold("min_cadence_consistency_fair")
+  ) {
     reasons.push(
       "착지 간격이 고르지 않아 일부 착지를 놓쳤을 수 있습니다. 같은 속도로 곧게 달리는 구간이 좋습니다.",
     );
@@ -326,9 +345,10 @@ function assessQuality(
   const expected = landings.length + missedLandings;
   const missedRatio = expected > 0 ? missedLandings / expected : 0;
   const severe =
-    !(subjectHeightRatio >= 0.2) ||
-    detectedRatio < 0.75 ||
-    (Number.isFinite(cadenceConsistency) && cadenceConsistency < 0.45) ||
+    !(subjectHeightRatio >= threshold("min_subject_height_ratio")) ||
+    detectedRatio < threshold("min_detected_ratio_publish") ||
+    (Number.isFinite(cadenceConsistency) &&
+      cadenceConsistency < threshold("min_cadence_consistency_publish")) ||
     missedRatio >= 0.3;
   const level: QualityLevel = severe ? "poor" : reasons.length ? "fair" : "good";
   return {
@@ -521,7 +541,7 @@ export function analyzeLandings(
     };
   });
 
-  const cameraView = Number.isFinite(sideViewRatio) && sideViewRatio > 0.14 ? "front" : "side";
+  const cameraView = isFrontal(sideViewRatio) ? "front" : "side";
   const detectedLandings = detectLandings(series, options.massKg, cameraView);
   const quality = assessQuality(
     subjectHeightRatio,
@@ -533,10 +553,9 @@ export function analyzeLandings(
   // Contact and flight timing is only meaningful when the runner is big enough
   // and tracked continuously. Publishing a number from a poor clip is what made
   // every video look like the same hard landing.
-  const strikeChecked =
-    Number.isFinite(sideViewRatio) && sideViewRatio <= 0.14
-      ? detectedLandings
-      : detectedLandings.map(withoutFootStrike);
+  const strikeChecked = isFrontal(sideViewRatio)
+    ? detectedLandings.map(withoutFootStrike)
+    : detectedLandings;
   const landings =
     quality.level === "poor"
       ? strikeChecked.map(withoutGaitTiming)
@@ -612,8 +631,8 @@ export function analyzeLandingsAuto(
   // tracked. A missed step can mimic slow motion exactly.
   const baseline = analyzeLandings(frames, { ...options, slowMotionFactor: 1 });
   if (
-    baseline.quality.subjectHeightRatio < 0.2 ||
-    baseline.quality.detectedRatio < 0.75
+    baseline.quality.subjectHeightRatio < threshold("min_subject_height_ratio") ||
+    baseline.quality.detectedRatio < threshold("min_detected_ratio_publish")
   ) {
     return { result: baseline, slowMotionFactor: 1, autoDetected: false };
   }
@@ -790,7 +809,7 @@ function normalizeFootAngles(
   const stanceAngles = angles.filter(
     (angle, i) =>
       Number.isFinite(angle) &&
-      Math.abs(angle) <= 40 &&
+      Math.abs(angle) <= threshold("foot_strike_max_plausible_deg") &&
       Number.isFinite(speed[i]) &&
       speed[i] <= speedCut &&
       Number.isFinite(footHeight[i]) &&
@@ -902,18 +921,19 @@ type RawLanding = {
 };
 
 // Human running stance and step timings. Anything outside these came from a
-// tracking dropout, not from the runner.
-const MIN_CONTACT_S = 0.06;
-const MAX_CONTACT_S = 0.4;
+// tracking dropout, not from the runner. The values and the reason each one
+// holds are in shared/thresholds.yaml.
+const MIN_CONTACT_S = threshold("min_contact_s");
+const MAX_CONTACT_S = threshold("max_contact_s");
 /**
  * Thresholding the foot height always clips the roll-in at heel strike and the
  * peel-off at the toe, because the foot is neither at its lowest nor fully
  * still through those phases. That truncation shortens stance and therefore
  * inflates the force estimate, so add back a fixed allowance for the two edges.
  */
-const STANCE_EDGE_ALLOWANCE_S = 0.04;
-const MIN_STEP_S = 0.15;
-const MAX_STEP_S = 0.7;
+const STANCE_EDGE_ALLOWANCE_S = threshold("stance_edge_allowance_s");
+const MIN_STEP_S = threshold("min_step_s");
+const MAX_STEP_S = threshold("max_step_s");
 
 function detectLandings(
   series: SeriesPoint[],

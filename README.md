@@ -50,6 +50,11 @@ npm run test:analysis
 npm run check:language
 ```
 
+판정 경계값은 `shared/thresholds.yaml` 한 곳에 모여 있고, 값마다 근거와 검증 상태를
+답니다. 화면의 **판정 근거** 카드가 그 표를 그대로 보여 줍니다. 러닝에서 검증된
+기준이 없는 값(`withheld`)에는 판정을 붙이지 않고 측정값만 내보냅니다.
+`npm run emit:thresholds` 로 생성 파일을 다시 쓰며, 어긋나면 테스트가 실패합니다.
+
 주법 판정·브랜드 순위·금지어 검사는 `src/lib/Footstrike.ts`, `src/lib/Shoeranking.ts`, `scripts/check-language.mjs` 입니다. 설명은 `src/lib/Readme.md`에 있습니다. 브라우저에서는 [http://127.0.0.1:43217/downloads](http://127.0.0.1:43217/downloads) 에서 받을 수 있습니다.
 
 브라우저에서 [http://127.0.0.1:43217](http://127.0.0.1:43217) 을 엽니다.

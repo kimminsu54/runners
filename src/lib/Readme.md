@@ -22,6 +22,18 @@
 
 면책(아닙니다 / 수는 없습니다)은 통과하고, 실제 위반만 실패합니다. CI에 `npm run check:language`를 붙이면 됩니다. 걸린 문구는 예외 목록에 넣지 말고 고칩니다.
 
+## 판정 근거
+
+판정 경계값은 `../../shared/thresholds.yaml` 한 곳에만 있습니다. 값마다 `source` 와
+`validation_status` 를 달고, `npm run emit:thresholds` 가 `thresholds.generated.ts` 를
+다시 씁니다. YAML 과 생성 파일이 어긋나면 `npm run test:analysis` 가 실패합니다.
+
+`validation_status: withheld` 는 라벨이 아니라 동작입니다. 러닝에서 검증된 기준이
+없는 값에는 판정을 붙이지 않고 측정값만 내보냅니다 (`isPublishable`).
+
+`Footstrike.ts` 의 `±8°`, `40°` 는 이 파일이 단독으로 컴파일되어야 해서 숫자를 그대로
+두었습니다. 대신 자체 테스트가 YAML 값과 일치하는지 확인합니다.
+
 ## 품질 · 배속 · 표시
 
 - 선택한 배속이 보행과 어긋나면 품질을 `poor`로 내리고 접지·반력·주법을 비웁니다.

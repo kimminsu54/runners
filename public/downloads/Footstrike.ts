@@ -1,42 +1,48 @@
 export type FootStrike = "rearfoot" | "midfoot" | "forefoot" | "unknown";
-export type StrikeConfidence = "high" | "medium" | "low";
 export type CameraView = "side" | "front" | "unknown";
 
-/** Inclusive. 40° still classifies; 40.1° is unknown. */
+/*
+ * These three stay written out here, rather than read from
+ * src/lib/thresholds.ts like the rest of the app's thresholds, because this
+ * file is published on /downloads as a standalone rule implementation — an
+ * import would leave the downloaded copy unable to compile. run-selftest.ts
+ * asserts each one against its entry in shared/thresholds.yaml, so the two
+ * cannot drift apart in silence; that YAML entry is also where the reason for
+ * the value and how far it is validated are recorded.
+ */
+
+/** Inclusive. 40° still classifies; 40.1° is unknown. `foot_strike_max_plausible_deg`. */
 export const MAX_PLAUSIBLE_ANGLE_DEG = 40;
 
+/** Inclusive: exactly -8° is rearfoot. `foot_strike_rearfoot_max_deg`. */
+export const REARFOOT_MAX_ANGLE_DEG = -8;
+
+/** Inclusive: exactly +8° is forefoot. `foot_strike_forefoot_min_deg`. */
+export const FOREFOOT_MIN_ANGLE_DEG = 8;
+
+/**
+ * There is no confidence grade here on purpose. The old one split classified
+ * strikes into "high" / "medium" at 4 / 15 / 35 degrees, thresholds with no
+ * documented source that nothing ever displayed, and its "low" was returned
+ * only where the type was already "unknown" — so every caller's
+ * `confidence !== "low"` check merely repeated `type !== "unknown"`. What the
+ * function can honestly say is whether it could classify at all.
+ */
 export function classifyFootStrike(
   angleDeg: number,
   view: CameraView = "side",
-): {
-  type: FootStrike;
-  confidence: StrikeConfidence;
-} {
+): { type: FootStrike } {
   // Rule §3: a frontal clip cannot read heel–toe angle.
-  if (view !== "side") {
-    return { type: "unknown", confidence: "low" };
-  }
+  if (view !== "side") return { type: "unknown" };
   // NaN loses every comparison, so a missing landmark would otherwise fall
   // through to midfoot. Outer bands are classified first: a midfoot-first
   // `angle <= 8` would swallow the +8° forefoot edge.
   if (!Number.isFinite(angleDeg) || Math.abs(angleDeg) > MAX_PLAUSIBLE_ANGLE_DEG) {
-    return { type: "unknown", confidence: "low" };
+    return { type: "unknown" };
   }
-  let type: FootStrike;
-  if (angleDeg <= -8) type = "rearfoot";
-  else if (angleDeg >= 8) type = "forefoot";
-  else type = "midfoot";
-  const magnitude = Math.abs(angleDeg);
-  // 4 / 15 / 35 are display-only confidence bands; source is not documented.
-  const confidence: StrikeConfidence =
-    type === "midfoot"
-      ? magnitude <= 4
-        ? "high"
-        : "medium"
-      : magnitude >= 15 && magnitude <= 35
-        ? "high"
-        : "medium";
-  return { type, confidence };
+  if (angleDeg <= REARFOOT_MAX_ANGLE_DEG) return { type: "rearfoot" };
+  if (angleDeg >= FOREFOOT_MIN_ANGLE_DEG) return { type: "forefoot" };
+  return { type: "midfoot" };
 }
 
 export function summarizeFootStrikes(

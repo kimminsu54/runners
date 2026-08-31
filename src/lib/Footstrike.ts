@@ -1,13 +1,23 @@
 export type FootStrike = "rearfoot" | "midfoot" | "forefoot" | "unknown";
 export type CameraView = "side" | "front" | "unknown";
 
-/** Inclusive. 40° still classifies; 40.1° is unknown. */
+/*
+ * These three stay written out here, rather than read from
+ * src/lib/thresholds.ts like the rest of the app's thresholds, because this
+ * file is published on /downloads as a standalone rule implementation — an
+ * import would leave the downloaded copy unable to compile. run-selftest.ts
+ * asserts each one against its entry in shared/thresholds.yaml, so the two
+ * cannot drift apart in silence; that YAML entry is also where the reason for
+ * the value and how far it is validated are recorded.
+ */
+
+/** Inclusive. 40° still classifies; 40.1° is unknown. `foot_strike_max_plausible_deg`. */
 export const MAX_PLAUSIBLE_ANGLE_DEG = 40;
 
-/** Inclusive: exactly -8° is rearfoot. */
+/** Inclusive: exactly -8° is rearfoot. `foot_strike_rearfoot_max_deg`. */
 export const REARFOOT_MAX_ANGLE_DEG = -8;
 
-/** Inclusive: exactly +8° is forefoot. */
+/** Inclusive: exactly +8° is forefoot. `foot_strike_forefoot_min_deg`. */
 export const FOREFOOT_MIN_ANGLE_DEG = 8;
 
 /**
