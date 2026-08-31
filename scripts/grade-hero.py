@@ -1,41 +1,44 @@
-"""Regenerates public/images/run-hero-vivid.jpg from run-hero.jpg.
+"""Regenerates public/images/run-hero.jpg from run-hero-source.jpg.
 
 One-off asset tooling, not part of the build. Needs Pillow (`pip install
 Pillow`); the app itself has no Python dependency.
 
-The source is 2000x1334 of flat grey fog, which is why the landing read as
-drab. Multiplying a vivid gradient over it lets the near-white fog take the
-colour while the runner, already almost black, stays a real silhouette rather
-than turning into a false-colour blob the way a gradient map would. The
-background is then blurred along the runner's direction of travel and he is
-composited back sharp, so the speed lives in the picture instead of in an
-overlay.
+The source is a free-licence Unsplash photograph by Miguel A Amutio
+(@amutiomi) — a tight crop of marathon runners' legs, which is the thing this
+app actually measures. It already carries the colour the page wants, in the
+shoes: neon yellow, orange, electric blue. So this script amplifies what is
+there rather than repainting it. An earlier version of this file gradient-
+mapped a grey photo instead and the result looked like thermal imaging; false
+colour on skin is the tell, so nothing here shifts hue.
+
+What it does: lifts saturation and contrast so the shoes separate from the
+asphalt, then multiplies a deep indigo down the left edge — a bed for the
+white headline that leaves the right side untouched — and blurs that same
+edge along the runners' direction of travel so the quiet side reads as speed
+rather than as an empty box.
 """
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageChops, ImageEnhance
 
-SRC = "public/images/run-hero.jpg"
-DST = "public/images/run-hero-vivid.jpg"
+SRC = "public/images/run-hero-source.jpg"
+DST = "public/images/run-hero.jpg"
 
-# Deep indigo on the left, where the headline sits; hot orange on the right,
-# behind the runner.
-STOPS = [
-    (0.00, "141C6B"),
-    (0.30, "4B2C9E"),
-    (0.58, "D93A2B"),
-    (0.82, "FF7A1C"),
-    (1.00, "FFA928"),
-]
-# The runner and his reflection, in source pixels.
-RUNNER = (1400, 520, 1760, 1010)
-BLUR_RADIUS = 40
+SATURATION = 1.38
+CONTRAST = 1.12
+BLUR_RADIUS = 46
+
+# Multiplied over the photo: deep indigo at the left edge, white (no change)
+# from the middle out, so the shoes keep their own colour.
+SCRIM = [(0.00, "141B57"), (0.26, "3D4278"), (0.62, "BFC1D8"), (0.84, "FFFFFF"), (1.00, "FFFFFF")]
+# How much motion blur each column gets: full at the left edge, none by 55%.
+BLUR_RAMP = [(0.00, "FFFFFF"), (0.30, "9A9A9A"), (0.55, "000000"), (1.00, "000000")]
 
 
 def _rgb(value: str) -> tuple[int, int, int]:
     return tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))
 
 
-def horizontal_gradient(size, stops):
+def horizontal_gradient(size, stops, mode="RGB"):
     width, height = size
     strip = Image.new("RGB", (width, 1))
     pixels = strip.load()
@@ -49,7 +52,8 @@ def horizontal_gradient(size, stops):
                 break
         else:
             pixels[x, 0] = _rgb(stops[-1][1])
-    return strip.resize((width, height))
+    out = strip.resize((width, height))
+    return out.convert("L") if mode == "L" else out
 
 
 def motion_blur_x(image, radius, steps=21):
@@ -65,22 +69,16 @@ def motion_blur_x(image, radius, steps=21):
 
 
 def main() -> None:
-    source = ImageEnhance.Contrast(Image.open(SRC).convert("RGB")).enhance(1.25)
-    graded = ImageChops.multiply(source, horizontal_gradient(source.size, STOPS))
-    graded = ImageEnhance.Color(graded).enhance(1.32)
+    image = Image.open(SRC).convert("RGB")
+    image = ImageEnhance.Color(image).enhance(SATURATION)
+    image = ImageEnhance.Contrast(image).enhance(CONTRAST)
 
-    mask = Image.new("L", graded.size, 0)
-    ImageDraw.Draw(mask).ellipse(RUNNER, fill=255)
-    mask = mask.filter(ImageFilter.GaussianBlur(46))
-    composed = Image.composite(graded, motion_blur_x(graded, BLUR_RADIUS), mask)
+    streaked = motion_blur_x(image, BLUR_RADIUS)
+    image = Image.composite(streaked, image, horizontal_gradient(image.size, BLUR_RAMP, "L"))
+    image = ImageChops.multiply(image, horizontal_gradient(image.size, SCRIM))
 
-    # Hold the left third down so white type never has to fight the gradient.
-    scrim = horizontal_gradient(
-        composed.size, [(0.0, "606060"), (0.34, "BEBEBE"), (0.55, "FFFFFF"), (1.0, "FFFFFF")]
-    )
-    out = ImageChops.multiply(composed, scrim)
-    out.save(DST, "JPEG", quality=88, optimize=True, progressive=True)
-    print(f"wrote {DST} {out.size[0]}x{out.size[1]}")
+    image.save(DST, "JPEG", quality=86, optimize=True, progressive=True)
+    print(f"wrote {DST} {image.size[0]}x{image.size[1]}")
 
 
 if __name__ == "__main__":

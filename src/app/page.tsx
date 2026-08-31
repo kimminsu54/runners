@@ -62,24 +62,28 @@ export default function Home() {
         </div>
       </header>
 
-      {/* run-hero-vivid.jpg is the same photograph, colour-graded and
-          motion-blurred by scripts/grade-hero.py — deep indigo where the
-          headline sits, hot orange behind the runner, the road streaked along
-          his direction of travel. The colour is baked into the asset rather
-          than blended in CSS so it survives at every crop; the only overlay
-          left is a scrim that keeps white type safe on narrow screens. */}
+      {/* A free-licence Unsplash photograph by Miguel A Amutio: marathon
+          runners' legs, which is the thing this app measures — and where the
+          colour the page wanted was hiding all along, in the shoes. Graded by
+          scripts/grade-hero.py, which amplifies what is there rather than
+          repainting it, and lays the indigo bed for the headline into the
+          asset so it survives every crop. See public/images/CREDITS.md. */}
       <section className="relative isolate overflow-hidden bg-ink text-white">
         <div className="absolute inset-0 -z-20">
           <Image
-            src="/images/run-hero-vivid.jpg"
+            src="/images/run-hero.jpg"
             alt=""
             fill
             priority
             sizes="100vw"
-            className="object-cover object-[58%_58%]"
+            className="object-cover object-[64%_62%]"
           />
         </div>
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[oklch(0.16_0.1_290/0.88)] via-[oklch(0.16_0.1_290/0.35)] to-transparent sm:via-[oklch(0.16_0.1_290/0.2)]" />
+        {/* The asset carries its own dark bed down the left edge, but a narrow
+            viewport crops straight past it into the legs, so the wash has to
+            cover the whole frame there and only thin out once there is room
+            for the headline to sit on the quiet side. */}
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[oklch(0.16_0.1_290/0.88)] via-[oklch(0.16_0.1_290/0.66)] to-[oklch(0.16_0.1_290/0.5)] sm:via-[oklch(0.16_0.1_290/0.28)] sm:to-transparent" />
 
         <div className="mx-auto w-full max-w-6xl px-4 pt-16 pb-14 sm:px-6 lg:pt-24 lg:pb-20">
           <p className="animate-rise inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white/90 backdrop-blur-sm">
