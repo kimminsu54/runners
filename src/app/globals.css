@@ -23,6 +23,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-volt: var(--volt);
+  --color-ink: var(--ink);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -77,6 +79,12 @@
   --chart-3: oklch(0.66 0.14 155);
   --chart-4: oklch(0.72 0.15 75);
   --chart-5: oklch(0.5 0.02 285);
+  /* Volt. Running shoes have worn this green-yellow for forty years, and it is
+     the one hue that stays legible on the near-black hero without competing
+     with the red. Used for live/measured accents only, never for body text —
+     it fails contrast on white. */
+  --volt: oklch(0.88 0.2 118);
+  --ink: oklch(0.17 0.03 265);
   --radius: 0.75rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.19 0.005 285);
@@ -141,3 +149,77 @@ html {
   letter-spacing: 0.025em;
 }
 
+
+/* --- motion -----------------------------------------------------------------
+   The hero is the only place that moves. Everything here is transform- and
+   opacity-only so it stays off the main thread, and all of it stops for
+   prefers-reduced-motion. */
+
+@keyframes stride-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes stride-sweep {
+  from {
+    transform: translate3d(-40%, 0, 0);
+  }
+  to {
+    transform: translate3d(140%, 0, 0);
+  }
+}
+
+@keyframes stride-trace {
+  to {
+    stroke-dashoffset: -600;
+  }
+}
+
+@keyframes stride-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.15;
+    transform: scale(2.4);
+  }
+}
+
+.animate-rise {
+  animation: stride-rise 0.75s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.animate-sweep {
+  animation: stride-sweep 5s linear infinite;
+}
+
+/* The dash pattern is set per-path so the same animation can drive a short
+   bright pulse running along a solid line rather than a dotted one. */
+.animate-trace {
+  animation: stride-trace 5s linear infinite;
+}
+
+.animate-ping-slow {
+  animation: stride-pulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-sweep,
+  .animate-trace,
+  .animate-ping-slow {
+    animation: none;
+  }
+  .animate-rise {
+    opacity: 1;
+    transform: none;
+  }
+}
