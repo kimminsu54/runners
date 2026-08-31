@@ -535,14 +535,6 @@ const slugs = new Set(catalog.map((shoe) => shoeSlug(shoe)));
 if (slugs.size !== catalog.length) {
   throw new Error("shoe slugs must be unique");
 }
-/**
- * Recommendable shoes with no catalog photo yet. The card falls back to a
- * placeholder, so this is polish rather than a break — but the list stays
- * explicit so a *new* gap still fails. Pace-aware scoring surfaced these two:
- * add the photos and delete the entries.
- */
-const KNOWN_PHOTO_GAPS = new Set(["on-cloudmonster-hyper"]);
-
 const photoGaps = (
   ["rearfoot", "midfoot", "forefoot", "mixed"] as const
 ).flatMap((dominantStrike) =>
@@ -571,9 +563,9 @@ const photoGaps = (
             ? [...rec.picks, ...rec.secondaryPicks]
             : [];
         })()
-      ).filter(
-        (pick) => !shoeImageSrc(pick.shoe) && !KNOWN_PHOTO_GAPS.has(shoeSlug(pick.shoe)),
-      ),
+      // Every recommendable shoe has a photo again, so this is back to an
+      // unconditional check — no allowlist to slip a new gap through.
+      ).filter((pick) => !shoeImageSrc(pick.shoe)),
     ),
   ),
 );

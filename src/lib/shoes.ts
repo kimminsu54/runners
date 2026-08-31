@@ -128,6 +128,7 @@ const SHOE_PHOTOS = new Set([
   "nike-zoom-fly-6",
   "on-cloudboom-echo-3",
   "on-cloudboom-strike",
+  "on-cloudmonster-hyper",
   "on-cloudrunner-2",
   "on-cloudsurfer",
   "puma-deviate-nitro-3",
