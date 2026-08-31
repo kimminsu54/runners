@@ -1,6 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseNumericCell, parseStrikeCell } from "../src/lib/Shoeranking";
+import {
+  parseFlagCell,
+  parseNumericCell,
+  parseStrikeCell,
+} from "../src/lib/Shoeranking";
 
 const csvPath = join(import.meta.dirname, "../src/data/shoes.csv");
 const jsonPath = join(import.meta.dirname, "../src/data/shoes.json");
@@ -44,9 +48,27 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+// Every column below is read by position, so a header check on the first cell
+// alone would let an inserted column shift drop and weight one place to the
+// right in silence. Hold the whole header instead.
+const HEADER = [
+  "Brand",
+  "Model_Name",
+  "Type",
+  "Recommended_Strike",
+  "Heel_Drop_mm",
+  "Weight_g",
+  "Super_Trainer",
+  "Biomechanical_Features",
+];
+
 const [header, ...rows] = parseCsv(readFileSync(csvPath, "utf8"));
-if (header[0] !== "Brand") {
-  throw new Error(`unexpected header: ${header.join(",")}`);
+if (header.join() !== HEADER.join()) {
+  throw new Error(
+    `unexpected header:
+  got      ${header.join(",")}
+  expected ${HEADER.join(",")}`,
+  );
 }
 
 const shoes = rows.map((cols) => {
@@ -61,7 +83,8 @@ const shoes = rows.map((cols) => {
     recommendedStrikes: strikes,
     heelDropMm: parseNumericCell(cols[4]),
     weightG: parseNumericCell(cols[5]),
-    features: cols[6] ?? "",
+    superTrainer: parseFlagCell(cols[6]),
+    features: cols[7] ?? "",
   };
 });
 

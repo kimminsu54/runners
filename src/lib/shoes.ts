@@ -21,6 +21,12 @@ export type Shoe = {
   recommendedStrikes: CatalogStrike[];
   heelDropMm: number | null;
   weightG: number | null;
+  /**
+   * Built for fast training and road racing both — the `Super_Trainer` column
+   * in the catalog. `false` means the row carries no mark, which is not the
+   * same as a checked "no", so ranking only ever acts on `true`.
+   */
+  superTrainer: boolean;
   features: string;
 };
 
@@ -61,9 +67,12 @@ const STRIKE_LABEL: Record<Exclude<FootStrike, "unknown"> | "mixed", string> = {
 };
 
 /**
- * Weight bands, in grams. The catalog's prose mentions plates, but half of the
- * mentions are "무플레이트" / "플레이트 없는", so weight is the signal that can
- * actually be trusted for what a shoe is *for*.
+ * Weight bands, in grams. They stand in for purpose: the catalog's prose
+ * mentions plates, but half of the mentions are "무플레이트" / "플레이트 없는",
+ * so it cannot be read for what a shoe is *for*. Weight alone cannot tell a
+ * 251 g super trainer from a 251 g daily trainer either, which is what the
+ * `Super_Trainer` column is for — it withholds the daily bonus below from a
+ * row that declares itself built for speed.
  */
 const RACING_WEIGHT_G = 215;
 const DAILY_TRAINER_MIN_G = 240;
@@ -306,6 +315,22 @@ export function scoreShoe(
     score += 6;
   }
 
+  // Purpose comes from the catalog's Super_Trainer column now, not from its
+  // prose. Zoom Fly 6 is the case that forced it: at 251 g it sits in the
+  // daily band below and collected the easy-pace bonus meant for shoes built
+  // for easy running, when it is built for fast training and racing. The
+  // column only speaks for the easy end — a shoe made for speed should not be
+  // sold as a comfortable daily — and the fast-pace rules stay on weight,
+  // where they already were.
+  const easyPurposeMismatch = shoe.superTrainer && isEasyPace(pace);
+  if (easyPurposeMismatch) {
+    // Small on purpose: unlike a racing flat (-22), a super trainer is
+    // perfectly wearable for an easy run. It just must not outrank a daily
+    // trainer for one, so this and the withheld +6 open a 12-point gap.
+    score -= 6;
+    reasons.push("고속 훈련·레이싱용 슈퍼트레이너 · 편한 페이스 상용은 아님");
+  }
+
   if (shoe.weightG != null) {
     if (isEasyPace(pace)) {
       if (shoe.weightG <= RACING_WEIGHT_G) {
@@ -321,7 +346,7 @@ export function scoreShoe(
         // A graded step, not a cliff: the old rule turned on at 200 g, so a
         // 201 g racer slipped through untouched.
         score -= 8;
-      } else if (shoe.weightG <= DAILY_TRAINER_MAX_G) {
+      } else if (shoe.weightG <= DAILY_TRAINER_MAX_G && !easyPurposeMismatch) {
         score += 6;
         reasons.push(`무게 ${shoe.weightG}g · 편한 페이스 데일리 중량`);
       } else if (shoe.weightG >= 340) {

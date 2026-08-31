@@ -139,6 +139,7 @@ function ShoePickGrid({
                     ? `드롭 ${pick.shoe.heelDropMm}mm`
                     : "드롭 미표기"}
                   {pick.shoe.weightG != null ? ` · ${pick.shoe.weightG}g` : ""}
+                  {pick.shoe.superTrainer ? " · 슈퍼트레이너" : ""}
                 </p>
                 {showDetails ? (
                   <ul className="mt-3 space-y-1.5 text-xs leading-5 text-muted-foreground">

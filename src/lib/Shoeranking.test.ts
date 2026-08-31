@@ -1,6 +1,7 @@
 import catalog from "../data/shoes.json";
 import {
   PRIORITY_BRANDS,
+  parseFlagCell,
   parseNumericCell,
   parseStrikeCell,
   recommendShoes,
@@ -48,6 +49,16 @@ if (dual.join() !== "midfoot,forefoot") {
 }
 if (parseStrikeCell("전체").join() !== "any") {
   throw new Error("전체 must enter every strike pool as any");
+}
+
+for (const yes of ["Y", "y", " yes ", "TRUE", "1"]) {
+  if (!parseFlagCell(yes)) throw new Error(`flag cell ${yes} must read as yes`);
+}
+// A blank cell is "not classified", and an unclassified row must score exactly
+// as it did before the column existed — so everything but an explicit yes is
+// no, and nothing may guess from it.
+for (const no of ["", "  ", "N", "N/A", null, undefined]) {
+  if (parseFlagCell(no)) throw new Error(`flag cell ${String(no)} must not read as yes`);
 }
 
 const shoes = (

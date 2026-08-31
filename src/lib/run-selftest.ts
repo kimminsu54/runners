@@ -642,6 +642,74 @@ if (!stabilityCopy("impact").includes("반력이 큰")) {
   throw new Error("impact-triggered stability lost its reason");
 }
 
+// --- purpose column ---------------------------------------------------------
+// Purpose used to be inferred from weight alone, and Zoom Fly 6 is where that
+// broke: a 251 g super trainer sat in the 240-320 g daily band and collected
+// the easy-pace bonus meant for shoes built for easy running. The catalog now
+// carries purpose in its own column, so these checks are about the column
+// winning over the band it sits in.
+const superTrainers = catalog.filter((shoe) => shoe.superTrainer);
+if (!superTrainers.length) {
+  throw new Error("the catalog lost its Super_Trainer column");
+}
+const zoomFly = catalog.find((shoe) => shoe.model === "Zoom Fly 6");
+if (!zoomFly?.superTrainer) {
+  throw new Error("Zoom Fly 6 must carry the super-trainer mark");
+}
+const easyPick = scoreShoe(zoomFly, "midfoot", "easy", "none");
+const fastPick = scoreShoe(zoomFly, "midfoot", "fast", "none");
+if (!easyPick || !fastPick) {
+  throw new Error("Zoom Fly 6 should score for a midfoot landing at either pace");
+}
+if (easyPick.reasons.some((reason) => reason.includes("데일리 중량"))) {
+  throw new Error("a super trainer must not be described as an easy-pace daily trainer");
+}
+if (!(fastPick.score > easyPick.score)) {
+  throw new Error(
+    `a super trainer should rate higher for fast work: easy ${easyPick.score}, fast ${fastPick.score}`,
+  );
+}
+// The column speaks for the easy end only. Fast-pace scoring still runs on
+// weight, so marking a light shoe must not cost it the fast bonus it earns at
+// 240 g or under.
+const lightSuperTrainer = catalog.find(
+  (shoe) => shoe.superTrainer && (shoe.weightG ?? 999) <= 240,
+);
+if (!lightSuperTrainer) {
+  throw new Error("expected a sub-240 g super trainer to test the fast-pace path");
+}
+const lightFast = scoreShoe(lightSuperTrainer, "midfoot", "fast", "none");
+if (!lightFast?.reasons.some((reason) => reason.includes("빠른 페이스에 부담이 적음"))) {
+  throw new Error("the mark must not swallow the fast-pace weight bonus");
+}
+// And it must never help at the easy end: a light super trainer keeps the
+// under-240 g penalty and takes the purpose penalty on top of it.
+const lightEasy = scoreShoe(lightSuperTrainer, "midfoot", "easy", "none");
+const lightUnmarked = scoreShoe(
+  { ...lightSuperTrainer, superTrainer: false },
+  "midfoot",
+  "easy",
+  "none",
+);
+if (!lightEasy || !lightUnmarked || lightEasy.score !== lightUnmarked.score - 6) {
+  throw new Error(
+    `marking a shoe must only cost it at an easy pace: ${lightEasy?.score} vs ${lightUnmarked?.score}`,
+  );
+}
+// Same shoe, same weight, no mark: it still collects the daily bonus. The two
+// must not tie, or the column changed nothing.
+const unmarkedTwin: Shoe = { ...zoomFly, superTrainer: false };
+const twinPick = scoreShoe(unmarkedTwin, "midfoot", "easy", "none");
+if (!twinPick || !(twinPick.score > easyPick.score)) {
+  throw new Error(
+    `an easy run should prefer the daily trainer: unmarked ${twinPick?.score}, super trainer ${easyPick.score}`,
+  );
+}
+console.log("shoe purpose column ok", {
+  marked: superTrainers.length,
+  zoomFly: { easy: easyPick.score, fast: fastPick.score, unmarkedEasy: twinPick.score },
+});
+
 // --- per-side breakdown -----------------------------------------------------
 if (!realSummary.sides) {
   throw new Error("a two-footed run must produce per-side stats");
@@ -684,6 +752,7 @@ const racer: Shoe = {
   recommendedStrikes: ["midfoot"],
   heelDropMm: 6,
   weightG: 185,
+  superTrainer: false,
   features: "",
 };
 const daily: Shoe = { ...racer, model: "Daily", heelDropMm: 8, weightG: 270 };
