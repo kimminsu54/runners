@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import {
   analyzeLandings,
   analyzeLandingsAuto,
@@ -949,6 +951,34 @@ console.log("live readout ok", {
   phase: liveStance.phase,
   knee: Math.round(liveStance.kneeFlex),
 });
+
+// The registry and the folder have to agree in both directions. A slug listed
+// with no file behind it renders a broken image, and a file nobody listed is a
+// photo the catalog will never show — neither shows up as a failure anywhere
+// else, because shoeImageSrc only ever consults the list.
+{
+  const dir = join(import.meta.dirname, "../../public/images/shoes");
+  const onDisk = new Set(
+    readdirSync(dir)
+      .filter((name) => name.endsWith(".jpg"))
+      .map((name) => name.slice(0, -".jpg".length)),
+  );
+  const listed = new Set(
+    catalog.map((shoe) => shoeImageSrc(shoe)).flatMap((src) =>
+      src ? [src.replace("/images/shoes/", "").replace(".jpg", "")] : [],
+    ),
+  );
+  const missingFile = [...listed].filter((slug) => !onDisk.has(slug));
+  const unlisted = [...onDisk].filter((slug) => !listed.has(slug));
+  if (missingFile.length || unlisted.length) {
+    throw new Error(
+      `shoe photos out of sync — listed without a file: ${
+        missingFile.join(", ") || "none"
+      }; on disk but unlisted: ${unlisted.join(", ") || "none"}`,
+    );
+  }
+  console.log("shoe photo registry ok", { photos: onDisk.size });
+}
 
 console.log("shoe photos ok", {
   primary: syntheticRec.picks.map((pick) => shoeImageSrc(pick.shoe)),

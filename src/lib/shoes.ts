@@ -99,6 +99,7 @@ export function shoeSlug(shoe: Pick<Shoe, "brand" | "model">): string {
 const SHOE_PHOTOS = new Set([
   "adidas-adizero-adios-pro-4",
   "adidas-adizero-boston-12",
+  "adidas-adizero-prime-x-2-strung",
   "adidas-adizero-sl-2",
   "adidas-supernova-rise",
   "adidas-supernova-solution",
@@ -111,6 +112,7 @@ const SHOE_PHOTOS = new Set([
   "asics-magic-speed-4",
   "asics-metaspeed-sky-paris",
   "asics-novablast-4",
+  "asics-superblast-2",
   "brooks-glycerin-21",
   "brooks-glycerin-gts-21",
   "brooks-hyperion-elite-4",
