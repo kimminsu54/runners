@@ -81,6 +81,12 @@ export type SessionSummary = {
   meanLoadingRateBwS: number;
   meanKneeFlexContact: number;
   meanScore: number;
+  /**
+   * Mean fore-aft distance at contact, as a fraction of the runner's height.
+   * Not persisted in a snapshot: adding a field there would retire every saved
+   * session, which is too high a price for one metric.
+   */
+  meanFootAheadRatio: number;
   /** Left/right gap in percent, from the one-decimal values shown on screen. */
   asymmetryPct: number;
   /** Null when one foot was not seen often enough to average. */
@@ -108,6 +114,7 @@ export type SideStats = {
   meanKneeFlexContact: number;
   meanContactMs: number;
   meanScore: number;
+  meanFootAheadRatio: number;
   dominantStrike: FootStrike;
 };
 
@@ -139,6 +146,7 @@ function sideStats(landings: Landing[], trusted: boolean): SideStats {
     meanKneeFlexContact: avg((l) => l.kneeFlexContact),
     meanContactMs: avg((l) => l.contactMs),
     meanScore: avg((l) => l.damageScore),
+    meanFootAheadRatio: avg((l) => l.footAheadRatio),
     dominantStrike: trusted ? dominantStrike : "unknown",
   };
 }
@@ -197,6 +205,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       meanLoadingRateBwS: Number.NaN,
       meanKneeFlexContact: Number.NaN,
       meanScore: Number.NaN,
+      meanFootAheadRatio: Number.NaN,
       asymmetryPct: Number.NaN,
       sides: null,
       paceSource: "unknown",
@@ -517,6 +526,9 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     meanLoadingRateBwS: forceTrusted ? avgRate : Number.NaN,
     meanKneeFlexContact: forceTrusted ? avgKnee : Number.NaN,
     meanScore: forceTrusted ? avgScore : Number.NaN,
+    meanFootAheadRatio: forceTrusted
+      ? mean(landings.map((l) => l.footAheadRatio))
+      : Number.NaN,
     asymmetryPct: forceTrusted ? asymmetryPct : Number.NaN,
     sides: bothSides
       ? {

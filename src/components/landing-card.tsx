@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   compareHint,
   footStrikeLabel,
+  formatFootAhead,
+  formatFootAheadRatio,
   formatKneeFlexDeg,
   formatLoadingRateBwS,
   formatSeconds,
@@ -62,7 +64,7 @@ export function LandingCard({
             score is peakGrfBw + loadingRateBwS + kneeFlexContact, so all three
             sit here. Impact velocity was dropped — it reads as an input but
             never enters the score. */}
-        <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+        <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
           <Metric
             label="착지 주법"
             value={
@@ -103,6 +105,18 @@ export function LandingCard({
                 : "측정 불가"
             }
           />
+          {/* Measured, never graded. Running has no agreed boundary for how far
+              ahead is too far, so the card shows the distance and says nothing
+              about it — see the withheld status in the 판정 근거 card. */}
+          <Metric
+            label="몸 앞 착지"
+            value={trusted ? formatFootAhead(landing.footAheadM) : "측정 불가"}
+            hint={
+              trusted && Number.isFinite(landing.footAheadRatio)
+                ? formatFootAheadRatio(landing.footAheadRatio)
+                : undefined
+            }
+          />
         </CardContent>
         <p className="px-4 pb-4 text-sm text-muted-foreground">
           {trusted
@@ -114,11 +128,22 @@ export function LandingCard({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="font-medium tabular-nums">{value}</p>
+      {hint ? (
+        <p className="text-xs tabular-nums text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   );
 }

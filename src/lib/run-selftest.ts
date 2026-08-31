@@ -28,11 +28,15 @@ import {
   cadenceSpm,
   classifyFootStrike,
   clampedPeakGrfBw,
+  formatFootAhead,
+  formatFootAheadRatio,
   formatKneeFlexDeg,
   formatLoadingRateBwS,
   formatStrikeAngleDeg,
   formatTimingMs,
   landingLoadScore,
+  overstrideVerdict,
+  overstrideVerdictOrWithheld,
   peakForceFromDuty,
   quantizeMs,
 } from "./landing-analysis";
@@ -57,7 +61,9 @@ import {
   type ShoeRecommendation,
 } from "./shoes";
 import {
+  analyzeSyntheticFrontRun,
   analyzeSyntheticRun,
+  analyzeSyntheticSideRun,
   assertDetectsLanding,
   assertDetectsRunningSteps,
   syntheticRunningFrames,
@@ -1134,4 +1140,109 @@ console.log("shoe photos ok", {
     throw new Error(`${ZIP_NAME} is not a clean build — run \`npm run sync:downloads\``);
   }
   console.log("downloads ok", { files: expected.length, zipBytes: zip.length });
+}
+
+// Overstriding. The measurement has to survive the two things that break naive
+// implementations — a runner who happens to face the other way, and a contact
+// index that is not the touchdown frame — and it has to disappear entirely when
+// the clip cannot support it.
+{
+  const meanOf = (xs: number[]) => {
+    const finite = xs.filter(Number.isFinite);
+    if (!finite.length) return Number.NaN;
+    return finite.reduce((a, b) => a + b, 0) / finite.length;
+  };
+  const measure = (ahead: number, facing: 1 | -1) => {
+    const result = analyzeSyntheticSideRun({ ahead, facing });
+    if (result.landings.length < 4) {
+      throw new Error(
+        `side-run fixture ahead=${ahead} facing=${facing} produced ${result.landings.length} contacts`,
+      );
+    }
+    return {
+      ratio: meanOf(result.landings.map((l) => l.footAheadRatio)),
+      cm: meanOf(result.landings.map((l) => l.footAheadM * 100)),
+    };
+  };
+
+  // A foot landing under the hip has to read as zero, not as "a bit ahead".
+  // This is the check that catches a sign or reference-point mistake, since
+  // every other case only asserts a range.
+  const under = measure(0, 1);
+  if (Math.abs(under.ratio) > 0.02) {
+    throw new Error(`foot under the hip read as ${under.ratio.toFixed(3)} of stature`);
+  }
+
+  // 0.066 of frame width at this framing is about 17% of the fixture's stature.
+  // The window estimator recovers ~95% of it; the shortfall is the three-frame
+  // smoothing, and it is under a centimetre.
+  const wide = measure(0.066, 1);
+  if (!(wide.ratio > 0.13 && wide.ratio < 0.21)) {
+    throw new Error(`overstride fixture read as ${wide.ratio.toFixed(3)} of stature`);
+  }
+  if (!(wide.cm > 20 && wide.cm < 36)) {
+    throw new Error(`overstride fixture read as ${wide.cm.toFixed(1)} cm`);
+  }
+
+  // The whole point of taking direction from the foot rather than from motion
+  // across the frame: mirroring the runner must change nothing.
+  const mirrored = measure(0.066, -1);
+  if (Math.abs(mirrored.ratio - wide.ratio) > 0.005) {
+    throw new Error(
+      `mirroring the runner changed the reading: ${wide.ratio.toFixed(3)} vs ${mirrored.ratio.toFixed(3)}`,
+    );
+  }
+
+  const ladder = [0, 0.033, 0.066, 0.1].map((ahead) => measure(ahead, 1).ratio);
+  for (let i = 1; i < ladder.length; i++) {
+    if (!(ladder[i] > ladder[i - 1] + 0.03)) {
+      throw new Error(`overstride ladder is not monotone: ${ladder.join(", ")}`);
+    }
+  }
+
+  // A frontal clip collapses the fore-aft axis, so there is nothing to report.
+  const front = analyzeSyntheticFrontRun();
+  if (front.quality.sideViewRatio <= 0.14) {
+    throw new Error("front fixture is not read as frontal");
+  }
+  const leaked = front.landings.filter((l) => Number.isFinite(l.footAheadRatio));
+  if (leaked.length) {
+    throw new Error(`${leaked.length} frontal contacts published a fore-aft distance`);
+  }
+  if (front.landings.some((l) => l.footStrike !== "unknown")) {
+    throw new Error("a frontal contact published a strike pattern");
+  }
+
+  // The verdict is withheld today, and that has to be what the code does rather
+  // than what a comment says.
+  if (overstrideVerdict(wide.ratio) !== null) {
+    throw new Error("a withheld threshold produced a verdict");
+  }
+  if (overstrideVerdictOrWithheld(wide.ratio) !== "판정 보류") {
+    throw new Error("withheld verdict is not labelled 판정 보류");
+  }
+  if (overstrideVerdictOrWithheld(Number.NaN) !== "측정 불가") {
+    throw new Error("an unmeasured contact must read 측정 불가, not 판정 보류");
+  }
+
+  if (formatFootAhead(Number.NaN) !== "측정 불가") {
+    throw new Error("formatFootAhead must refuse NaN");
+  }
+  if (formatFootAhead(0.284) !== "앞 28 cm") {
+    throw new Error(`formatFootAhead(0.284) = ${formatFootAhead(0.284)}`);
+  }
+  if (formatFootAhead(-0.06) !== "뒤 6 cm") {
+    throw new Error(`formatFootAhead(-0.06) = ${formatFootAhead(-0.06)}`);
+  }
+  if (formatFootAheadRatio(0.165) !== "신장의 17%") {
+    throw new Error(`formatFootAheadRatio(0.165) = ${formatFootAheadRatio(0.165)}`);
+  }
+
+  console.log("overstriding ok", {
+    under: under.ratio.toFixed(3),
+    wide: `${wide.ratio.toFixed(3)} (${wide.cm.toFixed(0)}cm)`,
+    mirrored: mirrored.ratio.toFixed(3),
+    ladder: ladder.map((v) => v.toFixed(3)).join(" < "),
+    frontal: "측정 없음",
+  });
 }

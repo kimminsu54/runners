@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 2)
+// Source: shared/thresholds.yaml (version 3)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,12 +10,13 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 2;
+export const THRESHOLDS_VERSION = 3;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
   | "foot_strike_forefoot_min_deg"
   | "foot_strike_max_plausible_deg"
+  | "overstride_ratio_notable"
   | "side_view_max_profile_ratio"
   | "min_subject_height_ratio"
   | "min_detected_ratio_fair"
@@ -64,6 +65,16 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "달리기에서 발이 지면에 대해 이보다 크게 기울어 닿지는 않습니다. 넘으면 발이 아니라 뒤꿈치·발가락 랜드마크 중 하나가 틀린 경우이므로 판정을 포기합니다.",
     validationStatus: "internal",
     note: "판정을 포기할 뿐, 반력과 접지 시간은 그대로 계산합니다.",
+  },
+  overstride_ratio_notable: {
+    key: "overstride_ratio_notable",
+    label: "몸 앞 착지 · 판정 경계",
+    value: 0.15,
+    unit: "ratio",
+    appliesTo: "running",
+    source: "발이 몸보다 앞에서 닿은 거리를 신장으로 나눈 값입니다. 러닝에서 합의된 경계가 없어, 이 값으로 좋다·나쁘다를 가르지 않고 측정한 거리만 보여 줍니다.",
+    validationStatus: "withheld",
+    note: "판정을 내리지 않는 이유가 곧 이 항목이 withheld 인 이유입니다. 같은 사람의 회차 간 비교로 쓰세요. 값 자체는 판정에 쓰이지 않으므로 바꿔도 화면 숫자는 변하지 않습니다.",
   },
   side_view_max_profile_ratio: {
     key: "side_view_max_profile_ratio",

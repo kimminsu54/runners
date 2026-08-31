@@ -23,7 +23,7 @@ import {
   percentile,
   rollingPercentile,
 } from "@/lib/signal";
-import { threshold } from "@/lib/thresholds";
+import { isPublishable, threshold, WITHHELD_LABEL } from "@/lib/thresholds";
 
 export const G = 9.80665;
 
@@ -75,6 +75,13 @@ export type SeriesPoint = {
   rightFootSpeed: number;
   leftFootStrikeAngle: number;
   rightFootStrikeAngle: number;
+  /**
+   * How far the foot is ahead of the hip along the direction of travel, in
+   * metres. Positive is ahead. See `footAheadOfHip` for why the sign comes
+   * from the foot itself rather than from the body's motion across the frame.
+   */
+  leftFootAheadM: number;
+  rightFootAheadM: number;
 };
 
 export type Risk = "low" | "moderate" | "elevated" | "high" | "severe";
@@ -111,6 +118,14 @@ export type Landing = {
   gaitBased: boolean;
   footStrike: FootStrike;
   footStrikeAngleDeg: number;
+  /**
+   * Overstriding: how far ahead of the hip the foot was at first contact.
+   * Metres, and the same distance as a fraction of the runner's height so two
+   * people can be compared. NaN when the clip cannot support it — a frontal
+   * view, or quality too poor to publish.
+   */
+  footAheadM: number;
+  footAheadRatio: number;
   note: string;
 };
 
@@ -403,6 +418,8 @@ export function analyzeLandings(
   const rightFootAbsRaw: number[] = [];
   const leftStrikeAngleRaw: number[] = [];
   const rightStrikeAngleRaw: number[] = [];
+  const leftAheadRaw: number[] = [];
+  const rightAheadRaw: number[] = [];
   const t: number[] = [];
 
   for (const frame of frames) {
@@ -417,6 +434,8 @@ export function analyzeLandings(
       rightFootAbsRaw.push(Number.NaN);
       leftStrikeAngleRaw.push(Number.NaN);
       rightStrikeAngleRaw.push(Number.NaN);
+      leftAheadRaw.push(Number.NaN);
+      rightAheadRaw.push(Number.NaN);
       continue;
     }
     const hip = mid(lm[LM.leftHip], lm[LM.rightHip]);
@@ -429,6 +448,8 @@ export function analyzeLandings(
       rightFootAbsRaw.push(Number.NaN);
       leftStrikeAngleRaw.push(Number.NaN);
       rightStrikeAngleRaw.push(Number.NaN);
+      leftAheadRaw.push(Number.NaN);
+      rightAheadRaw.push(Number.NaN);
       continue;
     }
     comRaw.push(-hip.y * options.height * mpp);
@@ -458,6 +479,26 @@ export function analyzeLandings(
         lm[LM.rightFootIndex],
         options.width,
         options.height,
+      ),
+    );
+    leftAheadRaw.push(
+      footAheadOfHip(
+        lm[LM.leftAnkle],
+        lm[LM.leftHeel],
+        lm[LM.leftFootIndex],
+        hip,
+        options.width,
+        mpp,
+      ),
+    );
+    rightAheadRaw.push(
+      footAheadOfHip(
+        lm[LM.rightAnkle],
+        lm[LM.rightHeel],
+        lm[LM.rightFootIndex],
+        hip,
+        options.width,
+        mpp,
       ),
     );
     const flexL = kneeFlexionDeg(
@@ -509,6 +550,10 @@ export function analyzeLandings(
     derivative(movingAverage(fillShortGaps(rightFootAbsRaw, 2), 3), t),
     3,
   ).map(Math.abs);
+  // Same treatment as the other per-foot signals: bridge single-frame dropouts,
+  // then smooth, so one occluded ankle cannot move a contact by centimetres.
+  const leftFootAhead = movingAverage(fillShortGaps(leftAheadRaw, 2), 3);
+  const rightFootAhead = movingAverage(fillShortGaps(rightAheadRaw, 2), 3);
   const leftFootStrikeAngle = normalizeFootAngles(
     movingAverage(leftStrikeAngleRaw, 3),
     leftFootSpeed,
@@ -538,11 +583,18 @@ export function analyzeLandings(
       rightFootSpeed: rightFootSpeed[i],
       leftFootStrikeAngle: leftFootStrikeAngle[i],
       rightFootStrikeAngle: rightFootStrikeAngle[i],
+      leftFootAheadM: leftFootAhead[i],
+      rightFootAheadM: rightFootAhead[i],
     };
   });
 
   const cameraView = isFrontal(sideViewRatio) ? "front" : "side";
-  const detectedLandings = detectLandings(series, options.massKg, cameraView);
+  const detectedLandings = detectLandings(
+    series,
+    options.massKg,
+    options.statureM,
+    cameraView,
+  );
   const quality = assessQuality(
     subjectHeightRatio,
     detectedRatio,
@@ -710,6 +762,10 @@ function withoutFootStrike(landing: Landing): Landing {
     ...landing,
     footStrike: "unknown",
     footStrikeAngleDeg: Number.NaN,
+    // A frontal clip loses the fore-aft distance along with the strike angle:
+    // both are measured in the plane the camera has collapsed.
+    footAheadM: Number.NaN,
+    footAheadRatio: Number.NaN,
   };
 }
 
@@ -736,6 +792,10 @@ function withoutGaitTiming(landing: Landing): Landing {
     gaitBased: false,
     footStrike: "unknown",
     footStrikeAngleDeg: Number.NaN,
+    // Too small in frame or too intermittently tracked to publish timing is
+    // also too coarse to publish centimetres of fore-aft distance.
+    footAheadM: Number.NaN,
+    footAheadRatio: Number.NaN,
     damageScore: score,
     risk: riskFromScore(score),
   };
@@ -841,6 +901,41 @@ function footStrikeAngleDeg(
   return (Math.asin(clamp(dy / length, -1, 1)) * 180) / Math.PI;
 }
 
+/**
+ * Signed fore-aft distance from the hip to the foot, in metres, positive when
+ * the foot is ahead.
+ *
+ * "Ahead" needs a direction, and the obvious source — which way the body moves
+ * across the frame — is the one thing this analysis refuses to trust, because a
+ * panning camera slides the whole runner sideways. The foot supplies it
+ * instead: a foot points the way it is going, so the sign of toe minus heel is
+ * the direction of travel, read inside the same frame it is used in and immune
+ * to camera motion.
+ *
+ * The ankle is the reference point rather than the heel or the toe, so the
+ * measurement does not change meaning with strike pattern — a forefoot contact
+ * would otherwise read as further forward than a rearfoot one from the same hip
+ * position.
+ */
+function footAheadOfHip(
+  ankle: Landmark | undefined,
+  heel: Landmark | undefined,
+  toe: Landmark | undefined,
+  hip: Landmark,
+  width: number,
+  metersPerPixel: number,
+): number {
+  if (!isVisible(heel, 0.35) || !isVisible(toe, 0.35)) return Number.NaN;
+  const point = isVisible(ankle, 0.35) ? ankle : heel;
+  if (!point || !heel || !toe) return Number.NaN;
+  const footLengthPx = (toe.x - heel.x) * width;
+  // A foot seen end-on has no length in the image and so no direction. Below a
+  // few pixels the sign is noise, and a wrong sign flips the whole reading.
+  if (Math.abs(footLengthPx) < 6) return Number.NaN;
+  const direction = Math.sign(footLengthPx);
+  return (point.x - hip.x) * width * direction * metersPerPixel;
+}
+
 function footAbsolute(
   heel: Landmark | undefined,
   ankle: Landmark | undefined,
@@ -938,6 +1033,7 @@ const MAX_STEP_S = threshold("max_step_s");
 function detectLandings(
   series: SeriesPoint[],
   massKg: number,
+  statureM: number,
   view: CameraView = "side",
 ): Landing[] {
   if (series.length < 8) return [];
@@ -1060,6 +1156,11 @@ function detectLandings(
     const side = raw.side;
     const footStrikeAngle = strikeAngleAt(series, raw.strikeIdx, side);
     const strike = classifyFootStrike(footStrikeAngle, view);
+    // Fore-aft position needs the runner seen from the side for the same reason
+    // the strike angle does: from in front, the distance is along the camera
+    // axis and the image says nothing about it.
+    const footAheadM =
+      view === "side" ? footAheadAt(series, raw.strikeIdx, side, dt) : Number.NaN;
     const landing: Landing = {
       index: raw.peakIdx,
       tContact: series[raw.contactIdx].t,
@@ -1081,6 +1182,11 @@ function detectLandings(
       gaitBased,
       footStrike: strike.type,
       footStrikeAngleDeg: footStrikeAngle,
+      footAheadM,
+      footAheadRatio:
+        Number.isFinite(footAheadM) && statureM > 0
+          ? footAheadM / statureM
+          : Number.NaN,
       note: "",
     };
     landing.note = landingNote(landing);
@@ -1129,6 +1235,49 @@ function strikeAngleAt(
     if (Number.isFinite(angle)) values.push(angle);
   }
   return median(values);
+}
+
+/**
+ * The fore-aft distance at first contact, for the foot that made it.
+ *
+ * Taken as the furthest-forward value in a short window rather than the value
+ * at the contact index, because the index is not the touchdown frame: the
+ * contact interval is deliberately grown backwards over the heel roll-in, so
+ * reading it directly samples a foot that is still swinging forward and
+ * understates the distance — by about a quarter on the fixtures.
+ *
+ * The maximum is not a workaround for that but the definition. A foot travels
+ * forward through swing and backwards through stance, so its fore-aft extreme
+ * *is* the moment it lands. Anchoring to the extreme also makes the reading
+ * independent of how well contact detection is aligned, which is the part that
+ * varies between clips.
+ */
+function footAheadAt(
+  series: SeriesPoint[],
+  index: number,
+  side: FootSide,
+  dt: number,
+): number {
+  let resolved = side;
+  if (resolved === "unknown") resolved = inferFootSide(series[index]);
+  if (resolved === "unknown") return Number.NaN;
+
+  // Wide enough to cover the roll-in the interval was grown over, narrow
+  // enough that mid-stance — where the foot is well behind the hip — cannot
+  // enter the window.
+  const half = Math.max(2, Math.round(0.05 / dt));
+  let best = Number.NaN;
+  for (
+    let i = Math.max(0, index - half);
+    i <= Math.min(series.length - 1, index + half);
+    i++
+  ) {
+    const value =
+      resolved === "left" ? series[i].leftFootAheadM : series[i].rightFootAheadM;
+    if (!Number.isFinite(value)) continue;
+    if (!Number.isFinite(best) || value > best) best = value;
+  }
+  return best;
 }
 
 function matchInterval(
@@ -1418,6 +1567,52 @@ export function cadenceSpm(landings: Array<{ tContact: number }>): number {
   // A missed contact doubles one gap. The shorter cluster is the real step.
   const step = percentile(gaps, 0.4);
   return Number.isFinite(step) && step > 0 ? 60 / step : Number.NaN;
+}
+
+/**
+ * How far ahead the foot landed, in centimetres. Rounded to the nearest
+ * centimetre: the ankle landmark moves a few pixels between frames, and at a
+ * typical framing one pixel is already several millimetres, so a decimal here
+ * would be inventing precision.
+ */
+export function formatFootAhead(meters: number): string {
+  if (!Number.isFinite(meters)) return "측정 불가";
+  const cm = Math.round(meters * 100);
+  // Behind the hip at contact is rare but real — it happens on an uphill or a
+  // hard acceleration — and printing it as a negative distance is clearer than
+  // clamping it to zero and pretending the foot landed under the body.
+  return `${cm > 0 ? "앞 " : cm < 0 ? "뒤 " : ""}${Math.abs(cm)} cm`;
+}
+
+/** The same distance against the runner's own height, so two people compare. */
+export function formatFootAheadRatio(ratio: number): string {
+  if (!Number.isFinite(ratio)) return "측정 불가";
+  return `신장의 ${Math.round(ratio * 100)}%`;
+}
+
+/**
+ * Whether the fore-aft distance may be turned into a verdict, and if so what it
+ * says.
+ *
+ * Today it never may: `overstride_ratio_notable` is marked withheld in
+ * shared/thresholds.yaml because running has no agreed boundary for this, and
+ * the honest thing to publish is the centimetres, not a grade. The comparison
+ * is written out anyway rather than deleted — it is what the screen would say
+ * the moment the threshold earns a real status, and leaving it here keeps that
+ * change to one line of YAML.
+ */
+export function overstrideVerdict(ratio: number): string | null {
+  if (!Number.isFinite(ratio)) return null;
+  if (!isPublishable("overstride_ratio_notable")) return null;
+  return ratio >= threshold("overstride_ratio_notable")
+    ? "몸보다 뚜렷하게 앞에서 닿았습니다."
+    : "몸 아래에 가깝게 닿았습니다.";
+}
+
+/** What to show where a verdict would go while the threshold is withheld. */
+export function overstrideVerdictOrWithheld(ratio: number): string {
+  if (!Number.isFinite(ratio)) return "측정 불가";
+  return overstrideVerdict(ratio) ?? WITHHELD_LABEL;
 }
 
 export function compareHint(score: number): string {

@@ -7,10 +7,12 @@ import {
 } from "@/components/ui/card";
 import {
   footStrikeLabel,
+  formatFootAheadRatio,
   formatKneeFlexDeg,
   formatLoadingRateBwS,
   formatTimingMs,
 } from "@/lib/landing-analysis";
+import { evidence, WITHHELD_LABEL } from "@/lib/thresholds";
 import type { SessionSummary, SideStats } from "@/lib/session-summary";
 import { cn } from "@/lib/utils";
 import { Footprints } from "lucide-react";
@@ -57,6 +59,14 @@ const ROWS: Row[] = [
     compare: false,
   },
   {
+    label: "몸 앞 착지",
+    pick: (s) => s.meanFootAheadRatio,
+    format: formatFootAheadRatio,
+    // A left/right gap here is worth seeing: one foot reaching further than the
+    // other is the runner, not the camera, in a way contact time is not.
+    compare: true,
+  },
+  {
     label: "평균 점수",
     pick: (s) => s.meanScore,
     format: (v) => String(Math.round(v)),
@@ -90,6 +100,14 @@ export function SideBreakdown({ summary }: { summary: SessionSummary }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Said once, at session level, rather than on every landing card: the
+            distance is published, the verdict is not. */}
+        <p className="rounded-lg bg-secondary/60 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          <span className="font-medium text-foreground">
+            몸 앞 착지 · {WITHHELD_LABEL}
+          </span>{" "}
+          — {evidence("overstride_ratio_notable").source}
+        </p>
         <div className="grid grid-cols-[1fr_auto_auto] items-baseline gap-x-4 gap-y-2 text-sm">
           <span className="text-xs text-muted-foreground">항목</span>
           <span className="text-right text-xs text-muted-foreground">
