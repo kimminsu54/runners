@@ -62,34 +62,24 @@ export default function Home() {
         </div>
       </header>
 
-      {/* The photo is 2000x1334 of flat grey fog. Multiplying a deep ink-to-wine
-          gradient over it turns the fog into that gradient and leaves the
-          runner's silhouette black, then a screened volt glow lights the road
-          behind him. No new photography, a completely different temperature. */}
+      {/* run-hero-vivid.jpg is the same photograph, colour-graded and
+          motion-blurred by scripts/grade-hero.py — deep indigo where the
+          headline sits, hot orange behind the runner, the road streaked along
+          his direction of travel. The colour is baked into the asset rather
+          than blended in CSS so it survives at every crop; the only overlay
+          left is a scrim that keeps white type safe on narrow screens. */}
       <section className="relative isolate overflow-hidden bg-ink text-white">
-        <div className="absolute inset-0 -z-30">
+        <div className="absolute inset-0 -z-20">
           <Image
-            src="/images/run-hero.jpg"
+            src="/images/run-hero-vivid.jpg"
             alt=""
             fill
             priority
             sizes="100vw"
-            className="scale-105 object-cover object-[62%_62%]"
+            className="object-cover object-[58%_58%]"
           />
         </div>
-        <div className="absolute inset-0 -z-20 bg-gradient-to-br from-ink via-[oklch(0.22_0.06_285)] to-[oklch(0.32_0.14_25)] mix-blend-multiply" />
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(70%_60%_at_78%_72%,oklch(0.88_0.2_118/0.28),transparent_60%),radial-gradient(50%_50%_at_18%_10%,oklch(0.58_0.2_29/0.35),transparent_70%)]" />
-        <div className="absolute inset-x-0 bottom-0 -z-10 h-32 bg-gradient-to-t from-ink to-transparent" />
-
-        {/* Speed streaks, on the road behind the runner rather than across the
-            copy. */}
-        <div className="pointer-events-none absolute right-0 bottom-[14%] -z-10 hidden h-16 w-1/2 overflow-hidden opacity-70 lg:block">
-          <div className="animate-sweep flex h-full w-1/2 flex-col justify-center gap-4">
-            <span className="h-px w-32 bg-gradient-to-r from-transparent to-volt/80" />
-            <span className="ml-10 h-px w-48 bg-gradient-to-r from-transparent to-white/45" />
-            <span className="h-px w-20 bg-gradient-to-r from-transparent to-primary/70" />
-          </div>
-        </div>
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[oklch(0.16_0.1_290/0.88)] via-[oklch(0.16_0.1_290/0.35)] to-transparent sm:via-[oklch(0.16_0.1_290/0.2)]" />
 
         <div className="mx-auto w-full max-w-6xl px-4 pt-16 pb-14 sm:px-6 lg:pt-24 lg:pb-20">
           <p className="animate-rise inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white/90 backdrop-blur-sm">
@@ -183,7 +173,7 @@ export default function Home() {
         className="mx-auto w-full max-w-6xl flex-1 scroll-mt-16 px-4 py-14 sm:px-6"
       >
         <div className="mb-8 max-w-xl">
-          <span className="mb-4 block h-1 w-14 rounded-full bg-gradient-to-r from-primary to-volt" />
+          <span className="mb-4 block h-1 w-14 rounded-full bg-gradient-to-r from-[oklch(0.4_0.19_290)] to-[oklch(0.72_0.18_45)]" />
           <h2 className="display-type text-3xl text-foreground sm:text-4xl">
             오늘의 러닝을 읽어보세요.
           </h2>
@@ -195,7 +185,7 @@ export default function Home() {
       </main>
 
       <section className="relative isolate overflow-hidden border-t border-border bg-ink text-white">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(60%_80%_at_85%_0%,oklch(0.58_0.2_29/0.35),transparent_65%)]" />
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(55%_75%_at_88%_0%,oklch(0.68_0.19_45/0.4),transparent_65%),radial-gradient(45%_70%_at_10%_100%,oklch(0.4_0.19_290/0.45),transparent_70%)]" />
         <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
           <h2 className="text-sm font-medium text-volt">어떻게 동작하나요</h2>
           <div className="mt-8 grid gap-10 sm:grid-cols-3">

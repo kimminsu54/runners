@@ -166,15 +166,6 @@ html {
   }
 }
 
-@keyframes stride-sweep {
-  from {
-    transform: translate3d(-40%, 0, 0);
-  }
-  to {
-    transform: translate3d(140%, 0, 0);
-  }
-}
-
 @keyframes stride-trace {
   to {
     stroke-dashoffset: -600;
@@ -197,10 +188,6 @@ html {
   animation: stride-rise 0.75s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
-.animate-sweep {
-  animation: stride-sweep 5s linear infinite;
-}
-
 /* The dash pattern is set per-path so the same animation can drive a short
    bright pulse running along a solid line rather than a dotted one. */
 .animate-trace {
@@ -213,7 +200,6 @@ html {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-rise,
-  .animate-sweep,
   .animate-trace,
   .animate-ping-slow {
     animation: none;
