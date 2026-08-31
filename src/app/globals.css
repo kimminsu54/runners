@@ -79,12 +79,17 @@
   --chart-3: oklch(0.66 0.14 155);
   --chart-4: oklch(0.72 0.15 75);
   --chart-5: oklch(0.5 0.02 285);
-  /* Volt. Running shoes have worn this green-yellow for forty years, and it is
-     the one hue that stays legible on the near-black hero without competing
-     with the red. Used for live/measured accents only, never for body text —
-     it fails contrast on white. */
-  --volt: oklch(0.88 0.2 118);
-  --ink: oklch(0.17 0.03 265);
+  /* Volt. Running shoes have worn a green-yellow for forty years, but the hero
+     photograph is graded red-into-gold, so the accent sits at a pure golden
+     yellow instead: the same family as the road it is laid over, and still the
+     one hue that stays legible on the near-black without competing with the
+     red. Used for live/measured accents only, never for body text — it fails
+     contrast on white (1.4:1), while on --ink it clears 13:1. */
+  --volt: oklch(0.88 0.18 95);
+  /* The near-black the header and the two dark bands are built from. Warm
+     rather than blue-black, so it belongs to the graded photograph it frames;
+     white on it clears 19:1. */
+  --ink: oklch(0.17 0.04 35);
   --radius: 0.75rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.19 0.005 285);

@@ -66,7 +66,7 @@ export default function Home() {
           runners' legs, which is the thing this app measures — and where the
           colour the page wanted was hiding all along, in the shoes. Graded by
           scripts/grade-hero.py, which amplifies what is there rather than
-          repainting it, and lays the indigo bed for the headline into the
+          repainting it, and lays the crimson bed for the headline into the
           asset so it survives every crop. See public/images/CREDITS.md. */}
       <section className="relative isolate overflow-hidden bg-ink text-white">
         <div className="absolute inset-0 -z-20">
@@ -83,7 +83,7 @@ export default function Home() {
             viewport crops straight past it into the legs, so the wash has to
             cover the whole frame there and only thin out once there is room
             for the headline to sit on the quiet side. */}
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[oklch(0.16_0.1_290/0.88)] via-[oklch(0.16_0.1_290/0.66)] to-[oklch(0.16_0.1_290/0.5)] sm:via-[oklch(0.16_0.1_290/0.28)] sm:to-transparent" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[oklch(0.16_0.065_28/0.88)] via-[oklch(0.16_0.065_28/0.66)] to-[oklch(0.16_0.065_28/0.5)] sm:via-[oklch(0.16_0.065_28/0.28)] sm:to-transparent" />
 
         <div className="mx-auto w-full max-w-6xl px-4 pt-16 pb-14 sm:px-6 lg:pt-24 lg:pb-20">
           <p className="animate-rise inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white/90 backdrop-blur-sm">
@@ -177,7 +177,7 @@ export default function Home() {
         className="mx-auto w-full max-w-6xl flex-1 scroll-mt-16 px-4 py-14 sm:px-6"
       >
         <div className="mb-8 max-w-xl">
-          <span className="mb-4 block h-1 w-14 rounded-full bg-gradient-to-r from-[oklch(0.4_0.19_290)] to-[oklch(0.72_0.18_45)]" />
+          <span className="mb-4 block h-1 w-14 rounded-full bg-gradient-to-r from-[oklch(0.5_0.2_28)] to-[oklch(0.85_0.17_95)]" />
           <h2 className="display-type text-3xl text-foreground sm:text-4xl">
             오늘의 러닝을 읽어보세요.
           </h2>
@@ -189,7 +189,7 @@ export default function Home() {
       </main>
 
       <section className="relative isolate overflow-hidden border-t border-border bg-ink text-white">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(55%_75%_at_88%_0%,oklch(0.68_0.19_45/0.4),transparent_65%),radial-gradient(45%_70%_at_10%_100%,oklch(0.4_0.19_290/0.45),transparent_70%)]" />
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(55%_75%_at_88%_0%,oklch(0.68_0.16_60/0.4),transparent_65%),radial-gradient(45%_70%_at_10%_100%,oklch(0.42_0.17_25/0.45),transparent_70%)]" />
         <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
           <h2 className="text-sm font-medium text-volt">어떻게 동작하나요</h2>
           <div className="mt-8 grid gap-10 sm:grid-cols-3">
