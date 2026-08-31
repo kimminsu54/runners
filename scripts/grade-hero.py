@@ -12,12 +12,10 @@ mapped a grey photo instead and the result looked like thermal imaging; false
 colour on skin is the tell, so nothing here shifts hue.
 
 What it does: lifts saturation and contrast so the shoes separate from the
-asphalt, then multiplies a red-to-gold ramp across the frame — near-black
-crimson at the left edge as a bed for the white headline, opening into amber
-over the road — screens a warm glow into the bright right side, and blurs the
-left edge along the runners' direction of travel so the quiet side reads as
-speed rather than as an empty box. The ramp only multiplies and screens, so
-hue is untouched and skin stays skin.
+asphalt, then multiplies a deep indigo down the left edge — a bed for the
+white headline that leaves the right side untouched — and blurs that same
+edge along the runners' direction of travel so the quiet side reads as speed
+rather than as an empty box.
 """
 
 from PIL import Image, ImageChops, ImageEnhance
@@ -29,16 +27,9 @@ SATURATION = 1.38
 CONTRAST = 1.12
 BLUR_RADIUS = 46
 
-# Multiplied over the photo: near-black crimson at the left edge, opening
-# through scarlet and orange into a warm cream, so the asphalt reads gold
-# while the red and yellow shoes keep their own colour.
-SCRIM = [(0.00, "1E0406"), (0.19, "7D120C"), (0.44, "CF6A14"), (0.70, "F6D79C"), (1.00, "FFE2B8")]
-
-# Screened into the photo on top of the scrim: an amber glow, absent at the
-# dark headline edge and strongest over the sunlit road.
-GLOW = "FF9A18"
-GLOW_STRENGTH = 0.18
-GLOW_RAMP = [(0.00, "000000"), (0.45, "3A3A3A"), (1.00, "FFFFFF")]
+# Multiplied over the photo: deep indigo at the left edge, white (no change)
+# from the middle out, so the shoes keep their own colour.
+SCRIM = [(0.00, "141B57"), (0.26, "3D4278"), (0.62, "BFC1D8"), (0.84, "FFFFFF"), (1.00, "FFFFFF")]
 # How much motion blur each column gets: full at the left edge, none by 55%.
 BLUR_RAMP = [(0.00, "FFFFFF"), (0.30, "9A9A9A"), (0.55, "000000"), (1.00, "000000")]
 
@@ -85,12 +76,6 @@ def main() -> None:
     streaked = motion_blur_x(image, BLUR_RADIUS)
     image = Image.composite(streaked, image, horizontal_gradient(image.size, BLUR_RAMP, "L"))
     image = ImageChops.multiply(image, horizontal_gradient(image.size, SCRIM))
-
-    glow = Image.new("RGB", image.size, f"#{GLOW}")
-    ramp = horizontal_gradient(image.size, GLOW_RAMP, "L").point(
-        lambda v: int(v * GLOW_STRENGTH)
-    )
-    image = Image.composite(ImageChops.screen(image, glow), image, ramp)
 
     image.save(DST, "JPEG", quality=86, optimize=True, progressive=True)
     print(f"wrote {DST} {image.size[0]}x{image.size[1]}")
