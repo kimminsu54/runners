@@ -1,162 +1,172 @@
 import { LandingAnalyzer } from "@/components/landing-analyzer";
-import { ArrowDownRight, Circle, MoveUpRight } from "lucide-react";
+import { ArrowRight, Footprints, LineChart, ShieldCheck, Upload } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
+
+const READS = [
+  { label: "착지마다", value: "반력 · 부하율 · 무릎 각도" },
+  { label: "주법 판정", value: "리어풋 · 미드풋 · 포어풋" },
+  { label: "신발 추천", value: "주법과 페이스 기반" },
+];
+
+const STEPS = [
+  {
+    icon: Upload,
+    title: "영상 올리기",
+    body: "전신이 나오는 3~8초짜리 러닝 영상이면 됩니다. 옆모습이 무릎 각도를 가장 잘 잡습니다.",
+  },
+  {
+    icon: LineChart,
+    title: "브라우저가 분석",
+    body: "자세를 프레임마다 추적해 접지와 체공 시간을 재고, 거기서 착지 충격을 추정합니다.",
+  },
+  {
+    icon: Footprints,
+    title: "리포트 읽기",
+    body: "착지 하나하나의 수치와 주법, 그 주법에 맞는 신발까지 한 장으로 정리해 보여줍니다.",
+  },
+];
 
 export default function Home() {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="relative isolate overflow-hidden border-b border-border">
-        <div className="absolute inset-0 -z-20">
-          <Image
-            src="/images/run-hero.jpg"
-            alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover object-[72%_45%]"
-          />
-        </div>
-        {/* The headline sits on the left, so the wash is opaque there and thins
-            out over the runner on the right. */}
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-white via-white/95 to-white/75 lg:via-white/92 lg:to-white/35" />
-        <div className="absolute inset-x-0 bottom-0 -z-10 h-48 bg-gradient-to-t from-background to-transparent" />
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-14 -z-10 h-44 w-full opacity-70"
-          viewBox="0 0 1200 200"
-          preserveAspectRatio="none"
-          aria-hidden
-        >
-          <path
-            d="M-20 168 C160 150 190 74 330 84 C470 94 452 178 604 166 C742 155 760 60 900 52 C1010 46 1090 92 1220 72"
-            fill="none"
-            stroke="#c9cfda"
-            strokeWidth="2"
-            strokeDasharray="3 9"
-            strokeLinecap="round"
-          />
-          <path
-            d="M-20 168 C160 150 190 74 330 84 C470 94 452 178 604 166 C742 155 760 60 900 52"
-            fill="none"
-            stroke="#e0402a"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <circle cx="900" cy="52" r="6" fill="#e0402a" />
-        </svg>
-
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="display-type flex items-baseline gap-2 text-xl text-foreground">
-              STRIDE<span className="text-primary">/</span>LAB
-            </div>
-            <a
+      <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-4 sm:px-6">
+          <Link href="/" className="display-type text-lg text-foreground">
+            STRIDE<span className="text-primary">/</span>LAB
+          </Link>
+          <nav className="flex items-center gap-1 text-sm">
+            <Link
+              href="/compare"
+              className="rounded-full px-3 py-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              세션 비교
+            </Link>
+            <Link
               href="/downloads"
-              className="rounded-full border border-border bg-white/80 px-3 py-1 text-xs text-foreground backdrop-blur-sm hover:bg-white"
+              className="rounded-full px-3 py-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               파일 받기
-            </a>
-          </div>
-          <div className="hidden items-center gap-6 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase sm:flex">
-            <span>Form analysis</span>
-            <a href="/compare" className="hover:text-foreground">
-              Compare sessions
-            </a>
-            <span className="flex items-center gap-2 text-emerald-600">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              Runs in your browser
-            </span>
-          </div>
-          <div className="rounded-full border border-border bg-white/70 px-3 py-1 font-mono text-[10px] text-muted-foreground backdrop-blur-sm sm:hidden">
-            BETA 01
-          </div>
-        </div>
-
-        <div className="mx-auto w-full max-w-7xl px-4 pt-10 pb-16 sm:px-6 lg:pt-16 lg:pb-28">
-          <div className="mb-5 flex items-center gap-3 font-mono text-[10px] tracking-[0.2em] text-primary uppercase">
-            <span>Upload the run</span>
-            <span className="h-px w-12 bg-primary" />
-            <span>Read the landing</span>
-          </div>
-          <h1 className="display-type max-w-4xl text-[clamp(3.5rem,9vw,8rem)] leading-[0.82] text-foreground uppercase">
-            내 착지를,
-            <br />
-            <span className="text-primary">한 장</span>으로 읽는다.
-          </h1>
-          <div className="mt-7 grid max-w-2xl gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
-            <p className="max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">
-              러닝 영상 속 리듬을 읽고, 반복되는 충격과 발의 주법을 한 장의 세션
-              리포트로 만듭니다. 영상은 업로드되지 않고 브라우저 안에서만 처리됩니다.
-            </p>
+            </Link>
             <a
               href="#analyze"
-              className="group flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:rotate-6 hover:scale-105"
-              aria-label="분석 시작으로 이동"
+              className="ml-2 hidden rounded-full bg-foreground px-4 py-1.5 font-medium text-background transition-opacity hover:opacity-90 sm:inline-block"
             >
-              <ArrowDownRight className="size-6 transition-transform group-hover:translate-x-0.5 group-hover:translate-y-0.5" />
+              분석 시작
             </a>
-          </div>
-
-          {/* These read as live numbers, so they say what the app actually does
-              rather than standing in for a run nobody made. */}
-          <div className="mt-12 flex flex-wrap items-end gap-x-10 gap-y-6 rounded-2xl border border-border bg-white/75 px-5 py-4 backdrop-blur-sm sm:mt-16 lg:max-w-2xl">
-            {[
-              { label: "Per landing", value: "반력 · 부하율 · 무릎" },
-              { label: "Foot strike", value: "리어 · 미드 · 포어" },
-              { label: "Shoe match", value: "주법 · 페이스 기반" },
-            ].map((item) => (
-              <div key={item.label}>
-                <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-                  {item.label}
-                </p>
-                <p className="text-base font-medium text-foreground">{item.value}</p>
-              </div>
-            ))}
-            <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-              No upload
-            </p>
-          </div>
-        </div>
-
-        <div className="relative flex overflow-hidden border-y border-border bg-primary py-2 text-primary-foreground">
-          <div className="flex min-w-max items-center gap-5 font-mono text-[11px] font-semibold tracking-[0.14em] uppercase">
-            {["Upload the run", "Read the rhythm", "Know your landing", "Compare the next one"].map(
-              (item) => (
-                <span key={item} className="flex items-center gap-5">
-                  {item} <Circle className="size-2 fill-current" />
-                </span>
-              ),
-            )}
-          </div>
+          </nav>
         </div>
       </header>
 
-      <main id="analyze" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:py-16">
-        <div className="mb-8 flex flex-col justify-between gap-4 border-b border-border pb-6 sm:flex-row sm:items-end">
-          <div>
-            <p className="mb-2 font-mono text-[10px] tracking-[0.2em] text-primary uppercase">
-              Session 01 / Form check
+      <section className="border-b border-border">
+        <div className="mx-auto grid w-full max-w-6xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-14 lg:py-20">
+          <div className="max-w-xl">
+            <p className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+              <ShieldCheck className="size-3.5 text-emerald-600" aria-hidden />
+              영상은 업로드되지 않고 브라우저 안에서만 처리됩니다
             </p>
-            <h2 className="display-type text-4xl text-foreground sm:text-5xl">
-              오늘의 러닝을 읽어보세요.
-            </h2>
+            <h1 className="display-type mt-6 text-[clamp(2.75rem,6.5vw,4.5rem)] leading-[0.95] text-foreground">
+              내 착지를,
+              <br />
+              <span className="text-primary">한 장</span>으로 읽는다.
+            </h1>
+            <p className="mt-5 text-base leading-7 text-muted-foreground">
+              러닝 영상 속 리듬을 읽고, 반복되는 충격과 발의 주법을 한 장의 세션
+              리포트로 만듭니다.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href="#analyze"
+                className="group inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                영상으로 시작하기
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </a>
+              <Link
+                href="/compare"
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm text-foreground transition-colors hover:bg-secondary"
+              >
+                지난 세션과 비교
+              </Link>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <MoveUpRight className="size-4 text-primary" />
-            영상은 브라우저 안에서만 처리됩니다
+
+          <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-border bg-secondary lg:aspect-[3/4] lg:w-[22rem]">
+            <Image
+              src="/images/run-hero.jpg"
+              alt=""
+              fill
+              priority
+              sizes="(min-width: 1024px) 22rem, 100vw"
+              className="object-cover object-[68%_45%]"
+            />
           </div>
+        </div>
+      </section>
+
+      <section className="border-b border-border">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+          <dl className="hairline-grid grid sm:grid-cols-3">
+            {READS.map((item) => (
+              <div key={item.label} className="bg-background px-1 py-6 sm:px-5 sm:first:pl-0 sm:last:pr-0">
+                <dt className="text-xs text-muted-foreground">{item.label}</dt>
+                <dd className="mt-1.5 text-[15px] font-medium text-foreground">
+                  {item.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <main
+        id="analyze"
+        className="mx-auto w-full max-w-6xl flex-1 scroll-mt-16 px-4 py-14 sm:px-6"
+      >
+        <div className="mb-8 max-w-xl">
+          <h2 className="display-type text-3xl text-foreground sm:text-4xl">
+            오늘의 러닝을 읽어보세요.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            키와 체중을 맞춰야 영상의 픽셀이 실제 움직임으로 바뀝니다.
+          </p>
         </div>
         <LandingAnalyzer />
       </main>
 
-      <footer className="border-t border-border bg-white">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <section className="border-t border-border bg-card">
+        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
+          <h2 className="text-sm font-medium text-muted-foreground">어떻게 동작하나요</h2>
+          <div className="mt-6 grid gap-8 sm:grid-cols-3 sm:gap-10">
+            {STEPS.map((step, index) => (
+              <div key={step.title}>
+                <div className="flex items-center gap-3">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-secondary text-foreground">
+                    <step.icon className="size-4" aria-hidden />
+                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                </div>
+                <h3 className="mt-4 text-base font-medium text-foreground">{step.title}</h3>
+                <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{step.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-border">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-start sm:justify-between sm:px-6">
           <div>
-            <p className="display-type text-2xl text-foreground">STRIDE/LAB</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              READ THE LANDING. CHANGE ONE THING.
+            <p className="display-type text-xl text-foreground">
+              STRIDE<span className="text-primary">/</span>LAB
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              읽고, 한 가지만 바꿔보세요.
             </p>
           </div>
-          <p className="max-w-xl text-xs leading-5 text-muted-foreground sm:text-right">
+          <p className="max-w-md text-xs leading-5 text-muted-foreground sm:text-right">
             영상 기반 추정은 힘판·IMU 측정과 다릅니다. 카메라 각도, 가려짐, 프레임률을
             품질 점수에 반영하며 불확실한 경우 숫자를 표시하지 않습니다.
           </p>

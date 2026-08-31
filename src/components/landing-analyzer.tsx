@@ -31,6 +31,7 @@ import type { Landmark } from "@/lib/pose";
 import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
 import { syntheticRunningFrames } from "@/lib/synthetic-jump";
 import { cn } from "@/lib/utils";
+import { UploadCloud } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -423,6 +424,161 @@ export function LandingAnalyzer() {
     return { avg, worst, count: result.landings.length };
   }, [result]);
 
+  // Rendered bare before a run and folded into a <details> after one. It used
+  // to be one <details> with display:contents and no <summary> until the run
+  // finished, which made Chrome draw its own — the stray "▼ 세부정보" that sat
+  // above the form on a page that had no details to show yet.
+  const runnerSetup = (
+  <Card className="rounded-2xl border-border bg-white">
+    <CardHeader className="border-b border-border pb-4">
+      <CardTitle className="text-base font-semibold text-foreground">러너 세팅</CardTitle>
+      <CardDescription>
+        신체 정보와 촬영 조건을 맞추면 영상의 픽셀을 실제 움직임으로 바꿀 수 있습니다.
+      </CardDescription>
+    </CardHeader>
+    <CardContent className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="stature">키 (cm)</Label>
+          <Input
+            id="stature"
+            type="number"
+            min={120}
+            max={220}
+            value={statureCm}
+            onChange={(e) => setStatureCm(Number(e.target.value) || 170)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="mass">체중 (kg)</Label>
+          <Input
+            id="mass"
+            type="number"
+            min={30}
+            max={160}
+            value={massKg}
+            onChange={(e) => setMassKg(Number(e.target.value) || 70)}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="pace-minutes">
+          실제 페이스 <span className="text-muted-foreground">(선택)</span>
+        </Label>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="relative">
+            <Input
+              id="pace-minutes"
+              inputMode="numeric"
+              type="number"
+              min={2}
+              max={15}
+              placeholder="5"
+              value={paceMinutes}
+              onChange={(event) => setPaceMinutes(event.target.value)}
+              className="pr-10"
+            />
+            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
+              분
+            </span>
+          </div>
+          <div className="relative">
+            <Input
+              inputMode="numeric"
+              type="number"
+              min={0}
+              max={59}
+              placeholder="30"
+              value={paceSeconds}
+              onChange={(event) => setPaceSeconds(event.target.value)}
+              className="pr-12"
+            />
+            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
+              초/km
+            </span>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          영상만으로 수평 속도를 재면 카메라 패닝에 속습니다. 알고 있다면
+          입력한 페이스를 요약의 기준으로 사용합니다.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="slowmo">촬영 배속</Label>
+        <div className="flex flex-wrap gap-2">
+          {[0, 1, 2, 4, 8].map((factor) => (
+            <Button
+              key={factor}
+              id={factor === 0 ? "slowmo" : undefined}
+              size="sm"
+              variant={slowMotionFactor === factor ? "default" : "outline"}
+              onClick={() => {
+                setSlowMotionFactor(factor);
+                setSuggestedSlowMotion(null);
+              }}
+            >
+              {factor === 0 ? "자동" : factor === 1 ? "일반" : `${factor}배`}
+            </Button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {slowMotionFactor === 0 && detectedSlowMotion
+            ? detectedSlowMotion === 1
+              ? "일반 속도 영상으로 판정했습니다."
+              : `${detectedSlowMotion}배 슬로우 모션으로 판정했습니다. 틀렸다면 직접 골라 주세요.`
+            : "240fps 슬로우 모션이면 8배입니다. 일반 속도로 찍었다면 반드시 바꿔야 접지·체공 시간과 페이스가 맞습니다."}
+        </p>
+        {suggestedSlowMotion ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <span>
+              이 영상은 사람이 낼 수 없는 보행이 됩니다.{" "}
+              {suggestedSlowMotion === 1
+                ? "일반 속도"
+                : `${suggestedSlowMotion}배 슬로우`}
+              가 맞아 보입니다.
+            </span>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => {
+                setSlowMotionFactor(suggestedSlowMotion);
+                setSuggestedSlowMotion(null);
+              }}
+            >
+              바꾸고 다시 분석
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      <Button size="lg" onClick={analyze} disabled={status === "analyzing" || status === "loading-model"}>
+        {status === "loading-model"
+          ? "자세 모델 준비 중…"
+          : status === "analyzing"
+            ? "착지 분석 중…"
+            : "세션 분석 시작 →"}
+      </Button>
+      {status === "analyzing" || status === "loading-model" ? (
+        <div className="space-y-2">
+          <Progress value={status === "loading-model" ? 8 : progress} />
+          <p className="text-xs text-muted-foreground">
+            접지·체공 시간을 재려고 초당 최대 {MAX_FPS}장까지 촘촘히 훑습니다.
+            앞 {MAX_SECONDS}초가 대상입니다.
+          </p>
+        </div>
+      ) : null}
+      {error ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+      <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+        <li>힘판이 아니라 2D 영상 추정입니다. 의료·훈련 처방이 아닙니다.</li>
+        <li>카메라가 크게 움직이거나 사람이 작게 나오면 오차가 커집니다.</li>
+      </ul>
+    </CardContent>
+  </Card>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
@@ -432,8 +588,8 @@ export function LandingAnalyzer() {
               "relative aspect-video transition",
               videoUrl || cameraOn || (status === "done" && Boolean(result))
                 ? "bg-neutral-900"
-                : "bg-neutral-50",
-              dragging && "ring-2 ring-primary ring-inset",
+                : "m-3 rounded-xl border-2 border-dashed border-border bg-secondary/40",
+              dragging && "border-primary bg-accent",
             )}
             onDragOver={(e) => {
               e.preventDefault();
@@ -447,9 +603,6 @@ export function LandingAnalyzer() {
               onFile(e.dataTransfer.files);
             }}
           >
-            <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-full border border-border bg-white/90 px-2 py-1 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase backdrop-blur-sm">
-              01 / Run clip
-            </div>
             <video
               ref={videoRef}
               src={cameraOn ? undefined : videoUrl ?? undefined}
@@ -481,7 +634,7 @@ export function LandingAnalyzer() {
               />
             )}
             {!videoUrl && !cameraOn && status !== "done" ? (
-              <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-2 px-6 text-center">
+              <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl px-6 text-center transition-colors hover:bg-secondary/70">
                 <input
                   type="file"
                   accept="video/*,.mp4,.mov,.m4v,.webm"
@@ -491,11 +644,14 @@ export function LandingAnalyzer() {
                     e.target.value = "";
                   }}
                 />
-                <span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
-                  영상 업로드
+                <span className="flex size-11 items-center justify-center rounded-full border border-border bg-card text-muted-foreground">
+                  <UploadCloud className="size-5" aria-hidden />
                 </span>
-                <span className="max-w-sm text-sm text-muted-foreground">
-                  전신이 나오는 러닝 영상을 끌어다 놓거나 눌러서 고르세요. 옆모습이 무릎 각도를 더 잘 잡습니다.
+                <span className="text-sm font-medium text-foreground">
+                  영상을 끌어다 놓거나 눌러서 고르세요
+                </span>
+                <span className="max-w-xs text-xs leading-5 text-muted-foreground">
+                  전신이 나오는 러닝 영상. 옆모습이 무릎 각도를 더 잘 잡습니다.
                 </span>
               </label>
             ) : null}
@@ -561,172 +717,16 @@ export function LandingAnalyzer() {
             />
           ) : null}
 
-        <details
-          className={
-            status === "done" && result
-              ? "rounded-2xl border border-border bg-white"
-              : "contents"
-          }
-          open={status === "done" && result ? undefined : true}
-        >
-          {status === "done" && result ? (
+        {status === "done" && result ? (
+          <details className="rounded-2xl border border-border bg-white">
             <summary className="cursor-pointer px-5 py-3 text-sm font-medium">
               러너 세팅 바꾸기
             </summary>
-          ) : null}
-
-        <Card className="rounded-2xl border-border bg-white">
-          <CardHeader className="border-b border-border pb-4">
-            <p className="font-mono text-[9px] tracking-[0.18em] text-primary uppercase">
-              02 / Runner setup
-            </p>
-            <CardTitle className="display-type text-2xl text-foreground">러너 세팅</CardTitle>
-            <CardDescription>
-              신체 정보와 촬영 조건을 맞추면 영상의 픽셀을 실제 움직임으로 바꿀 수 있습니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="stature">키 (cm)</Label>
-                <Input
-                  id="stature"
-                  type="number"
-                  min={120}
-                  max={220}
-                  value={statureCm}
-                  onChange={(e) => setStatureCm(Number(e.target.value) || 170)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mass">체중 (kg)</Label>
-                <Input
-                  id="mass"
-                  type="number"
-                  min={30}
-                  max={160}
-                  value={massKg}
-                  onChange={(e) => setMassKg(Number(e.target.value) || 70)}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pace-minutes">
-                실제 페이스 <span className="text-muted-foreground">(선택)</span>
-              </Label>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="relative">
-                  <Input
-                    id="pace-minutes"
-                    inputMode="numeric"
-                    type="number"
-                    min={2}
-                    max={15}
-                    placeholder="5"
-                    value={paceMinutes}
-                    onChange={(event) => setPaceMinutes(event.target.value)}
-                    className="pr-10"
-                  />
-                  <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
-                    분
-                  </span>
-                </div>
-                <div className="relative">
-                  <Input
-                    inputMode="numeric"
-                    type="number"
-                    min={0}
-                    max={59}
-                    placeholder="30"
-                    value={paceSeconds}
-                    onChange={(event) => setPaceSeconds(event.target.value)}
-                    className="pr-12"
-                  />
-                  <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
-                    초/km
-                  </span>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                영상만으로 수평 속도를 재면 카메라 패닝에 속습니다. 알고 있다면
-                입력한 페이스를 요약의 기준으로 사용합니다.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="slowmo">촬영 배속</Label>
-              <div className="flex flex-wrap gap-2">
-                {[0, 1, 2, 4, 8].map((factor) => (
-                  <Button
-                    key={factor}
-                    id={factor === 0 ? "slowmo" : undefined}
-                    size="sm"
-                    variant={slowMotionFactor === factor ? "default" : "outline"}
-                    onClick={() => {
-                      setSlowMotionFactor(factor);
-                      setSuggestedSlowMotion(null);
-                    }}
-                  >
-                    {factor === 0 ? "자동" : factor === 1 ? "일반" : `${factor}배`}
-                  </Button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {slowMotionFactor === 0 && detectedSlowMotion
-                  ? detectedSlowMotion === 1
-                    ? "일반 속도 영상으로 판정했습니다."
-                    : `${detectedSlowMotion}배 슬로우 모션으로 판정했습니다. 틀렸다면 직접 골라 주세요.`
-                  : "240fps 슬로우 모션이면 8배입니다. 일반 속도로 찍었다면 반드시 바꿔야 접지·체공 시간과 페이스가 맞습니다."}
-              </p>
-              {suggestedSlowMotion ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  <span>
-                    이 영상은 사람이 낼 수 없는 보행이 됩니다.{" "}
-                    {suggestedSlowMotion === 1
-                      ? "일반 속도"
-                      : `${suggestedSlowMotion}배 슬로우`}
-                    가 맞아 보입니다.
-                  </span>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => {
-                      setSlowMotionFactor(suggestedSlowMotion);
-                      setSuggestedSlowMotion(null);
-                    }}
-                  >
-                    바꾸고 다시 분석
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-            <Button size="lg" onClick={analyze} disabled={status === "analyzing" || status === "loading-model"}>
-              {status === "loading-model"
-                ? "자세 모델 준비 중…"
-                : status === "analyzing"
-                  ? "착지 분석 중…"
-                  : "세션 분석 시작 →"}
-            </Button>
-            {status === "analyzing" || status === "loading-model" ? (
-              <div className="space-y-2">
-                <Progress value={status === "loading-model" ? 8 : progress} />
-                <p className="text-xs text-muted-foreground">
-                  접지·체공 시간을 재려고 초당 최대 {MAX_FPS}장까지 촘촘히 훑습니다.
-                  앞 {MAX_SECONDS}초가 대상입니다.
-                </p>
-              </div>
-            ) : null}
-            {error ? (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
-              </p>
-            ) : null}
-            <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-              <li>힘판이 아니라 2D 영상 추정입니다. 의료·훈련 처방이 아닙니다.</li>
-              <li>카메라가 크게 움직이거나 사람이 작게 나오면 오차가 커집니다.</li>
-            </ul>
-          </CardContent>
-        </Card>
-        </details>
+            {runnerSetup}
+          </details>
+        ) : (
+          runnerSetup
+        )}
         </div>
       </div>
 
