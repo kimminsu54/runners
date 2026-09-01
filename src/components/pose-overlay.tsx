@@ -1,9 +1,9 @@
 "use client";
 
 import {
+  blurInto,
   fallbackFaceBox,
   faceBoxFrom,
-  pixelateInto,
   type FaceBox,
 } from "@/lib/face-blur";
 import { SKELETON, type Landmark } from "@/lib/pose";
@@ -60,7 +60,7 @@ type OverlayProps = {
 
 /**
  * The overlay cannot modify the video underneath it, so it covers the face by
- * drawing a pixelated copy of that region on top — the same mosaic the export
+ * drawing a blurred copy of that region on top — the same blur the export
  * writes into the file, at the same place, over a video element that is never
  * touched.
  *
@@ -100,7 +100,7 @@ export function PoseOverlay({
         const found = faceBoxFrom(faceLandmarks, w, h);
         if (found) lastBoxRef.current = found;
         const box = found ?? lastBoxRef.current ?? fallbackFaceBox(w, h);
-        pixelateInto(canvas, video, box, scratchRef.current ?? undefined);
+        blurInto(canvas, video, box, scratchRef.current ?? undefined);
       }
       frame = requestAnimationFrame(draw);
     };

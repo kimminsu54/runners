@@ -10,10 +10,10 @@
 
 import { drawPose } from "@/components/pose-overlay";
 import {
+  blurRegion,
   FACE_COVER_LABEL,
   fallbackFaceBox,
   faceBoxNear,
-  pixelateRegion,
   type FaceCover,
 } from "@/lib/face-blur";
 import type { PoseFrame } from "@/lib/landing-analysis";
@@ -98,7 +98,7 @@ export async function renderExportFrame(
     const found = faceBoxNear(frames, frameIndex, width, height);
     faceCover = found?.source ?? "fallback";
     const box = found?.box ?? fallbackFaceBox(width, height);
-    if (!pixelateRegion(canvas, box)) return null;
+    if (!blurRegion(canvas, box)) return null;
   }
 
   drawPose(ctx, frames[frameIndex]?.landmarks ?? null, width, height, {

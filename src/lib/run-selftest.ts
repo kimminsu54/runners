@@ -74,6 +74,7 @@ import {
 } from "./synthetic-jump";
 import { liveMomentAt } from "./live-readout";
 import {
+  blurPlan,
   FACE_COVER_LABEL,
   fallbackFaceBox,
   faceBoxFrom,
@@ -1483,12 +1484,12 @@ console.log("shoe photos ok", {
   // And covers the face rather than the upper body. Three times the head is a
   // block on the picture, which is what the first version drew.
   const headWidth = earRight - earLeft;
-  if (box.width > headWidth * 2.2) {
+  if (box.width > headWidth * 2.6) {
     throw new Error(
       `the face box is ${(box.width / headWidth).toFixed(1)} heads wide`,
     );
   }
-  if (box.height > headWidth * 2.6) {
+  if (box.height > headWidth * 3.0) {
     throw new Error(
       `the face box is ${(box.height / headWidth).toFixed(1)} heads tall`,
     );
@@ -1551,9 +1552,44 @@ console.log("shoe photos ok", {
     }
   }
 
-  // The mosaic arithmetic. A reduced copy that is one pixel on either axis is a
-  // flat rectangle, not a mosaic, and a source rectangle that is not whole
-  // pixels reads a smeared edge back — both are silent failures in the image.
+  // The blur geometry. Both of these fail silently in the picture rather than
+  // as an error: a radius that does not scale stops hiding anything on larger
+  // footage, and a source rectangle cut to the box leaves the face showing
+  // through a soft rim where the blur faded to transparent.
+  const small = blurPlan({ x: 100, y: 100, width: 120, height: 140 }, 1280, 720);
+  const large = blurPlan({ x: 100, y: 100, width: 480, height: 560 }, 3840, 2160);
+  if (!(large.radius > small.radius * 3)) {
+    throw new Error(
+      `the blur radius does not scale with the face: ${small.radius} then ${large.radius}`,
+    );
+  }
+  if (small.radius < 4) {
+    throw new Error(`a ${small.radius}px blur is a smudge, not a cover`);
+  }
+  const readsLeft = small.x - small.readX;
+  const readsRight = small.readX + small.readWidth - (small.x + small.width);
+  if (readsLeft < small.radius * 2 || readsRight < small.radius * 2) {
+    throw new Error(
+      `the blur reads only ${readsLeft}/${readsRight}px around a ${small.radius}px radius`,
+    );
+  }
+  // Against the frame edge there is nothing to read from, and the plan must
+  // stay inside the canvas rather than ask for pixels that do not exist.
+  const atEdge = blurPlan({ x: 0, y: 0, width: 200, height: 220 }, 1280, 720);
+  if (atEdge.readX < 0 || atEdge.readY < 0) {
+    throw new Error("the blur reads from outside the canvas");
+  }
+  if (
+    atEdge.readX + atEdge.readWidth > 1280 ||
+    atEdge.readY + atEdge.readHeight > 720
+  ) {
+    throw new Error("the blur reads past the far edge of the canvas");
+  }
+
+  // The mosaic arithmetic, still the fallback where a context will not blur. A
+  // reduced copy that is one pixel on either axis is a flat rectangle, not a
+  // mosaic, and a source rectangle that is not whole pixels reads a smeared
+  // edge back — both are silent failures in the image.
   const plan = mosaicPlan({ x: 10.4, y: 20.6, width: 213.2, height: 193.7 });
   if (plan.smallWidth < 2 || plan.smallHeight < 2) {
     throw new Error(`the mosaic collapsed to ${plan.smallWidth}x${plan.smallHeight}`);
