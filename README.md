@@ -68,6 +68,10 @@ npm run test:analysis
 npm run check:language
 ```
 
+신발 카탈로그는 `src/data/shoes.csv` 가 원본이고 앱은 `shoes.json` 을 읽습니다.
+`npm run emit:shoes` 로 다시 뽑으며, 둘이 어긋나면 테스트가 실패합니다 — 재생성을
+잊어 화면의 카탈로그만 한 판 뒤처지는 일을 막습니다.
+
 판정 경계값은 `shared/thresholds.yaml` 한 곳에 모여 있고, 값마다 근거와 검증 상태를
 답니다. 화면의 **판정 근거** 카드가 그 표를 그대로 보여 줍니다. 러닝에서 검증된
 기준이 없는 값(`withheld`)에는 판정을 붙이지 않고 측정값만 내보냅니다.

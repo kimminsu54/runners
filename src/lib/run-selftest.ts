@@ -22,6 +22,8 @@ import {
   type ThresholdKey,
 } from "./thresholds";
 import { emitThresholdsModule, VALIDATION_STATUSES } from "./thresholds-source";
+import { emitShoesJson } from "./shoes-source";
+import { recommendShoes as rankShoes } from "./Shoeranking";
 import {
   analyzeLandings,
   analyzeLandingsAuto,
@@ -1711,4 +1713,76 @@ console.log("shoe photos ok", {
     frontRows: labels(frontHud).length,
     poor: "전 항목 측정 불가",
   });
+}
+
+// The catalog. Both checks here are about one thing: the shoe list is a file
+// shared with another implementation, so neither its freshness nor its row
+// order can be taken on trust from inside this repository.
+{
+  const root = join(import.meta.dirname, "../..");
+  const csv = readFileSync(join(root, "src/data/shoes.csv"), "utf8");
+  const rendered = emitShoesJson(csv).replace(/\r\n/g, "\n");
+  const onDisk = readFileSync(join(root, "src/data/shoes.json"), "utf8").replace(
+    /\r\n/g,
+    "\n",
+  );
+  if (rendered !== onDisk) {
+    throw new Error(
+      "src/data/shoes.json is out of date — run `npm run emit:shoes`",
+    );
+  }
+
+  // The app reads the JSON, so an edit to the CSV that was never re-emitted
+  // used to leave the catalog on screen one revision behind, with a comment as
+  // the only thing asking anyone to notice.
+  console.log("catalog json ok", { rows: JSON.parse(onDisk).length });
+}
+
+{
+  // Reversing the rows changed four of six recommendation sets before the sort
+  // settled its own ties: a Gel-Cumulus became a Gel-Nimbus, an Adios Pro a
+  // Takumi Sen. Shoes that scored identically, so the winner was whichever had
+  // been written down first — and row order belongs to whoever last emitted the
+  // shared CSV.
+  const rows = listShoes();
+  const reversed = [...rows].reverse();
+  const rank = (
+    catalogRows: Shoe[],
+    strike: "rearfoot" | "midfoot" | "forefoot",
+    pace: "easy" | "fast",
+  ) => {
+    const scored = catalogRows.flatMap((shoe) => {
+      const pick = scoreShoe(shoe, strike, pace, "none");
+      return pick
+        ? [
+            {
+              brand: shoe.brand,
+              model: shoe.model,
+              score: pick.score,
+              strikes: shoe.recommendedStrikes,
+            },
+          ]
+        : [];
+    });
+    const ranked = rankShoes(scored, strike);
+    if (ranked.kind !== "matched") return "general";
+    return [...ranked.primary, ...ranked.others]
+      .map((item) => `${item.brand} ${item.model}`)
+      .join(" | ");
+  };
+
+  let compared = 0;
+  for (const strike of ["rearfoot", "midfoot", "forefoot"] as const) {
+    for (const pace of ["easy", "fast"] as const) {
+      const asIs = rank(rows, strike, pace);
+      const flipped = rank(reversed, strike, pace);
+      if (asIs !== flipped) {
+        throw new Error(
+          `catalog row order changed the ${strike}/${pace} picks:\n  as-is    ${asIs}\n  reversed ${flipped}`,
+        );
+      }
+      compared += 1;
+    }
+  }
+  console.log("catalog order independence ok", { combinations: compared });
 }

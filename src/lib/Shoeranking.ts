@@ -78,13 +78,55 @@ export type Rankable = {
   brand: string;
   score: number;
   strikes?: CatalogStrike[];
+  /**
+   * Whether the caller can show this shoe. The card carries a photograph, and
+   * the project's standing rule is that anything recommendable has one — so
+   * between two shoes that scored the same and are equally specific, the one
+   * that can be shown is the better card. It ranks below both of those on
+   * purpose: a picture is not a reason to prefer a shoe, only a reason to
+   * prefer it over an equal.
+   */
+  hasPhoto?: boolean;
+  /** Only used to break a tie that everything else leaves level. */
+  model?: string;
 };
+
+/**
+ * How many strike patterns a catalog row claims to suit. Lower is a more
+ * specific answer to the question that was asked.
+ *
+ * A row labelled `전체` serves all four pools and says nothing about the runner
+ * in front of it; one labelled `미드풋` was put in that column deliberately.
+ * Given two shoes that scored the same, the specific one is the better answer.
+ */
+function strikeReach(item: Rankable): number {
+  const strikes = item.strikes;
+  // No labels at all is the general path, where nothing was filtered and
+  // specificity is not a question. Rank it last of the ties rather than first.
+  if (!strikes?.length) return 9;
+  return strikes.includes("any") ? 4 : strikes.length;
+}
 
 export type RankedRecommendation<T extends Rankable> =
   | { kind: "general" }
   | { kind: "matched"; primary: T[]; others: T[] };
 
-/** Filter by strike pool, sort by score, then emit Nike → Asics → Adidas. */
+/**
+ * Filter by strike pool, sort by score, then emit Nike → Asics → Adidas.
+ *
+ * The sort has to settle every tie from the rows themselves, because the order
+ * they arrive in is not this project's to control. The catalog is a CSV shared
+ * with another implementation; re-sorting it there, or re-emitting it, must not
+ * change which shoes this app recommends. It did: reversing the rows changed
+ * four of six recommendation sets, swapping a Gel-Cumulus for a Gel-Nimbus and
+ * an Adios Pro for a Takumi Sen — shoes that scored identically, so the winner
+ * was whichever happened to be written down first.
+ *
+ * Score first, then the more specific strike label, then a shoe the card can
+ * actually show, then brand and model by name. The last two decide nothing
+ * about quality; they exist so that two equally good, equally specific shoes
+ * come out in the same order every time.
+ */
 export function recommendShoes<T extends Rankable>(
   catalog: T[],
   strike: string,
@@ -94,7 +136,14 @@ export function recommendShoes<T extends Rankable>(
 
   const eligible = catalog
     .filter((item) => !item.strikes || shoeFitsStrike(item.strikes, strike))
-    .sort((a, b) => b.score - a.score || a.brand.localeCompare(b.brand));
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        strikeReach(a) - strikeReach(b) ||
+        Number(b.hasPhoto ?? false) - Number(a.hasPhoto ?? false) ||
+        a.brand.localeCompare(b.brand) ||
+        (a.model ?? "").localeCompare(b.model ?? ""),
+    );
 
   const bestByBrand = new Map<string, T>();
   for (const item of eligible) {

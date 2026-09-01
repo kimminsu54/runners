@@ -37,6 +37,42 @@ if (ranked.others[0]?.brand !== "Hoka") {
   throw new Error("other brands must still keep the highest non-priority score");
 }
 
+// Ties. The catalog is a CSV shared with another implementation, so the order
+// the rows arrive in is not ours to control — and it used to decide the winner
+// whenever two shoes scored the same.
+const tied = [
+  { brand: "Nike", model: "Broad", score: 50, strikes: ["any" as const] },
+  { brand: "Nike", model: "Narrow", score: 50, strikes: ["midfoot" as const] },
+  { brand: "Nike", model: "Middling", score: 50, strikes: ["midfoot" as const, "forefoot" as const] },
+];
+const bySpecificity = recommendShoes(tied, "midfoot");
+if (bySpecificity.kind !== "matched" || bySpecificity.primary[0]?.model !== "Narrow") {
+  throw new Error(
+    `a tie must go to the row labelled for this strike, got ${
+      bySpecificity.kind === "matched" ? bySpecificity.primary[0]?.model : "general"
+    }`,
+  );
+}
+const shuffled = recommendShoes([...tied].reverse(), "midfoot");
+if (
+  shuffled.kind !== "matched" ||
+  shuffled.primary[0]?.model !== "Narrow"
+) {
+  throw new Error("reordering the rows changed which tied shoe won");
+}
+// Equally specific and equally good: settled by name, which decides nothing
+// about the shoe and everything about getting the same answer twice.
+const level = [
+  { brand: "Asics", model: "Sky", score: 50, strikes: ["midfoot" as const] },
+  { brand: "Asics", model: "Edge", score: 50, strikes: ["midfoot" as const] },
+];
+for (const rows of [level, [...level].reverse()]) {
+  const rec = recommendShoes(rows, "midfoot");
+  if (rec.kind !== "matched" || rec.primary[0]?.model !== "Edge") {
+    throw new Error("a fully level tie must not depend on row order");
+  }
+}
+
 if (parseNumericCell("N/A") !== null || parseNumericCell("") !== null) {
   throw new Error("N/A and blank cells must become null");
 }

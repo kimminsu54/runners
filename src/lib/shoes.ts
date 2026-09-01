@@ -183,8 +183,10 @@ export function recommendShoes(
           {
             ...pick,
             brand: shoe.brand,
+            model: shoe.model,
             score: pick.score,
             strikes: shoe.recommendedStrikes,
+            hasPhoto: Boolean(shoeImageSrc(shoe)),
           },
         ]
       : [];
