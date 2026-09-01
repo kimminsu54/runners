@@ -1573,6 +1573,24 @@ console.log("shoe photos ok", {
       `the blur reads only ${readsLeft}/${readsRight}px around a ${small.radius}px radius`,
     );
   }
+  // The feather has to dissolve, and the solid part has to still be a cover.
+  // A core that reached the edge would draw the line the fade exists to remove;
+  // one that started too early would leave a face readable through the haze.
+  if (!(small.coreRadius > 0 && small.coreRadius < small.edgeRadius)) {
+    throw new Error(
+      `the feather core (${small.coreRadius}) is not inside the edge (${small.edgeRadius})`,
+    );
+  }
+  if (small.coreRadius < small.edgeRadius * 0.5) {
+    throw new Error("the blur starts fading before it has covered anything");
+  }
+  const facePlan = blurPlan(box, WIDTH, HEIGHT);
+  if (facePlan.coreRadius * 2 < headWidth) {
+    throw new Error(
+      `the fully covered core is ${(facePlan.coreRadius * 2).toFixed(0)}px across a ${headWidth.toFixed(0)}px head`,
+    );
+  }
+
   // Against the frame edge there is nothing to read from, and the plan must
   // stay inside the canvas rather than ask for pixels that do not exist.
   const atEdge = blurPlan({ x: 0, y: 0, width: 200, height: 220 }, 1280, 720);

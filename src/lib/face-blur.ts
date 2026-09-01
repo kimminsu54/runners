@@ -236,10 +236,26 @@ const MIN_BLUR_PX = 4;
  *
  * A blur samples its neighbourhood, so a source rectangle cut exactly to the
  * box would fade towards transparent at its own edges and leave the face
- * showing through the rim. Reading from wider and drawing clipped to the box
+ * showing through the rim. Reading from wider and drawing masked to the box
  * puts that fade outside the visible area.
  */
 const BLUR_MARGIN_RADII = 3;
+
+/**
+ * Where the blur stops being total and starts dissolving, as a fraction of the
+ * box radius.
+ *
+ * A cover that is fully opaque to its edge and absent one pixel later draws a
+ * line around itself, and the eye goes to the line — which is what an ellipse
+ * with a hard edge still looked like. Fading the last third makes it read as a
+ * face out of focus rather than as something laid over one.
+ *
+ * The head sits inside the solid part. The box runs about two heads across, so
+ * two thirds of it is still a head and a third wide; what dissolves is the
+ * margin around the head, which is where a soft edge belongs and where nothing
+ * identifying is.
+ */
+const FEATHER_CORE = 0.66;
 
 /**
  * How coarse the fallback mosaic is: the box is reduced to about this many
@@ -293,6 +309,9 @@ export type BlurPlan = {
   readY: number;
   readWidth: number;
   readHeight: number;
+  /** Fully covered out to here, then dissolving to nothing at `edgeRadius`. */
+  coreRadius: number;
+  edgeRadius: number;
 };
 
 /**
@@ -321,6 +340,8 @@ export function blurPlan(
     readY,
     readWidth: Math.min(canvasWidth - readX, Math.ceil(width + margin * 2)),
     readHeight: Math.min(canvasHeight - readY, Math.ceil(height + margin * 2)),
+    coreRadius: (width / 2) * FEATHER_CORE,
+    edgeRadius: width / 2,
   };
 }
 
@@ -369,36 +390,70 @@ export function blurInto(
   if (!supportsFilter(ctx)) return pixelateInto(dest, source, box, scratch);
 
   const plan = blurPlan(box, dest.width, dest.height);
-  ctx.save();
-  ctx.beginPath();
-  // An ellipse, not the rectangle the box describes. A straight edge across
-  // someone's cheek is read as a patch stuck on the picture — the same
-  // complaint the mosaic drew — while a curve around a head is read as a
-  // blurred head. It also spends the widened box where a head actually is
-  // rather than on four corners of background.
-  ctx.ellipse(
-    plan.x + plan.width / 2,
-    plan.y + plan.height / 2,
-    plan.width / 2,
-    plan.height / 2,
-    0,
-    0,
-    Math.PI * 2,
-  );
-  ctx.clip();
-  ctx.filter = `blur(${plan.radius}px)`;
-  ctx.drawImage(
+
+  // Built on its own layer rather than clipped onto the destination, because
+  // the edge has to dissolve and a clip can only cut. The layer is blurred,
+  // then an elliptical gradient is punched through its alpha, then the whole
+  // thing is laid down — so the cover fades out instead of ending.
+  const layer = scratch ?? document.createElement("canvas");
+  layer.width = plan.readWidth;
+  layer.height = plan.readHeight;
+  const layerCtx = layer.getContext("2d");
+  if (!layerCtx) return false;
+
+  layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+  layerCtx.globalCompositeOperation = "source-over";
+  layerCtx.clearRect(0, 0, layer.width, layer.height);
+  layerCtx.filter = `blur(${plan.radius}px)`;
+  layerCtx.drawImage(
     source,
     plan.readX,
     plan.readY,
     plan.readWidth,
     plan.readHeight,
-    plan.readX,
-    plan.readY,
+    0,
+    0,
     plan.readWidth,
     plan.readHeight,
   );
-  ctx.restore();
+  layerCtx.filter = "none";
+
+  // An ellipse, not the rectangle the box describes. A straight edge across
+  // someone's cheek is read as a patch stuck on the picture — the same
+  // complaint the mosaic drew — while a curve around a head is read as a
+  // blurred head. Squashing the vertical axis turns one radial gradient into
+  // the ellipse the box wants.
+  const cx = plan.x + plan.width / 2 - plan.readX;
+  const cy = plan.y + plan.height / 2 - plan.readY;
+  const squash = plan.height / plan.width;
+  layerCtx.globalCompositeOperation = "destination-in";
+  layerCtx.translate(cx, cy);
+  layerCtx.scale(1, squash);
+  layerCtx.translate(-cx, -cy);
+  const mask = layerCtx.createRadialGradient(
+    cx,
+    cy,
+    plan.coreRadius,
+    cx,
+    cy,
+    plan.edgeRadius,
+  );
+  mask.addColorStop(0, "rgba(0, 0, 0, 1)");
+  // Eased rather than linear: a straight ramp still shows where it begins.
+  mask.addColorStop(0.55, "rgba(0, 0, 0, 0.72)");
+  mask.addColorStop(0.85, "rgba(0, 0, 0, 0.22)");
+  mask.addColorStop(1, "rgba(0, 0, 0, 0)");
+  layerCtx.fillStyle = mask;
+  layerCtx.fillRect(
+    -layer.width,
+    -layer.height,
+    layer.width * 3,
+    layer.height * 3,
+  );
+  layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+  layerCtx.globalCompositeOperation = "source-over";
+
+  ctx.drawImage(layer, plan.readX, plan.readY);
   return true;
 }
 
