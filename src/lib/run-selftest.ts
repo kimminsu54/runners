@@ -81,6 +81,7 @@ import {
   mosaicPlan,
 } from "./face-blur";
 import { buildHudFrame, HUD_NOTE } from "./hud-frame";
+import { exportPlan } from "./export-frame";
 import { LM, type Landmark } from "./pose";
 import { buildLandingGuidance } from "./training-guidance";
 
@@ -1593,6 +1594,26 @@ console.log("shoe photos ok", {
   }
   if (sideHud.note !== HUD_NOTE || frontHud.note !== HUD_NOTE) {
     throw new Error("the still lost the note about what the estimate is");
+  }
+
+  // Drawing the photograph and covering the face are independent. Coupling them
+  // once already produced an export with covering turned off that contained no
+  // video frame — a skeleton on a black rectangle, which nothing else here
+  // would have caught.
+  const withCover = exportPlan({ hasVideo: true, coverFace: true });
+  if (!withCover.drawVideo || !withCover.mosaic) {
+    throw new Error("covering the face dropped the photograph or the mosaic");
+  }
+  const withoutCover = exportPlan({ hasVideo: true, coverFace: false });
+  if (!withoutCover.drawVideo) {
+    throw new Error("turning covering off also dropped the video frame");
+  }
+  if (withoutCover.mosaic || withoutCover.faceCover !== "off") {
+    throw new Error("covering was turned off but the export still says otherwise");
+  }
+  const sample = exportPlan({ hasVideo: false, coverFace: true });
+  if (sample.drawVideo || sample.mosaic || sample.faceCover !== "no-photo") {
+    throw new Error("the sample session tried to cover a face it does not have");
   }
 
   console.log("export still ok", {

@@ -26,6 +26,8 @@ export type ExportFrameInput = {
   /** Index into `frames` of the moment being exported. */
   frameIndex: number;
   hud: HudFrame;
+  /** Follows the preview toggle, so one control governs both. */
+  coverFace: boolean;
 };
 
 const FALLBACK_WIDTH = 1280;
@@ -33,10 +35,41 @@ const FALLBACK_HEIGHT = 720;
 
 export type ExportFrameResult = { blob: Blob; faceCover: FaceCover };
 
+export type ExportPlan = {
+  /** Whether the video frame goes on the canvas at all. */
+  drawVideo: boolean;
+  /** Whether a face is looked for and covered. */
+  mosaic: boolean;
+  /** Known up front unless the mosaic runs, where the ladder decides. */
+  faceCover: FaceCover | null;
+};
+
+/**
+ * The two independent decisions, pulled out of the drawing so they can be
+ * checked.
+ *
+ * Not over-abstraction: folding them into one condition is a mistake that has
+ * already been made here once, and it produced an export with face hiding
+ * turned off that held no video frame at all — a skeleton on a black
+ * rectangle, which no type or lint rule would ever object to.
+ */
+export function exportPlan(input: {
+  hasVideo: boolean;
+  coverFace: boolean;
+}): ExportPlan {
+  if (!input.hasVideo) {
+    return { drawVideo: false, mosaic: false, faceCover: "no-photo" };
+  }
+  if (!input.coverFace) {
+    return { drawVideo: true, mosaic: false, faceCover: "off" };
+  }
+  return { drawVideo: true, mosaic: true, faceCover: null };
+}
+
 export async function renderExportFrame(
   input: ExportFrameInput,
 ): Promise<ExportFrameResult | null> {
-  const { video, frames, frameIndex, hud } = input;
+  const { video, frames, frameIndex, hud, coverFace } = input;
   const width = video?.videoWidth || FALLBACK_WIDTH;
   const height = video?.videoHeight || FALLBACK_HEIGHT;
 
@@ -53,12 +86,15 @@ export async function renderExportFrame(
   // anything looks for one. "We found no landmarks, so there is nothing to
   // hide" would be the fail-open branch this module exists to avoid; "there is
   // no photograph here at all" is a different statement, and the only one that
-  // licenses skipping the mosaic. It is also the case that looks, from outside,
-  // exactly like the feature not working — so it is reported rather than left
-  // silent.
-  let faceCover: FaceCover = "no-photo";
-  if (video) {
+  // licenses skipping the mosaic without anyone asking. Both of those, and the
+  // runner's own choice to turn covering off, look identical from outside — so
+  // each is reported rather than left silent.
+  const plan = exportPlan({ hasVideo: Boolean(video), coverFace });
+  let faceCover: FaceCover = plan.faceCover ?? "fallback";
+  if (plan.drawVideo && video) {
     ctx.drawImage(video, 0, 0, width, height);
+  }
+  if (plan.mosaic) {
     const found = faceBoxNear(frames, frameIndex, width, height);
     faceCover = found?.source ?? "fallback";
     const box = found?.box ?? fallbackFaceBox(width, height);

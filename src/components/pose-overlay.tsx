@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  fallbackFaceBox,
+  faceBoxFrom,
+  pixelateInto,
+  type FaceBox,
+} from "@/lib/face-blur";
 import { SKELETON, type Landmark } from "@/lib/pose";
 import { useEffect, useRef, type RefObject } from "react";
 
@@ -41,11 +47,39 @@ export function drawPose(
 type OverlayProps = {
   videoRef: RefObject<HTMLVideoElement | null>;
   landmarks: Landmark[] | null;
+  /**
+   * Landmarks to find the face in, when they are not the ones being drawn. The
+   * camera preview uses this: it tracks a face so it can be covered without
+   * putting a skeleton over someone who is still framing the shot.
+   */
+  faceFrom?: Landmark[] | null;
+  /** Covers the face with a mosaic of itself. */
+  coverFace?: boolean;
   className?: string;
 };
 
-export function PoseOverlay({ videoRef, landmarks, className }: OverlayProps) {
+/**
+ * The overlay cannot modify the video underneath it, so it covers the face by
+ * drawing a pixelated copy of that region on top — the same mosaic the export
+ * writes into the file, at the same place, over a video element that is never
+ * touched.
+ *
+ * The last known box is held across frames rather than recomputed from nothing.
+ * A tracker that drops the face for two frames would otherwise flick between
+ * covering a face and covering the whole upper third, which is both ugly and,
+ * for the frames in between, a brief uncovering.
+ */
+export function PoseOverlay({
+  videoRef,
+  landmarks,
+  faceFrom,
+  coverFace = false,
+  className,
+}: OverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scratchRef = useRef<HTMLCanvasElement | null>(null);
+  const lastBoxRef = useRef<FaceBox | null>(null);
+  const faceLandmarks = faceFrom === undefined ? landmarks : faceFrom;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,6 +87,7 @@ export function PoseOverlay({ videoRef, landmarks, className }: OverlayProps) {
     if (!canvas || !video) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    if (!scratchRef.current) scratchRef.current = document.createElement("canvas");
 
     let frame = 0;
     const draw = () => {
@@ -61,11 +96,17 @@ export function PoseOverlay({ videoRef, landmarks, className }: OverlayProps) {
       if (canvas.width !== w) canvas.width = w;
       if (canvas.height !== h) canvas.height = h;
       drawPose(ctx, landmarks, w, h);
+      if (coverFace && video.videoWidth) {
+        const found = faceBoxFrom(faceLandmarks, w, h);
+        if (found) lastBoxRef.current = found;
+        const box = found ?? lastBoxRef.current ?? fallbackFaceBox(w, h);
+        pixelateInto(canvas, video, box, scratchRef.current ?? undefined);
+      }
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [videoRef, landmarks]);
+  }, [videoRef, landmarks, faceLandmarks, coverFace]);
 
   return <canvas ref={canvasRef} className={className} aria-hidden />;
 }

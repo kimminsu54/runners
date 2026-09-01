@@ -41,7 +41,14 @@ export type FaceCover =
   /** No frame in the clip had a face. The whole upper third is covered. */
   | "fallback"
   /** There is no photograph to cover: the sample session draws a stick figure. */
-  | "no-photo";
+  | "no-photo"
+  /**
+   * The runner turned face hiding off. Not a failure — the guard here is
+   * against the tracker losing a face, not against someone deciding what to do
+   * with a picture of themselves — but it is recorded on the image, because a
+   * file that carries a face should say that it does.
+   */
+  | "off";
 
 export type FaceCoverResult = { box: FaceBox; source: FaceCover };
 
@@ -137,6 +144,7 @@ export const FACE_COVER_LABEL: Record<FaceCover, string> = {
   neighbour: "얼굴 모자이크 적용 (앞뒤 프레임 기준)",
   fallback: "얼굴을 찾지 못해 상단 전체를 모자이크",
   "no-photo": "샘플 세션 · 영상 없음",
+  off: "얼굴 가리기 끔 (사용자 선택)",
 };
 
 /**
@@ -206,27 +214,40 @@ export function mosaicPlan(box: FaceBox, cells = MOSAIC_CELLS): MosaicPlan {
 }
 
 /**
- * Pixelates one region of a canvas in place. Returns false when the browser
- * would not give the scratch context, which is the caller's signal to refuse
- * the export rather than hand back an unblurred frame.
+ * Copies one region of `source` onto `dest` as a mosaic.
+ *
+ * Source and destination share a coordinate space: for the exported still they
+ * are the same canvas, and for the live preview the source is the video element
+ * and the destination is the transparent overlay drawn on top of it, sized to
+ * the video's own pixels. That is what lets the preview cover a face it cannot
+ * modify — the video element itself is untouched, and the overlay carries a
+ * pixelated copy of the region at the same place.
+ *
+ * `scratch` is for callers redrawing every animation frame; allocating a canvas
+ * sixty times a second is the kind of waste that only shows up on a slow
+ * machine. Returns false when a context is refused, which is the caller's
+ * signal to refuse rather than hand back an uncovered frame.
  */
-export function pixelateRegion(
-  canvas: HTMLCanvasElement,
+export function pixelateInto(
+  dest: HTMLCanvasElement,
+  source: CanvasImageSource,
   box: FaceBox,
+  scratch?: HTMLCanvasElement,
 ): boolean {
-  const ctx = canvas.getContext("2d");
+  const ctx = dest.getContext("2d");
   if (!ctx) return false;
   const plan = mosaicPlan(box);
 
-  const scratch = document.createElement("canvas");
-  scratch.width = plan.smallWidth;
-  scratch.height = plan.smallHeight;
-  const scratchCtx = scratch.getContext("2d");
-  if (!scratchCtx) return false;
+  const small = scratch ?? document.createElement("canvas");
+  small.width = plan.smallWidth;
+  small.height = plan.smallHeight;
+  const smallCtx = small.getContext("2d");
+  if (!smallCtx) return false;
 
-  scratchCtx.imageSmoothingEnabled = true;
-  scratchCtx.drawImage(
-    canvas,
+  smallCtx.imageSmoothingEnabled = true;
+  smallCtx.clearRect(0, 0, plan.smallWidth, plan.smallHeight);
+  smallCtx.drawImage(
+    source,
     plan.x,
     plan.y,
     plan.width,
@@ -240,7 +261,7 @@ export function pixelateRegion(
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(
-    scratch,
+    small,
     0,
     0,
     plan.smallWidth,
@@ -252,4 +273,12 @@ export function pixelateRegion(
   );
   ctx.restore();
   return true;
+}
+
+/** Pixelates one region of a canvas in place, reading and writing itself. */
+export function pixelateRegion(
+  canvas: HTMLCanvasElement,
+  box: FaceBox,
+): boolean {
+  return pixelateInto(canvas, canvas, box);
 }

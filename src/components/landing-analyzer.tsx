@@ -39,7 +39,7 @@ import {
   syntheticRunningFrames,
 } from "@/lib/synthetic-jump";
 import { cn } from "@/lib/utils";
-import { ImageDown, UploadCloud } from "lucide-react";
+import { Eye, EyeOff, ImageDown, UploadCloud } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -95,6 +95,22 @@ export function LandingAnalyzer() {
   const [poseFrames, setPoseFrames] = useState<PoseFrame[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  // On by default. The preview is the other place a face can be seen — a shared
+  // screen, a recording, someone standing behind you — and the export already
+  // covers the file. Off is a deliberate choice, which is why it is a visible
+  // control rather than a setting.
+  const [faceHidden, setFaceHidden] = useState(true);
+  /**
+   * Face landmarks for the camera preview only.
+   *
+   * Framing a shot happens before any analysis, so there are no landmarks to
+   * put a mosaic on, and the fail-closed answer — cover the upper third — would
+   * make it impossible to see whether you are in frame. Tracking the face a few
+   * times a second costs a fraction of a core and covers the face itself
+   * instead. Kept apart from `overlay` so the skeleton does not appear over
+   * someone who is still setting the camera up.
+   */
+  const [previewFace, setPreviewFace] = useState<Landmark[] | null>(null);
   const clockFactor =
     detectedSlowMotion && detectedSlowMotion > 0 ? detectedSlowMotion : 1;
 
@@ -144,6 +160,38 @@ export function LandingAnalyzer() {
     const stream = streamRef.current;
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, []);
+
+  useEffect(() => {
+    if (!cameraOn || !faceHidden) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      const video = videoRef.current;
+      if (!live || !video || !video.videoWidth) {
+        timer = setTimeout(tick, 400);
+        return;
+      }
+      try {
+        const landmarker = await getPoseLandmarker();
+        if (!live) return;
+        const det = landmarker.detect(video);
+        setPreviewFace(det.landmarks[0] ?? null);
+      } catch {
+        // Leave the last box in place. PoseOverlay holds it, and holding is the
+        // fail-closed answer here: a dropped detection is not evidence that the
+        // face has gone.
+      }
+      if (live) timer = setTimeout(tick, 250);
+    };
+    void tick();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+      // Cleared on the way out rather than on the way in, so the last box does
+      // not survive into a different clip.
+      setPreviewFace(null);
+    };
+  }, [cameraOn, faceHidden]);
 
   const attachFile = useCallback((file: File) => {
     setPoseFrames([]);
@@ -353,6 +401,7 @@ export function LandingAnalyzer() {
         frames: poseFrames,
         frameIndex,
         hud: buildHudFrame(result, landing, selected + 1),
+        coverFace: faceHidden,
       });
       if (!rendered) {
         setExportNote(
@@ -700,6 +749,8 @@ export function LandingAnalyzer() {
               <PoseOverlay
                 videoRef={videoRef}
                 landmarks={shownOverlay}
+                faceFrom={cameraOn ? previewFace : shownOverlay}
+                coverFace={faceHidden && (Boolean(videoUrl) || cameraOn)}
                 className="pointer-events-none absolute inset-0 h-full w-full object-contain"
               />
             )}
@@ -744,6 +795,17 @@ export function LandingAnalyzer() {
               )}
             </p>
             <div className="flex flex-wrap gap-2">
+              {videoUrl || cameraOn ? (
+                <Button
+                  size="sm"
+                  variant={faceHidden ? "secondary" : "outline"}
+                  aria-pressed={faceHidden}
+                  onClick={() => setFaceHidden((on) => !on)}
+                >
+                  {faceHidden ? <EyeOff /> : <Eye />}
+                  {faceHidden ? "얼굴 가림" : "얼굴 보임"}
+                </Button>
+              ) : null}
               {status === "done" && result?.landings.length ? (
                 <Button
                   size="sm"
