@@ -7,8 +7,11 @@ import {
   type CatalogStrike,
 } from "@/lib/Shoeranking";
 import type { PaceBand, SessionSummary } from "@/lib/session-summary";
-import catalog from "@/data/shoes.json";
-// Catalog source of truth for editors: src/data/shoes.csv. Re-emit JSON if that file changes.
+import catalog from "../../shared/shoes.json";
+// The catalog lives in shared/ because it is not only ours: the gait engine in
+// the other track reads the same CSV. shared/shoes.csv is the one file people
+// edit; shoes.json is emitted from it by `npm run emit:shoes`, and the
+// self-test fails if the two disagree.
 
 export type ShoeCategory = "쿠션화" | "안정화" | "제어화";
 export type ShoeStrikeFit = CatalogStrike | "unspecified";

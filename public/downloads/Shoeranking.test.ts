@@ -1,4 +1,4 @@
-import catalog from "../data/shoes.json";
+import catalog from "../../shared/shoes.json";
 import {
   PRIORITY_BRANDS,
   parseFlagCell,

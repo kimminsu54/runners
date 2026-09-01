@@ -1720,15 +1720,15 @@ console.log("shoe photos ok", {
 // order can be taken on trust from inside this repository.
 {
   const root = join(import.meta.dirname, "../..");
-  const csv = readFileSync(join(root, "src/data/shoes.csv"), "utf8");
+  const csv = readFileSync(join(root, "shared/shoes.csv"), "utf8");
   const rendered = emitShoesJson(csv).replace(/\r\n/g, "\n");
-  const onDisk = readFileSync(join(root, "src/data/shoes.json"), "utf8").replace(
+  const onDisk = readFileSync(join(root, "shared/shoes.json"), "utf8").replace(
     /\r\n/g,
     "\n",
   );
   if (rendered !== onDisk) {
     throw new Error(
-      "src/data/shoes.json is out of date — run `npm run emit:shoes`",
+      "shared/shoes.json is out of date — run `npm run emit:shoes`",
     );
   }
 

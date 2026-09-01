@@ -68,9 +68,20 @@ npm run test:analysis
 npm run check:language
 ```
 
-신발 카탈로그는 `src/data/shoes.csv` 가 원본이고 앱은 `shoes.json` 을 읽습니다.
-`npm run emit:shoes` 로 다시 뽑으며, 둘이 어긋나면 테스트가 실패합니다 — 재생성을
-잊어 화면의 카탈로그만 한 판 뒤처지는 일을 막습니다.
+`shared/` 는 이 앱만의 것이 아닙니다. 같은 신발 DB와 같은 판정 경계값을 쓰는 다른
+구현(파이썬 보행 분석 엔진)과 나누는 폴더이고, 사람이 편집하는 원본은 여기에만
+둡니다.
+
+- `shared/shoes.csv` — 신발 카탈로그 105행. 두 구현이 함께 읽습니다
+- `shared/shoes.json` — CSV에서 자동 생성. 앱이 실제로 읽는 파일
+- `shared/thresholds.yaml` — 판정 경계값 + 근거 + 검증 상태. pyyaml 로 그대로 읽힙니다
+
+생성기는 `scripts/emit-shoes-json.ts` 에 둡니다. 공유 폴더에는 두 구현이 함께
+쓰는 데이터만 두고, 웹 쪽에서만 돌리는 스크립트는 다른 스크립트들과 같은 자리에
+두는 편이 찾기 쉽습니다.
+
+`npm run emit:shoes` 로 JSON을 다시 뽑으며, CSV와 어긋나면 테스트가 실패합니다 —
+재생성을 잊어 화면의 카탈로그만 한 판 뒤처지는 일을 막습니다.
 
 판정 경계값은 `shared/thresholds.yaml` 한 곳에 모여 있고, 값마다 근거와 검증 상태를
 답니다. 화면의 **판정 근거** 카드가 그 표를 그대로 보여 줍니다. 러닝에서 검증된

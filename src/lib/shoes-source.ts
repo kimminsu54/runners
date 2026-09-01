@@ -1,5 +1,5 @@
 /**
- * Reads `src/data/shoes.csv` and renders `src/data/shoes.json`.
+ * Reads `shared/shoes.csv` and renders `shared/shoes.json`.
  *
  * Both halves live here, with no filesystem access, so the generator script and
  * the self-test can share them: the test re-renders the JSON from the CSV in
@@ -111,7 +111,7 @@ export function parseShoesCsv(text: string): CatalogRow[] {
   });
 }
 
-/** The exact bytes `src/data/shoes.json` should hold for this CSV. */
+/** The exact bytes `shared/shoes.json` should hold for this CSV. */
 export function emitShoesJson(csv: string): string {
   return `${JSON.stringify(parseShoesCsv(csv), null, 2)}\n`;
 }
