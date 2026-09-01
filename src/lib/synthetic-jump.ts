@@ -28,6 +28,9 @@ type PoseShape = {
   /** Knee x per side, for shanks that are not vertical. */
   leftKneeX?: number;
   rightKneeX?: number;
+  /** Hip y offset per side, for a pelvis that is not level. */
+  leftHipDy?: number;
+  rightHipDy?: number;
 };
 
 function poseAt(
@@ -45,13 +48,15 @@ function poseAt(
     hipHalf = 0.005,
     leftKneeX = 0.47,
     rightKneeX = 0.53,
+    leftHipDy = 0,
+    rightHipDy = 0,
   } = shape;
   const arr = Array.from({ length: 33 }, () => lm(0.5, 0.5));
   arr[0] = lm(0.5, hipY - 0.28);
   arr[11] = lm(0.5 - shoulderHalf, hipY - 0.18);
   arr[12] = lm(0.5 + shoulderHalf, hipY - 0.18);
-  arr[23] = lm(0.5 - hipHalf, hipY);
-  arr[24] = lm(0.5 + hipHalf, hipY);
+  arr[23] = lm(0.5 - hipHalf, hipY + leftHipDy);
+  arr[24] = lm(0.5 + hipHalf, hipY + rightHipDy);
   arr[25] = lm(leftKneeX, hipY + 0.12);
   arr[26] = lm(rightKneeX, hipY + 0.12);
   arr[27] = lm(leftFootX, leftFootY);
@@ -298,15 +303,41 @@ function footX(
   return -ahead + 2 * ahead * u;
 }
 
+export type FrontRunGait = RunningGait & {
+  /**
+   * How far the stance knee falls toward the midline, in normalised frame
+   * width. Applied only while that foot is down, so the peak-over-stance
+   * reader has something to find and the swing leg stays aligned.
+   */
+  valgus: number;
+  /** How far the swing-side hip drops, in normalised frame height. */
+  pelvicDrop: number;
+  /** -1 films the same runner from behind, swapping left and right in frame. */
+  facing: 1 | -1;
+};
+
 /**
  * The same runner filmed from in front: shoulders and hips spread wide enough
  * that the profile ratio crosses `side_view_max_profile_ratio`, and each foot
  * seen end-on so it has no length in the image and therefore no direction.
+ *
+ * `facing: -1` is the same clip shot from behind. It mirrors the image, which
+ * swaps which side of the frame each leg appears on without changing the
+ * runner — so every frontal reading has to come out identical, and that is
+ * what pins the sign convention to the pelvis rather than to the frame.
  */
 export function syntheticFrontRunFrames(
-  gait: Partial<RunningGait> = {},
+  gait: Partial<FrontRunGait> = {},
 ): PoseFrame[] {
-  const { contactS = 0.24, flightS = 0.1, steps = 8, fps = 60 } = gait;
+  const {
+    contactS = 0.24,
+    flightS = 0.1,
+    steps = 8,
+    fps = 60,
+    valgus = 0,
+    pelvicDrop = 0,
+    facing = 1,
+  } = gait;
   const stepPeriod = contactS + flightS;
   const starts = Array.from({ length: steps }, (_, i) => 0.25 + i * stepPeriod);
   const leftStarts = starts.filter((_, i) => i % 2 === 0);
@@ -316,6 +347,19 @@ export function syntheticFrontRunFrames(
   const frames: PoseFrame[] = [];
   for (let i = 0; i < Math.round(duration * fps); i++) {
     const t = i / fps;
+    const leftDown = inStance(t, leftStarts, contactS);
+    const rightDown = inStance(t, rightStarts, contactS);
+    // Seen from in front, the runner's left side appears on the left of frame
+    // in this fixture, and mirroring puts it on the right. Everything below is
+    // written in frame coordinates and multiplied through by `facing`.
+    //
+    // Each foot sits directly below its own hip, so hip, knee and ankle start
+    // out collinear and `valgus: 0` reads as exactly zero degrees. A real
+    // runner has a standing baseline here — the femur angles inward from a
+    // pelvis wider than the stance — and a fixture that reproduced it would
+    // make every assertion below relative to a number nobody chose.
+    const leftAnkleX = 0.5 - 0.042 * facing;
+    const rightAnkleX = 0.5 + 0.042 * facing;
     frames.push({
       t,
       landmarks: poseAt(
@@ -323,15 +367,28 @@ export function syntheticFrontRunFrames(
         runningFootY(t, leftStarts, contactS),
         runningFootY(t, rightStarts, contactS),
         {
-          shoulderHalf: 0.062,
-          hipHalf: 0.042,
-          leftToeDx: -0.001,
-          rightToeDx: 0.001,
+          shoulderHalf: 0.062 * facing,
+          hipHalf: 0.042 * facing,
+          leftFootX: leftAnkleX,
+          rightFootX: rightAnkleX,
+          leftToeDx: -0.001 * facing,
+          rightToeDx: 0.001 * facing,
+          // Toward the midline is +x for the left leg and -x for the right one,
+          // before mirroring.
+          leftKneeX: leftAnkleX + (leftDown ? valgus : 0) * facing,
+          rightKneeX: rightAnkleX - (rightDown ? valgus : 0) * facing,
+          // The hip opposite the stance foot is the one that drops.
+          leftHipDy: rightDown ? pelvicDrop : 0,
+          rightHipDy: leftDown ? pelvicDrop : 0,
         },
       ),
     });
   }
   return frames;
+}
+
+function inStance(t: number, starts: number[], contactS: number): boolean {
+  return starts.some((start) => t >= start && t <= start + contactS);
 }
 
 export function analyzeSyntheticSideRun(gait: Partial<SideRunGait> = {}) {
@@ -343,7 +400,7 @@ export function analyzeSyntheticSideRun(gait: Partial<SideRunGait> = {}) {
   });
 }
 
-export function analyzeSyntheticFrontRun(gait: Partial<RunningGait> = {}) {
+export function analyzeSyntheticFrontRun(gait: Partial<FrontRunGait> = {}) {
   return analyzeLandings(syntheticFrontRunFrames(gait), {
     statureM: 1.7,
     massKg: 70,

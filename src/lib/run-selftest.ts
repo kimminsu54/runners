@@ -31,6 +31,9 @@ import {
   formatFootAhead,
   formatFootAheadRatio,
   formatKneeFlexDeg,
+  formatKneeValgusDeg,
+  formatPelvicDropDeg,
+  kneeValgusVerdict,
   formatLoadingRateBwS,
   formatStrikeAngleDeg,
   formatTimingMs,
@@ -38,6 +41,7 @@ import {
   overstrideVerdict,
   overstrideVerdictOrWithheld,
   peakForceFromDuty,
+  pelvicDropVerdict,
   quantizeMs,
 } from "./landing-analysis";
 import { buildSessionSummary, paceLabel, type SessionSummary } from "./session-summary";
@@ -1244,5 +1248,177 @@ console.log("shoe photos ok", {
     mirrored: mirrored.ratio.toFixed(3),
     ladder: ladder.map((v) => v.toFixed(3)).join(" < "),
     frontal: "측정 없음",
+  });
+}
+
+// The frontal mode. A clip shot from in front is a different set of
+// measurements, not a worse one, and the two halves of that claim are tested
+// here: what it gains has to be right, and what it loses has to be absent
+// rather than wrong.
+{
+  const meanOf = (xs: number[]) => {
+    const finite = xs.filter(Number.isFinite);
+    if (!finite.length) return Number.NaN;
+    return finite.reduce((a, b) => a + b, 0) / finite.length;
+  };
+  const frontal = (valgus: number, pelvicDrop: number, facing: 1 | -1 = 1) => {
+    const result = analyzeSyntheticFrontRun({ valgus, pelvicDrop, facing });
+    if (result.landings.length < 4) {
+      throw new Error(
+        `front fixture valgus=${valgus} produced ${result.landings.length} contacts`,
+      );
+    }
+    return {
+      result,
+      valgusDeg: meanOf(result.landings.map((l) => l.kneeValgusDeg)),
+      dropDeg: meanOf(result.landings.map((l) => l.pelvicDropDeg)),
+    };
+  };
+
+  const aligned = frontal(0, 0);
+  if (aligned.result.cameraView !== "front") {
+    throw new Error("the front fixture is not read as a frontal clip");
+  }
+  // Being filmed from the front is not a defect any more. If this starts
+  // failing, the view has crept back into assessQuality as a reason.
+  if (aligned.result.quality.level !== "good") {
+    throw new Error(
+      `a clean frontal clip graded ${aligned.result.quality.level}: ${aligned.result.quality.reasons.join(" / ")}`,
+    );
+  }
+  if (Math.abs(aligned.valgusDeg) > 0.5 || Math.abs(aligned.dropDeg) > 0.5) {
+    throw new Error(
+      `an aligned runner read as ${aligned.valgusDeg.toFixed(2)}° valgus, ${aligned.dropDeg.toFixed(2)}° drop`,
+    );
+  }
+
+  const ladder = [0.01, 0.02, 0.03].map((v) => frontal(v, 0).valgusDeg);
+  for (let i = 1; i < ladder.length; i++) {
+    if (!(ladder[i] > ladder[i - 1] + 5)) {
+      throw new Error(`valgus ladder is not monotone: ${ladder.join(", ")}`);
+    }
+  }
+  // Outward is the other sign, not a smaller number.
+  const outward = frontal(-0.02, 0).valgusDeg;
+  if (!(outward < -5)) {
+    throw new Error(`a knee held outside the line read as ${outward.toFixed(2)}°`);
+  }
+
+  // Filming the same runner from behind mirrors the image and swaps which side
+  // of the frame each leg falls on. Nothing about the runner changed, so
+  // nothing about the reading may change — this is what pins "inward" to the
+  // pelvis rather than to the frame.
+  const fromFront = frontal(0.02, 0.012, 1);
+  const fromBehind = frontal(0.02, 0.012, -1);
+  if (Math.abs(fromFront.valgusDeg - fromBehind.valgusDeg) > 0.2) {
+    throw new Error(
+      `mirroring changed the valgus: ${fromFront.valgusDeg.toFixed(2)} vs ${fromBehind.valgusDeg.toFixed(2)}`,
+    );
+  }
+  if (Math.abs(fromFront.dropDeg - fromBehind.dropDeg) > 0.2) {
+    throw new Error(
+      `mirroring changed the pelvic drop: ${fromFront.dropDeg.toFixed(2)} vs ${fromBehind.dropDeg.toFixed(2)}`,
+    );
+  }
+
+  const drops = [0, 0.006, 0.012].map((d) => frontal(0, d).dropDeg);
+  for (let i = 1; i < drops.length; i++) {
+    if (!(drops[i] > drops[i - 1] + 1)) {
+      throw new Error(`pelvic drop ladder is not monotone: ${drops.join(", ")}`);
+    }
+  }
+
+  // What the view costs, and the shape of that cost: absent, not wrong.
+  const front = frontal(0.02, 0.012).result;
+  for (const landing of front.landings) {
+    if (Number.isFinite(landing.kneeFlexContact)) {
+      throw new Error("a frontal clip published knee flexion");
+    }
+    if (Number.isFinite(landing.footAheadRatio)) {
+      throw new Error("a frontal clip published a fore-aft distance");
+    }
+    if (landing.footStrike !== "unknown") {
+      throw new Error("a frontal clip published a strike pattern");
+    }
+  }
+  if (front.series.some((point) => Number.isFinite(point.kneeFlex))) {
+    // The live readout prefers the series sample over the landing, so blanking
+    // only the landing would leave the old number on screen during playback.
+    throw new Error("the frontal series still carries a knee angle");
+  }
+
+  // A side-on clip is the mirror case: the frontal geometry has to refuse,
+  // which the pelvis-width gate does without anyone checking the view.
+  const side = analyzeSyntheticSideRun();
+  if (side.cameraView !== "side") throw new Error("the side fixture is not read as side-on");
+  if (
+    side.landings.some(
+      (l) => Number.isFinite(l.kneeValgusDeg) || Number.isFinite(l.pelvicDropDeg),
+    )
+  ) {
+    throw new Error("a side-on clip published a frontal alignment angle");
+  }
+
+  // Dropping the knee term must stretch the other two back over the full
+  // hundred. Without that the score would cap at 82 and the top risk band
+  // would quietly become unreachable.
+  const heavy = { peakGrfBw: 4.5, loadingRateBwS: 90, dutyFactor: 0.2 };
+  const withoutKnee = landingLoadScore({
+    ...heavy,
+    kneeFlexContact: Number.NaN,
+    kneeMeasured: false,
+  });
+  if (withoutKnee !== 100) {
+    throw new Error(`the hardest landing scores ${withoutKnee} without the knee term`);
+  }
+  // And the default has to stay exactly what it was, or every side-on score
+  // shifts under a change that was meant for frontal clips only.
+  const withKnee = landingLoadScore({ ...heavy, kneeFlexContact: 0 });
+  if (withKnee !== 100) {
+    throw new Error(`the hardest landing scores ${withKnee} with the knee term`);
+  }
+  const midWithKnee = landingLoadScore({
+    peakGrfBw: 2.4,
+    loadingRateBwS: 22,
+    dutyFactor: 0.3,
+    kneeFlexContact: 28,
+  });
+  const midWithoutKnee = landingLoadScore({
+    peakGrfBw: 2.4,
+    loadingRateBwS: 22,
+    dutyFactor: 0.3,
+    kneeFlexContact: 28,
+    kneeMeasured: false,
+  });
+  if (midWithKnee === midWithoutKnee) {
+    throw new Error("kneeMeasured: false changed nothing");
+  }
+
+  if (kneeValgusVerdict(fromFront.valgusDeg) !== null) {
+    throw new Error("a withheld threshold produced a knee alignment verdict");
+  }
+  if (pelvicDropVerdict(fromFront.dropDeg) !== null) {
+    throw new Error("a withheld threshold produced a pelvic drop verdict");
+  }
+  if (formatKneeValgusDeg(12.4) !== "안쪽 12°") {
+    throw new Error(`formatKneeValgusDeg(12.4) = ${formatKneeValgusDeg(12.4)}`);
+  }
+  if (formatKneeValgusDeg(-12.4) !== "바깥쪽 12°") {
+    throw new Error(`formatKneeValgusDeg(-12.4) = ${formatKneeValgusDeg(-12.4)}`);
+  }
+  if (formatKneeValgusDeg(Number.NaN) !== "측정 불가") {
+    throw new Error("formatKneeValgusDeg must refuse NaN");
+  }
+  if (formatPelvicDropDeg(4.2) !== "반대쪽 4°") {
+    throw new Error(`formatPelvicDropDeg(4.2) = ${formatPelvicDropDeg(4.2)}`);
+  }
+
+  console.log("frontal view ok", {
+    aligned: `${aligned.valgusDeg.toFixed(1)}°`,
+    valgusLadder: ladder.map((v) => v.toFixed(1)).join(" < "),
+    outward: `${outward.toFixed(1)}°`,
+    mirrored: `${fromFront.valgusDeg.toFixed(1)} = ${fromBehind.valgusDeg.toFixed(1)}`,
+    dropLadder: drops.map((v) => v.toFixed(1)).join(" < "),
+    sagittal: "측정 없음",
   });
 }

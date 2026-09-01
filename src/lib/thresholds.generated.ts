@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 3)
+// Source: shared/thresholds.yaml (version 4)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 3;
+export const THRESHOLDS_VERSION = 4;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -18,6 +18,9 @@ export type ThresholdKey =
   | "foot_strike_max_plausible_deg"
   | "overstride_ratio_notable"
   | "side_view_max_profile_ratio"
+  | "frontal_knee_valgus_notable_deg"
+  | "frontal_pelvic_drop_notable_deg"
+  | "frontal_pelvis_min_width_px"
   | "min_subject_height_ratio"
   | "min_detected_ratio_fair"
   | "min_detected_ratio_publish"
@@ -85,6 +88,36 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "어깨·엉덩이 폭을 신장으로 나눈 값입니다. 옆에서 찍으면 작고 정면으로 갈수록 커집니다. 이보다 크면 정면·사선으로 보고 발 각도 주법 판정을 하지 않습니다.",
     validationStatus: "internal",
     note: "정면으로 판정되면 대신 좌우 정렬(과내전·외전) 쪽을 봅니다.",
+  },
+  frontal_knee_valgus_notable_deg: {
+    key: "frontal_knee_valgus_notable_deg",
+    label: "무릎 안쪽 무너짐 · 판정 경계",
+    value: 10,
+    unit: "deg",
+    appliesTo: "frontal",
+    source: "정면에서 본 넙다리−정강이의 정렬 이탈 각도입니다. 느린 한다리 스쿼트 스크리닝에는 쓰이는 경계가 있지만 달리기 영상에 검증된 기준은 없어, 각도만 재고 좋다·나쁘다를 가르지 않습니다.",
+    validationStatus: "withheld",
+    note: "스탠스 구간의 최대값을 씁니다. 무릎이 가장 안으로 들어가는 순간은 접지 직후가 아니라 중간 지지 구간입니다.",
+  },
+  frontal_pelvic_drop_notable_deg: {
+    key: "frontal_pelvic_drop_notable_deg",
+    label: "골반 기울기 · 판정 경계",
+    value: 5,
+    unit: "deg",
+    appliesTo: "frontal",
+    source: "디딘 발 쪽을 기준으로 반대쪽 골반이 얼마나 내려갔는지입니다. 러닝에서 검증된 경계가 없어 각도만 재고 판정하지 않습니다.",
+    validationStatus: "withheld",
+    note: "스탠스 구간의 최대값. 양수는 반대쪽 골반이 내려간 것입니다.",
+  },
+  frontal_pelvis_min_width_px: {
+    key: "frontal_pelvis_min_width_px",
+    label: "정면 측정 최소 골반 폭",
+    value: 24,
+    unit: "px",
+    appliesTo: "frontal",
+    source: "두 엉덩이 랜드마크의 화면상 좌우 간격입니다. 옆에서 찍으면 거의 겹쳐서 이 간격이 잡음이 되고, 잡음으로 계산한 정렬 각도는 작은 오차가 아니라 난수입니다.",
+    validationStatus: "internal",
+    note: "미달이면 정면 지표를 아예 내지 않습니다. 화면 폭 1280 기준으로 잡은 값입니다.",
   },
   min_subject_height_ratio: {
     key: "min_subject_height_ratio",

@@ -7,10 +7,12 @@ import {
 } from "@/lib/Footstrike";
 import {
   distPx,
+  frontalKneeValgusDeg,
   isVisible,
   kneeFlexionDeg,
   LM,
   mid,
+  pelvicTiltLeftLowerDeg,
   type Landmark,
 } from "@/lib/pose";
 import {
@@ -82,6 +84,15 @@ export type SeriesPoint = {
    */
   leftFootAheadM: number;
   rightFootAheadM: number;
+  /**
+   * Frontal-plane alignment, and NaN whenever the pelvis is too narrow in the
+   * image to resolve it — which is every side-on clip, by construction.
+   * Positive valgus is the knee falling inward; positive tilt is the runner's
+   * left hip sitting lower than the right.
+   */
+  leftKneeValgusDeg: number;
+  rightKneeValgusDeg: number;
+  pelvicTiltLeftLowerDeg: number;
 };
 
 export type Risk = "low" | "moderate" | "elevated" | "high" | "severe";
@@ -126,6 +137,14 @@ export type Landing = {
    */
   footAheadM: number;
   footAheadRatio: number;
+  /**
+   * What a frontal clip can say and a side-on one cannot: the stance leg's
+   * worst inward knee collapse, and how far the opposite hip dropped, both
+   * taken as the peak over the stance phase rather than at touchdown — that is
+   * where each of them peaks. NaN from the side.
+   */
+  kneeValgusDeg: number;
+  pelvicDropDeg: number;
   note: string;
 };
 
@@ -145,6 +164,12 @@ export type AnalysisResult = {
   landings: Landing[];
   detectedRatio: number;
   metersPerPixel: number;
+  /**
+   * Which way the camera was pointing, as the analysis read it. Not a quality
+   * grade: a frontal clip is a different set of measurements, not a worse one,
+   * and the report branches on this rather than apologising for it.
+   */
+  cameraView: CameraView;
   quality: AnalysisQuality;
   reportedPaceMinPerKm?: number;
   warnings: string[];
@@ -198,13 +223,24 @@ const KNEE_POINTS = 18;
 /**
  * Per-landing load score, 0–100. Short contact / low duty is pace, not damage,
  * so the scale uses peak force, loading rate, and knee give only.
+ *
+ * `kneeMeasured: false` is for a clip where the knee angle is not merely
+ * missing but unmeasurable — a frontal view, where the knee bends along the
+ * camera axis. The term is then dropped and the two that remain are stretched
+ * back over the full 100, because leaving it out without rescaling would cap
+ * the score at 82 and quietly narrow the top risk band to nothing. Substituting
+ * a default angle instead, which is what the caller's `finiteOr(..., 20)`
+ * fallback would otherwise do, is worse than either: it reports a stiff landing
+ * nobody measured.
  */
 export function landingLoadScore(input: {
   peakGrfBw: number;
   loadingRateBwS: number;
   dutyFactor: number;
   kneeFlexContact: number;
+  kneeMeasured?: boolean;
 }): number {
+  const kneeMeasured = input.kneeMeasured ?? true;
   // Easy jogging sits near 1.8 BW and a sprint near 4.5 BW, so anchor the
   // scale there instead of letting ordinary running saturate the score.
   const bwTerm = clamp(((input.peakGrfBw - 1.7) / 2.8) * BW_POINTS, 0, BW_POINTS);
@@ -213,6 +249,10 @@ export function landingLoadScore(input: {
     0,
     RATE_POINTS,
   );
+  if (!kneeMeasured) {
+    const spread = 100 / (BW_POINTS + RATE_POINTS);
+    return clamp(Math.round((bwTerm + rateTerm) * spread), 0, 100);
+  }
   const stiffKnee = clamp((55 - input.kneeFlexContact) / 55, 0, 1) * KNEE_POINTS;
   return clamp(Math.round(bwTerm + rateTerm + stiffKnee), 0, 100);
 }
@@ -222,6 +262,7 @@ function damageScore(input: {
   loadingRateBwS: number;
   dutyFactor: number;
   kneeFlexContact: number;
+  kneeMeasured?: boolean;
 }): number {
   return landingLoadScore(input);
 }
@@ -339,11 +380,12 @@ function assessQuality(
       `자세가 ${Math.round(detectedRatio * 100)}% 구간에서만 잡혔습니다. 전신이 계속 보이도록 찍어 주세요.`,
     );
   }
-  if (isFrontal(sideViewRatio)) {
-    reasons.push(
-      "정면·사선에 가까워 발바닥 각도로 착지 주법을 분류할 수 없습니다. 정확한 옆모습으로 찍어 주세요.",
-    );
-  }
+  // Being filmed from the front used to land here, as a reason that dragged the
+  // whole clip down to "fair" and asked the runner to shoot it again. It is not
+  // a fault: contact timing, ground reaction force and cadence all survive a
+  // frontal view, and the alignment measurements only exist there. What the
+  // view costs — strike pattern, fore-aft distance, knee flexion — is said by
+  // the frontal report itself, next to what it buys.
   if (missedLandings >= 2) {
     reasons.push(
       `착지 간격으로 보면 약 ${missedLandings}회를 놓친 것으로 보입니다. 전신이 계속 보이게, 같은 속도로 곧게 달리는 구간이 좋습니다.`,
@@ -420,6 +462,9 @@ export function analyzeLandings(
   const rightStrikeAngleRaw: number[] = [];
   const leftAheadRaw: number[] = [];
   const rightAheadRaw: number[] = [];
+  const leftValgusRaw: number[] = [];
+  const rightValgusRaw: number[] = [];
+  const pelvicTiltRaw: number[] = [];
   const t: number[] = [];
 
   for (const frame of frames) {
@@ -436,6 +481,9 @@ export function analyzeLandings(
       rightStrikeAngleRaw.push(Number.NaN);
       leftAheadRaw.push(Number.NaN);
       rightAheadRaw.push(Number.NaN);
+      leftValgusRaw.push(Number.NaN);
+      rightValgusRaw.push(Number.NaN);
+      pelvicTiltRaw.push(Number.NaN);
       continue;
     }
     const hip = mid(lm[LM.leftHip], lm[LM.rightHip]);
@@ -450,6 +498,9 @@ export function analyzeLandings(
       rightStrikeAngleRaw.push(Number.NaN);
       leftAheadRaw.push(Number.NaN);
       rightAheadRaw.push(Number.NaN);
+      leftValgusRaw.push(Number.NaN);
+      rightValgusRaw.push(Number.NaN);
+      pelvicTiltRaw.push(Number.NaN);
       continue;
     }
     comRaw.push(-hip.y * options.height * mpp);
@@ -499,6 +550,40 @@ export function analyzeLandings(
         hip,
         options.width,
         mpp,
+      ),
+    );
+    const minPelvisPx = threshold("frontal_pelvis_min_width_px");
+    leftValgusRaw.push(
+      frontalKneeValgusDeg(
+        "left",
+        lm[LM.leftHip],
+        lm[LM.rightHip],
+        lm[LM.leftKnee],
+        lm[LM.leftAnkle],
+        options.width,
+        options.height,
+        minPelvisPx,
+      ),
+    );
+    rightValgusRaw.push(
+      frontalKneeValgusDeg(
+        "right",
+        lm[LM.leftHip],
+        lm[LM.rightHip],
+        lm[LM.rightKnee],
+        lm[LM.rightAnkle],
+        options.width,
+        options.height,
+        minPelvisPx,
+      ),
+    );
+    pelvicTiltRaw.push(
+      pelvicTiltLeftLowerDeg(
+        lm[LM.leftHip],
+        lm[LM.rightHip],
+        options.width,
+        options.height,
+        minPelvisPx,
       ),
     );
     const flexL = kneeFlexionDeg(
@@ -554,6 +639,12 @@ export function analyzeLandings(
   // then smooth, so one occluded ankle cannot move a contact by centimetres.
   const leftFootAhead = movingAverage(fillShortGaps(leftAheadRaw, 2), 3);
   const rightFootAhead = movingAverage(fillShortGaps(rightAheadRaw, 2), 3);
+  // Joint angles from a lite pose model are noisier than positions, and these
+  // two are read as peaks over stance, where a single bad frame would set the
+  // whole number. Smooth them before anything takes a maximum.
+  const leftValgus = movingAverage(fillShortGaps(leftValgusRaw, 2), 5);
+  const rightValgus = movingAverage(fillShortGaps(rightValgusRaw, 2), 5);
+  const pelvicTilt = movingAverage(fillShortGaps(pelvicTiltRaw, 2), 5);
   const leftFootStrikeAngle = normalizeFootAngles(
     movingAverage(leftStrikeAngleRaw, 3),
     leftFootSpeed,
@@ -565,6 +656,10 @@ export function analyzeLandings(
     rightFoot,
   );
 
+  // Decided before the series is assembled, because it changes what the series
+  // is allowed to contain: a frontal clip has no usable knee flexion.
+  const cameraView: CameraView = isFrontal(sideViewRatio) ? "front" : "side";
+
   const series: SeriesPoint[] = t.map((time, i) => {
     const a = acc[i];
     const grfBw = Number.isFinite(a) ? clamp(1 + a / G, 0.2, 12) : Number.NaN;
@@ -574,7 +669,13 @@ export function analyzeLandings(
       vel: vel[i],
       acc: a,
       grfBw,
-      kneeFlex: knee[i],
+      // Sagittal knee flexion measured in the image plane is only knee flexion
+      // when the camera is beside the runner. From in front the joint bends
+      // along the camera axis and the angle collapses towards zero, which reads
+      // as a stiff landing that never happened. Blanked at the source so the
+      // live readout, which prefers this sample over the landing's own value,
+      // cannot show it either.
+      kneeFlex: cameraView === "front" ? Number.NaN : knee[i],
       leftFootM: leftFoot[i],
       rightFootM: rightFoot[i],
       leftFootVel: leftFootVel[i],
@@ -585,10 +686,12 @@ export function analyzeLandings(
       rightFootStrikeAngle: rightFootStrikeAngle[i],
       leftFootAheadM: leftFootAhead[i],
       rightFootAheadM: rightFootAhead[i],
+      leftKneeValgusDeg: leftValgus[i],
+      rightKneeValgusDeg: rightValgus[i],
+      pelvicTiltLeftLowerDeg: pelvicTilt[i],
     };
   });
 
-  const cameraView = isFrontal(sideViewRatio) ? "front" : "side";
   const detectedLandings = detectLandings(
     series,
     options.massKg,
@@ -629,6 +732,7 @@ export function analyzeLandings(
     landings,
     detectedRatio,
     metersPerPixel: mpp,
+    cameraView,
     quality,
     reportedPaceMinPerKm: options.reportedPaceMinPerKm,
     warnings,
@@ -778,6 +882,9 @@ function withoutGaitTiming(landing: Landing): Landing {
     loadingRateBwS: landing.loadingRateBwS,
     dutyFactor: Number.NaN,
     kneeFlexContact: landing.kneeFlexContact,
+    // A landing that reached here from a frontal clip still has no knee angle,
+    // and rescoring it must not reinstate one through the fallback.
+    kneeMeasured: Number.isFinite(landing.kneeFlexContact),
   });
   return {
     ...landing,
@@ -793,9 +900,12 @@ function withoutGaitTiming(landing: Landing): Landing {
     footStrike: "unknown",
     footStrikeAngleDeg: Number.NaN,
     // Too small in frame or too intermittently tracked to publish timing is
-    // also too coarse to publish centimetres of fore-aft distance.
+    // also too coarse to publish centimetres of fore-aft distance, or degrees
+    // of frontal alignment.
     footAheadM: Number.NaN,
     footAheadRatio: Number.NaN,
+    kneeValgusDeg: Number.NaN,
+    pelvicDropDeg: Number.NaN,
     damageScore: score,
     risk: riskFromScore(score),
   };
@@ -1001,6 +1111,7 @@ function fillShortGaps(values: number[], maxRun: number): number[] {
 type ContactInterval = {
   side: FootSide;
   startIdx: number;
+  endIdx: number;
   start: number;
   end: number;
 };
@@ -1013,6 +1124,8 @@ type RawLanding = {
   contactS: number;
   side: FootSide;
   strikeIdx: number;
+  /** Last frame of the stance this contact belongs to, where one was matched. */
+  stanceEndIdx: number;
 };
 
 // Human running stance and step timings. Anything outside these came from a
@@ -1092,6 +1205,11 @@ function detectLandings(
           : Number.NaN,
       side: interval?.side ?? inferFootSide(series[contactIdx]),
       strikeIdx: interval?.startIdx ?? contactIdx,
+      // Without a matched interval, fall back to the frames between contact and
+      // the end of absorption. It is shorter than a real stance, which keeps
+      // the peak search inside the contact rather than letting it wander into
+      // the next swing.
+      stanceEndIdx: interval?.endIdx ?? Math.max(absorbIdx, contactIdx),
     });
   }
 
@@ -1140,18 +1258,27 @@ function detectLandings(
     const loadingRateBwS = peakGrfBw / riseS;
     const dutyFactor = gaitBased ? contactS / (2 * stepPeriodS) : Number.NaN;
 
-    const kneeFlexContact = finiteOr(series[raw.contactIdx].kneeFlex, 20);
+    // The 20-degree fallback covers a landmark the tracker lost for a frame.
+    // It must not cover a view that cannot show knee flexion at all, which is
+    // why that case is a flag rather than another missing value.
+    const kneeMeasured = view === "side";
+    const kneeFlexContact = kneeMeasured
+      ? finiteOr(series[raw.contactIdx].kneeFlex, 20)
+      : Number.NaN;
     const kneeSlice = series
       .slice(raw.contactIdx, raw.absorbIdx + 1)
       .map((s) => s.kneeFlex)
       .filter(Number.isFinite);
-    const kneeFlexPeak = Math.max(kneeFlexContact, ...kneeSlice);
+    const kneeFlexPeak = kneeMeasured
+      ? Math.max(kneeFlexContact, ...kneeSlice)
+      : Number.NaN;
 
     const score = damageScore({
       peakGrfBw,
       loadingRateBwS,
       dutyFactor,
       kneeFlexContact,
+      kneeMeasured,
     });
     const side = raw.side;
     const footStrikeAngle = strikeAngleAt(series, raw.strikeIdx, side);
@@ -1161,6 +1288,14 @@ function detectLandings(
     // axis and the image says nothing about it.
     const footAheadM =
       view === "side" ? footAheadAt(series, raw.strikeIdx, side, dt) : Number.NaN;
+    // The mirror image of the rule above: these two need the camera in front of
+    // the runner, and the pelvis-width gate inside the geometry already returns
+    // NaN from the side, so the view check here is belt and braces on a value
+    // the report would otherwise have to explain.
+    const frontal =
+      view === "front"
+        ? frontalPeaksOver(series, raw.strikeIdx, raw.stanceEndIdx, side)
+        : { kneeValgusDeg: Number.NaN, pelvicDropDeg: Number.NaN };
     const landing: Landing = {
       index: raw.peakIdx,
       tContact: series[raw.contactIdx].t,
@@ -1187,6 +1322,8 @@ function detectLandings(
         Number.isFinite(footAheadM) && statureM > 0
           ? footAheadM / statureM
           : Number.NaN,
+      kneeValgusDeg: frontal.kneeValgusDeg,
+      pelvicDropDeg: frontal.pelvicDropDeg,
       note: "",
     };
     landing.note = landingNote(landing);
@@ -1278,6 +1415,51 @@ function footAheadAt(
     if (!Number.isFinite(best) || value > best) best = value;
   }
   return best;
+}
+
+/**
+ * Worst inward knee collapse and worst opposite-hip drop over one stance.
+ *
+ * Both are read as peaks across the stance phase rather than at touchdown,
+ * because that is when each of them happens: the knee falls furthest inward
+ * around mid-stance, under load, and the pelvis drops as the swing leg passes.
+ * Sampling the contact frame instead would consistently report a runner as
+ * better aligned than they are.
+ */
+function frontalPeaksOver(
+  series: SeriesPoint[],
+  startIdx: number,
+  endIdx: number,
+  side: FootSide,
+): { kneeValgusDeg: number; pelvicDropDeg: number } {
+  const blank = { kneeValgusDeg: Number.NaN, pelvicDropDeg: Number.NaN };
+  let resolved = side;
+  if (resolved === "unknown") resolved = inferFootSide(series[startIdx]);
+  if (resolved === "unknown") return blank;
+
+  const from = Math.max(0, startIdx);
+  const to = Math.min(series.length - 1, Math.max(startIdx, endIdx));
+  let valgus = Number.NaN;
+  let drop = Number.NaN;
+  for (let i = from; i <= to; i++) {
+    const point = series[i];
+    const knee =
+      resolved === "left" ? point.leftKneeValgusDeg : point.rightKneeValgusDeg;
+    if (Number.isFinite(knee) && (!Number.isFinite(valgus) || knee > valgus)) {
+      valgus = knee;
+    }
+    // The tilt is stored as "left hip lower". Contralateral drop is that value
+    // seen from whichever foot is carrying the runner.
+    const tilt = point.pelvicTiltLeftLowerDeg;
+    const contralateral = resolved === "left" ? -tilt : tilt;
+    if (
+      Number.isFinite(contralateral) &&
+      (!Number.isFinite(drop) || contralateral > drop)
+    ) {
+      drop = contralateral;
+    }
+  }
+  return { kneeValgusDeg: valgus, pelvicDropDeg: drop };
 }
 
 function matchInterval(
@@ -1402,6 +1584,7 @@ function footIntervals(
     .map(([from, to]) => ({
       side,
       startIdx: from,
+      endIdx: to,
       start: series[from].t,
       end: series[to].t + dt,
     }));
@@ -1613,6 +1796,49 @@ export function overstrideVerdict(ratio: number): string | null {
 export function overstrideVerdictOrWithheld(ratio: number): string {
   if (!Number.isFinite(ratio)) return "측정 불가";
   return overstrideVerdict(ratio) ?? WITHHELD_LABEL;
+}
+
+/**
+ * Frontal knee alignment, in whole degrees. Inward is the direction worth
+ * naming, so the sign is spelled out rather than left as a minus.
+ */
+export function formatKneeValgusDeg(deg: number): string {
+  if (!Number.isFinite(deg)) return "측정 불가";
+  const rounded = Math.round(deg);
+  if (rounded === 0) return "0°";
+  return `${rounded > 0 ? "안쪽" : "바깥쪽"} ${Math.abs(rounded)}°`;
+}
+
+/** Opposite-hip drop, in whole degrees. Positive is the swing side dropping. */
+export function formatPelvicDropDeg(deg: number): string {
+  if (!Number.isFinite(deg)) return "측정 불가";
+  const rounded = Math.round(deg);
+  if (rounded === 0) return "0°";
+  return `${rounded > 0 ? "반대쪽 " : "디딘 쪽 "}${Math.abs(rounded)}°`;
+}
+
+/**
+ * Both frontal readings are published as angles and never as grades, for the
+ * same reason the fore-aft distance is: the thresholds they would be compared
+ * against are marked withheld, because the boundaries that exist come from slow
+ * single-leg screening rather than from running video. These two functions are
+ * what the screen will call once that changes, and until then they return null
+ * so a caller cannot accidentally show one.
+ */
+export function kneeValgusVerdict(deg: number): string | null {
+  if (!Number.isFinite(deg)) return null;
+  if (!isPublishable("frontal_knee_valgus_notable_deg")) return null;
+  return deg >= threshold("frontal_knee_valgus_notable_deg")
+    ? "디딘 다리의 무릎이 안쪽으로 뚜렷하게 들어갑니다."
+    : "무릎이 발과 엉덩이 사이에 대체로 정렬돼 있습니다.";
+}
+
+export function pelvicDropVerdict(deg: number): string | null {
+  if (!Number.isFinite(deg)) return null;
+  if (!isPublishable("frontal_pelvic_drop_notable_deg")) return null;
+  return deg >= threshold("frontal_pelvic_drop_notable_deg")
+    ? "디딘 다리 반대쪽 골반이 뚜렷하게 내려갑니다."
+    : "골반이 비교적 수평으로 유지됩니다.";
 }
 
 export function compareHint(score: number): string {

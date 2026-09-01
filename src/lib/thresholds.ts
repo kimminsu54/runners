@@ -90,6 +90,8 @@ export function formatThresholdValue(record: ThresholdRecord): string {
       return `${rounded} BW`;
     case "score":
       return `${rounded}점`;
+    case "px":
+      return `${rounded} px`;
     case "ratio":
       return `${Math.round(record.value * 100)}%`;
     default:

@@ -101,13 +101,18 @@ export function SideBreakdown({ summary }: { summary: SessionSummary }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Said once, at session level, rather than on every landing card: the
-            distance is published, the verdict is not. */}
+            distance is published, the verdict is not. A frontal clip never
+            measured it, and explaining a judgement that was not withheld but
+            simply absent would only confuse. */}
+        {Number.isFinite(left.meanFootAheadRatio) ||
+        Number.isFinite(right.meanFootAheadRatio) ? (
         <p className="rounded-lg bg-secondary/60 px-3 py-2 text-xs leading-5 text-muted-foreground">
           <span className="font-medium text-foreground">
             몸 앞 착지 · {WITHHELD_LABEL}
           </span>{" "}
           — {evidence("overstride_ratio_notable").source}
         </p>
+        ) : null}
         <div className="grid grid-cols-[1fr_auto_auto] items-baseline gap-x-4 gap-y-2 text-sm">
           <span className="text-xs text-muted-foreground">항목</span>
           <span className="text-right text-xs text-muted-foreground">

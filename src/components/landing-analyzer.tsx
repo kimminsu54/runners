@@ -1,6 +1,7 @@
 "use client";
 
 import { AnalysisDetails, AnalysisDetailsProvider } from "@/components/analysis-details";
+import { FrontalAlignment } from "@/components/frontal-alignment";
 import { ImpactChart } from "@/components/impact-chart";
 import { InjuryGuidance } from "@/components/injury-guidance";
 import { LandingCard } from "@/components/landing-card";
@@ -30,7 +31,10 @@ import {
 } from "@/lib/live-readout";
 import type { Landmark } from "@/lib/pose";
 import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
-import { syntheticRunningFrames } from "@/lib/synthetic-jump";
+import {
+  syntheticFrontRunFrames,
+  syntheticRunningFrames,
+} from "@/lib/synthetic-jump";
 import { cn } from "@/lib/utils";
 import { UploadCloud } from "lucide-react";
 import {
@@ -94,19 +98,27 @@ export function LandingAnalyzer() {
     return () => URL.revokeObjectURL(videoUrl);
   }, [videoUrl]);
 
-  // `?demo=report` seeds the sample session. The query string is client-only,
-  // so it is read through the store hook and the seeding happens during render
-  // rather than in a mount effect — the effect version set seven pieces of
-  // state after the first paint, which flashed the empty upload state and is
-  // the shape React warns about.
+  // `?demo=report` seeds the sample session, and `?demo=front` seeds one shot
+  // from in front — the two reports differ enough that the second is worth
+  // being able to look at without finding a frontal clip first. The query
+  // string is client-only, so it is read through the store hook and the seeding
+  // happens during render rather than in a mount effect — the effect version
+  // set seven pieces of state after the first paint, which flashed the empty
+  // upload state and is the shape React warns about.
   const demoRequested = useSyncExternalStore(
     subscribeNever,
-    () => new URLSearchParams(window.location.search).get("demo") === "report",
-    () => false,
+    () => {
+      const value = new URLSearchParams(window.location.search).get("demo");
+      return value === "report" || value === "front" ? value : null;
+    },
+    () => null,
   );
   const [demoSeeded, setDemoSeeded] = useState(false);
   if (demoRequested && !demoSeeded) {
-    const frames = syntheticRunningFrames();
+    const frames =
+      demoRequested === "front"
+        ? syntheticFrontRunFrames({ valgus: 0.018, pelvicDrop: 0.009 })
+        : syntheticRunningFrames();
     const demo = analyzeLandings(frames, {
       statureM: 1.7,
       massKg: 70,
@@ -115,7 +127,7 @@ export function LandingAnalyzer() {
     });
     setDemoSeeded(true);
     setPoseFrames(frames);
-    setFileName("샘플 세션");
+    setFileName(demoRequested === "front" ? "샘플 세션 · 정면" : "샘플 세션");
     setResult(demo);
     setDetectedSlowMotion(1);
     setStatus("done");
@@ -804,6 +816,12 @@ export function LandingAnalyzer() {
                 )}
               </CardContent>
             </Card>
+            {result.cameraView === "front" ? (
+              <FrontalAlignment
+                landings={result.landings}
+                trusted={result.quality.level !== "poor"}
+              />
+            ) : null}
             {result.quality.level !== "poor" ? (
               <SideBreakdown summary={buildSessionSummary(result)} />
             ) : null}
