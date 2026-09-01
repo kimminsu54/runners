@@ -101,14 +101,18 @@ export function LandingAnalyzer() {
   // control rather than a setting.
   const [faceHidden, setFaceHidden] = useState(true);
   /**
-   * Face landmarks for the camera preview only.
+   * Face landmarks for a preview that has no analysis behind it yet.
    *
-   * Framing a shot happens before any analysis, so there are no landmarks to
-   * put a mosaic on, and the fail-closed answer — cover the upper third — would
-   * make it impossible to see whether you are in frame. Tracking the face a few
-   * times a second costs a fraction of a core and covers the face itself
-   * instead. Kept apart from `overlay` so the skeleton does not appear over
-   * someone who is still setting the camera up.
+   * Two cases, and they had opposite bugs. Framing a shot on the camera happens
+   * before anything is tracked; so does looking at a clip you have just chosen
+   * and not yet analysed. In both, `overlay` is empty, and the fail-closed
+   * answer — cover the upper third — turns the preview into a grey slab you
+   * cannot frame or scrub against. Tracking the face a few times a second
+   * covers the face itself instead, for a fraction of a core.
+   *
+   * Kept apart from `overlay` so no skeleton appears over someone who is still
+   * setting the camera up, and dropped once the analysis owns the frames: those
+   * carry a pose for every sampled frame, which tracks better than this can.
    */
   const [previewFace, setPreviewFace] = useState<Landmark[] | null>(null);
   const clockFactor =
@@ -161,8 +165,10 @@ export function LandingAnalyzer() {
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, []);
 
+  const needsPreviewFace = faceHidden && (cameraOn || (Boolean(videoUrl) && !result));
+
   useEffect(() => {
-    if (!cameraOn || !faceHidden) return;
+    if (!needsPreviewFace) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
@@ -191,7 +197,7 @@ export function LandingAnalyzer() {
       // not survive into a different clip.
       setPreviewFace(null);
     };
-  }, [cameraOn, faceHidden]);
+  }, [needsPreviewFace]);
 
   const attachFile = useCallback((file: File) => {
     setPoseFrames([]);
@@ -749,7 +755,7 @@ export function LandingAnalyzer() {
               <PoseOverlay
                 videoRef={videoRef}
                 landmarks={shownOverlay}
-                faceFrom={cameraOn ? previewFace : shownOverlay}
+                faceFrom={needsPreviewFace ? previewFace : shownOverlay}
                 coverFace={faceHidden && (Boolean(videoUrl) || cameraOn)}
                 className="pointer-events-none absolute inset-0 h-full w-full object-contain"
               />

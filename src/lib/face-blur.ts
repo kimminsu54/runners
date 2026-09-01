@@ -21,7 +21,7 @@
  * and the tracker simply lost it.
  */
 
-import { isVisible, LM, type Landmark } from "@/lib/pose";
+import { distPx, isVisible, LM, mid, type Landmark } from "@/lib/pose";
 import type { PoseFrame } from "@/lib/landing-analysis";
 
 export type FaceBox = { x: number; y: number; width: number; height: number };
@@ -66,13 +66,31 @@ const FACE_POINTS = [
 /**
  * The landmarks trace eyes, nose and mouth, which is the middle of a face and
  * not its edges: the skull continues above the eyes, the jaw below the mouth,
- * and hair beyond both. These pad the traced box out to something that covers a
- * head, generously — an over-large blur costs a little of the runner's
- * shoulder, an under-large one costs their anonymity.
+ * and hair beyond both. These pad the traced box out to a head.
+ *
+ * They were three times larger, which covered the head and a good part of the
+ * shoulders with it — a block on the picture rather than a covered face. The
+ * numbers below put roughly a third of a head's width of margin at each side,
+ * more above than below because that is where the hair is. Anonymity is not
+ * improved by covering a shoulder.
  */
-const PAD_X = 1.1;
-const PAD_ABOVE = 1.6;
-const PAD_BELOW = 1.0;
+const PAD_X = 0.35;
+const PAD_ABOVE = 0.95;
+const PAD_BELOW = 0.65;
+
+/**
+ * A head is about this fraction of the distance from the nose to the middle of
+ * the shoulders, and that distance survives the runner turning sideways.
+ *
+ * The face landmarks alone do not. Seen straight on they span ear to ear, which
+ * is a head wide; in profile the far ear and eye drop out and the span halves,
+ * which would halve the box on exactly the footage this app is built for. Using
+ * the larger of the two keeps one number meaning the same thing in both views.
+ */
+const HEAD_FROM_SHOULDERS = 0.9;
+
+/** How wide the box gets however little of the face is visible, in head widths. */
+const MIN_WIDTH_IN_HEADS = 1.6;
 
 /** Below this the points are one blob and the box would be noise-sized. */
 const MIN_SPAN_PX = 6;
@@ -96,16 +114,21 @@ export function faceBoxFrom(
   const bottom = Math.max(...ys);
   const spanX = right - left;
   const spanY = bottom - top;
-  // A head seen straight on is wider than the eye-to-eye span but a head in
-  // profile collapses it, so size the padding from whichever span is larger.
-  const span = Math.max(spanX, spanY);
+  const span = Math.max(spanX, spanY, headScaleFrom(landmarks, width, height));
   if (span < MIN_SPAN_PX) return null;
+
+  // In profile the visible points bracket the front of the face only — the ear
+  // is the furthest back of them, and the skull carries on behind it. Padding
+  // the landmark spread alone leaves a third of the head out, so the box also
+  // has a floor in head widths, grown around the middle of what was seen.
+  const boxWidth = Math.max(spanX + span * PAD_X * 2, span * MIN_WIDTH_IN_HEADS);
+  const centreX = (left + right) / 2;
 
   return clampBox(
     {
-      x: left - span * PAD_X,
+      x: centreX - boxWidth / 2,
       y: top - span * PAD_ABOVE,
-      width: spanX + span * PAD_X * 2,
+      width: boxWidth,
       height: spanY + span * (PAD_ABOVE + PAD_BELOW),
     },
     width,
@@ -155,6 +178,28 @@ export const FACE_COVER_LABEL: Record<FaceCover, string> = {
  */
 export function fallbackFaceBox(width: number, height: number): FaceBox {
   return { x: 0, y: 0, width, height: Math.round(height / 3) };
+}
+
+/**
+ * Head width inferred from the nose and the shoulders, or NaN when either is
+ * missing. Only ever used as a floor under the landmark span, so a bad estimate
+ * can make the box slightly too large and never too small.
+ */
+function headScaleFrom(
+  landmarks: Landmark[],
+  width: number,
+  height: number,
+): number {
+  const nose = landmarks[LM.nose];
+  const shoulders = mid(landmarks[LM.leftShoulder], landmarks[LM.rightShoulder]);
+  if (!isVisible(nose, 0.3) || !shoulders) return Number.NaN;
+  if (
+    !isVisible(landmarks[LM.leftShoulder], 0.3) &&
+    !isVisible(landmarks[LM.rightShoulder], 0.3)
+  ) {
+    return Number.NaN;
+  }
+  return distPx(nose!, shoulders, width, height) * HEAD_FROM_SHOULDERS;
 }
 
 function clampBox(box: FaceBox, width: number, height: number): FaceBox {

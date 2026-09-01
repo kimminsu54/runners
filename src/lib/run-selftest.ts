@@ -1440,12 +1440,19 @@ console.log("shoe photos ok", {
 {
   const WIDTH = 1280;
   const HEIGHT = 720;
+  // Ear to ear is 0.052 of the frame width, which is 67 px here, and the
+  // shoulders sit 0.1 of the frame height below the nose — a head and a bit,
+  // which is where they are on a person. The box scale is read from that
+  // distance, so a fixture with the shoulders parked at the bottom of the frame
+  // would let a wildly oversized box pass.
   const faceAt = (x: number, y: number): Landmark[] => {
     const points: Landmark[] = Array.from({ length: 33 }, () => ({
       x: 0.5,
       y: 0.9,
       visibility: 1,
     }));
+    points[LM.leftShoulder] = { x: x - 0.055, y: y + 0.1, visibility: 1 };
+    points[LM.rightShoulder] = { x: x + 0.055, y: y + 0.1, visibility: 1 };
     points[LM.nose] = { x, y, visibility: 1 };
     points[LM.leftEye] = { x: x - 0.012, y: y - 0.012, visibility: 1 };
     points[LM.rightEye] = { x: x + 0.012, y: y - 0.012, visibility: 1 };
@@ -1472,6 +1479,34 @@ console.log("shoe photos ok", {
   const earRight = (0.5 + 0.026) * WIDTH;
   if (!(box.x < earLeft && box.x + box.width > earRight)) {
     throw new Error("the face box does not cover both ears");
+  }
+  // And covers the face rather than the upper body. Three times the head is a
+  // block on the picture, which is what the first version drew.
+  const headWidth = earRight - earLeft;
+  if (box.width > headWidth * 2.2) {
+    throw new Error(
+      `the face box is ${(box.width / headWidth).toFixed(1)} heads wide`,
+    );
+  }
+  if (box.height > headWidth * 2.6) {
+    throw new Error(
+      `the face box is ${(box.height / headWidth).toFixed(1)} heads tall`,
+    );
+  }
+
+  // Turning sideways hides the far eye and ear, which halves the landmark span.
+  // The box must not halve with it, or the view this app is built for is the
+  // one it covers worst.
+  const profile = faceAt(0.5, 0.3);
+  for (const index of [LM.rightEye, LM.rightEar, LM.mouthRight]) {
+    profile[index] = { ...profile[index], visibility: 0 };
+  }
+  const profileBox = faceBoxFrom(profile, WIDTH, HEIGHT);
+  if (!profileBox) throw new Error("a face in profile produced no box");
+  if (profileBox.width < box.width * 0.7) {
+    throw new Error(
+      `the profile box collapsed to ${(profileBox.width / box.width).toFixed(2)} of the frontal one`,
+    );
   }
 
   // A face at the edge must not produce a box that hangs outside the frame:
