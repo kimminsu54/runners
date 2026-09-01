@@ -54,10 +54,20 @@ const subscribeNever = () => () => {};
 
 type Status = "idle" | "loading-model" | "analyzing" | "done" | "error";
 
-const MAX_SECONDS = 18;
-// Sprint stance lasts about 100 ms, so sample far above video frame rate when
-// the clip is short enough to afford it.
-const FRAME_BUDGET = 540;
+const MAX_SECONDS = 12;
+/**
+ * Frames sampled from one clip, whatever its length.
+ *
+ * Sprint stance lasts about 100 ms, so sample far above video frame rate when
+ * the clip is short enough to afford it. The budget moved down with
+ * MAX_SECONDS rather than staying put: at 540 a twelve-second clip would have
+ * been sampled at 45 fps and taken exactly as long to analyse as eighteen
+ * seconds used to, which is not what shortening the window was for. 360 over
+ * 12 s is 30 fps — the same density the old limit gave — for a third less
+ * work. Clips under nine seconds are unaffected either way; they hit MAX_FPS
+ * before they hit the budget.
+ */
+const FRAME_BUDGET = 360;
 const MIN_FPS = 24;
 const MAX_FPS = 60;
 
