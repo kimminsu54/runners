@@ -73,6 +73,9 @@ import {
   syntheticRunningFrames,
 } from "./synthetic-jump";
 import { liveMomentAt } from "./live-readout";
+import { fallbackFaceBox, faceBoxFrom, faceBoxNear } from "./face-blur";
+import { buildHudFrame, HUD_NOTE } from "./hud-frame";
+import { LM, type Landmark } from "./pose";
 import { buildLandingGuidance } from "./training-guidance";
 
 const hit = assertDetectsLanding();
@@ -1420,5 +1423,142 @@ console.log("shoe photos ok", {
     mirrored: `${fromFront.valgusDeg.toFixed(1)} = ${fromBehind.valgusDeg.toFixed(1)}`,
     dropLadder: drops.map((v) => v.toFixed(1)).join(" < "),
     sagittal: "측정 없음",
+  });
+}
+
+// The exported still. Only the parts that decide *what* leaves the browser are
+// checked here — the drawing needs a canvas — and those are the parts that
+// matter: where the face is, and which numbers a given clip is allowed to put
+// on an image that will outlive the page it came from.
+{
+  const WIDTH = 1280;
+  const HEIGHT = 720;
+  const faceAt = (x: number, y: number): Landmark[] => {
+    const points: Landmark[] = Array.from({ length: 33 }, () => ({
+      x: 0.5,
+      y: 0.9,
+      visibility: 1,
+    }));
+    points[LM.nose] = { x, y, visibility: 1 };
+    points[LM.leftEye] = { x: x - 0.012, y: y - 0.012, visibility: 1 };
+    points[LM.rightEye] = { x: x + 0.012, y: y - 0.012, visibility: 1 };
+    points[LM.leftEar] = { x: x - 0.026, y: y - 0.008, visibility: 1 };
+    points[LM.rightEar] = { x: x + 0.026, y: y - 0.008, visibility: 1 };
+    points[LM.mouthLeft] = { x: x - 0.009, y: y + 0.016, visibility: 1 };
+    points[LM.mouthRight] = { x: x + 0.009, y: y + 0.016, visibility: 1 };
+    return points;
+  };
+
+  const box = faceBoxFrom(faceAt(0.5, 0.3), WIDTH, HEIGHT);
+  if (!box) throw new Error("a visible face produced no box");
+  // The landmarks trace the middle of a face. The box has to reach past them,
+  // and further above than below, or it covers the eyes and leaves the head.
+  const eyeY = (0.3 - 0.012) * HEIGHT;
+  const mouthY = (0.3 + 0.016) * HEIGHT;
+  if (!(box.y < eyeY - 20)) {
+    throw new Error(`the face box starts at ${box.y.toFixed(0)}, barely above the eyes`);
+  }
+  if (!(box.y + box.height > mouthY + 10)) {
+    throw new Error("the face box stops at the mouth");
+  }
+  const earLeft = (0.5 - 0.026) * WIDTH;
+  const earRight = (0.5 + 0.026) * WIDTH;
+  if (!(box.x < earLeft && box.x + box.width > earRight)) {
+    throw new Error("the face box does not cover both ears");
+  }
+
+  // A face at the edge must not produce a box that hangs outside the frame:
+  // the mosaic reads pixels back from those coordinates.
+  const corner = faceBoxFrom(faceAt(0.01, 0.01), WIDTH, HEIGHT);
+  if (!corner) throw new Error("a face at the corner produced no box");
+  if (
+    corner.x < 0 ||
+    corner.y < 0 ||
+    corner.x + corner.width > WIDTH ||
+    corner.y + corner.height > HEIGHT
+  ) {
+    throw new Error("the face box left the frame");
+  }
+
+  // The fail-closed ladder. Rung one: no landmarks at all.
+  if (faceBoxFrom(null, WIDTH, HEIGHT) !== null) {
+    throw new Error("a frame with no landmarks produced a face box");
+  }
+  // Rung two: the tracker lost the face on this frame, so the neighbours answer.
+  const frames = [
+    { t: 0, landmarks: faceAt(0.5, 0.3) },
+    { t: 0.03, landmarks: null },
+    { t: 0.06, landmarks: null },
+  ];
+  if (!faceBoxNear(frames, 1, WIDTH, HEIGHT)) {
+    throw new Error("the search did not reach the neighbouring frame");
+  }
+  if (faceBoxNear([{ t: 0, landmarks: null }], 0, WIDTH, HEIGHT) !== null) {
+    throw new Error("faceBoxNear invented a box out of nothing");
+  }
+  // Rung three: cover the top third rather than nothing.
+  const fallback = fallbackFaceBox(WIDTH, HEIGHT);
+  if (fallback.width !== WIDTH || fallback.y !== 0 || fallback.height < HEIGHT / 4) {
+    throw new Error("the fallback does not cover the upper frame");
+  }
+
+  // What the still is allowed to say, per view. A saved image outlives the
+  // caveats printed around it, so it may not carry a number the clip could not
+  // support — the same rule the screen follows, checked separately because this
+  // path builds its rows itself.
+  const sideResult = analyzeSyntheticSideRun({ ahead: 0.066 });
+  const sideHud = buildHudFrame(sideResult, sideResult.landings[1], 2);
+  const labels = (hud: { rows: Array<{ label: string }> }) =>
+    hud.rows.map((row) => row.label);
+  for (const label of ["착지 주법", "접지 순간 무릎", "몸 앞 착지"]) {
+    if (!labels(sideHud).includes(label)) {
+      throw new Error(`the side-on still is missing ${label}`);
+    }
+  }
+  if (labels(sideHud).some((label) => label === "무릎 정렬")) {
+    throw new Error("the side-on still offered a frontal measurement");
+  }
+
+  const frontResult = analyzeSyntheticFrontRun({ valgus: 0.018, pelvicDrop: 0.009 });
+  const frontHud = buildHudFrame(frontResult, frontResult.landings[1], 2);
+  for (const label of ["무릎 정렬", "골반 기울기"]) {
+    if (!labels(frontHud).includes(label)) {
+      throw new Error(`the frontal still is missing ${label}`);
+    }
+  }
+  for (const label of ["착지 주법", "접지 순간 무릎", "몸 앞 착지"]) {
+    if (labels(frontHud).includes(label)) {
+      throw new Error(`the frontal still offered ${label}, which it cannot measure`);
+    }
+  }
+
+  // A clip too poor to publish on screen is too poor to publish on a file
+  // somebody keeps.
+  const poor = buildHudFrame(
+    { ...sideResult, quality: { ...sideResult.quality, level: "poor" } },
+    sideResult.landings[1],
+    2,
+  );
+  // "판정 불가" for the strike pattern, which is a judgement rather than a
+  // measurement — the same two words the landing card uses.
+  const refusals = new Set(["측정 불가", "판정 불가"]);
+  const leaked = poor.rows.filter((row) => !refusals.has(row.value));
+  if (leaked.length) {
+    throw new Error(
+      `a poor-quality still published ${leaked.map((r) => `${r.label}=${r.value}`).join(", ")}`,
+    );
+  }
+  if (poor.badge !== "측정 참고용") {
+    throw new Error(`a poor-quality still is badged ${poor.badge}`);
+  }
+  if (sideHud.note !== HUD_NOTE || frontHud.note !== HUD_NOTE) {
+    throw new Error("the still lost the note about what the estimate is");
+  }
+
+  console.log("export still ok", {
+    faceBox: `${Math.round(box.width)}x${Math.round(box.height)}`,
+    sideRows: labels(sideHud).length,
+    frontRows: labels(frontHud).length,
+    poor: "전 항목 측정 불가",
   });
 }

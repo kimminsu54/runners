@@ -7,6 +7,14 @@ export type Landmark = {
 
 export const LM = {
   nose: 0,
+  // 1-6 are the eyes with their inner and outer corners, 7-8 the ears, 9-10
+  // the mouth. Only the ones the face box is built from are named here.
+  leftEye: 2,
+  rightEye: 5,
+  leftEar: 7,
+  rightEar: 8,
+  mouthLeft: 9,
+  mouthRight: 10,
   leftShoulder: 11,
   rightShoulder: 12,
   leftHip: 23,

@@ -15,6 +15,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { renderExportFrame } from "@/lib/export-frame";
+import { buildHudFrame } from "@/lib/hud-frame";
 import {
   analyzeLandings,
   analyzeLandingsAuto,
@@ -36,7 +38,7 @@ import {
   syntheticRunningFrames,
 } from "@/lib/synthetic-jump";
 import { cn } from "@/lib/utils";
-import { UploadCloud } from "lucide-react";
+import { ImageDown, UploadCloud } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -90,6 +92,8 @@ export function LandingAnalyzer() {
   // Rendering reads these (the sketch overlay follows the playhead), so they are
   // state, not a ref.
   const [poseFrames, setPoseFrames] = useState<PoseFrame[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const clockFactor =
     detectedSlowMotion && detectedSlowMotion > 0 ? detectedSlowMotion : 1;
 
@@ -318,6 +322,55 @@ export function LandingAnalyzer() {
     () => (result ? liveMomentAt(result, playheadT, shownOverlay) : null),
     [result, playheadT, shownOverlay],
   );
+
+  /**
+   * Saves the selected landing as a still: the frame, the skeleton over it, the
+   * numbers, and the note about what a 2D estimate is. The face is covered by
+   * renderExportFrame before anything else is drawn — see face-blur.ts for why
+   * that path never opens on failure — and a frame it cannot cover is refused
+   * rather than written out.
+   */
+  const exportFrame = async () => {
+    if (!result) return;
+    const landing = result.landings[selected];
+    if (!landing) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await jumpTo(landing.tContact);
+      const videoT = videoTimeFromAnalysis(landing.tContact, clockFactor);
+      const lookupT = videoUrl ? videoT : landing.tContact;
+      const frameIndex = poseFrames.reduce(
+        (best, frame, i) =>
+          Math.abs(frame.t - lookupT) < Math.abs(poseFrames[best].t - lookupT)
+            ? i
+            : best,
+        0,
+      );
+      const blob = await renderExportFrame({
+        video: videoUrl ? videoRef.current : null,
+        frames: poseFrames,
+        frameIndex,
+        hud: buildHudFrame(result, landing, selected + 1),
+      });
+      if (!blob) {
+        setExportError(
+          "이 프레임은 얼굴을 가리지 못해 내보내지 않았습니다. 다른 착지를 골라 보세요.",
+        );
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `stride-lab-착지${selected + 1}.png`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("이미지를 만들지 못했습니다. 영상을 다시 불러와 주세요.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const jumpTo = async (analysisT: number) => {
     setPlayheadT(analysisT);
@@ -677,12 +730,29 @@ export function LandingAnalyzer() {
           </div>
           <CardContent className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="truncate text-sm text-muted-foreground">
-              {fileName ?? (cameraOn ? "카메라 미리보기" : "선택된 영상 없음")}
-              {status === "done" && result
-                ? " · 재생하면 오른쪽이 그 순간을 따라갑니다"
-                : ""}
+              {exportError ?? (
+                <>
+                  {fileName ?? (cameraOn ? "카메라 미리보기" : "선택된 영상 없음")}
+                  {status === "done" && result
+                    ? " · 재생하면 오른쪽이 그 순간을 따라갑니다"
+                    : ""}
+                </>
+              )}
             </p>
             <div className="flex flex-wrap gap-2">
+              {status === "done" && result?.landings.length ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={exporting}
+                  onClick={() => {
+                    void exportFrame();
+                  }}
+                >
+                  <ImageDown />
+                  {exporting ? "만드는 중" : "이 착지 저장"}
+                </Button>
+              ) : null}
               <label className={buttonVariants({ variant: "outline", size: "sm" })}>
                 파일 선택
                 <input

@@ -3,13 +3,21 @@
 import { SKELETON, type Landmark } from "@/lib/pose";
 import { useEffect, useRef, type RefObject } from "react";
 
+/**
+ * `clear` is on by default because the live overlay redraws every animation
+ * frame on top of itself. An exported still is the other case: the frame and
+ * its background are already on the canvas, and wiping them is how the first
+ * version of the export came out transparent — with the video path about to
+ * lose the photograph the same way.
+ */
 export function drawPose(
   ctx: CanvasRenderingContext2D,
   landmarks: Landmark[] | null,
   width: number,
   height: number,
+  { clear = true }: { clear?: boolean } = {},
 ) {
-  ctx.clearRect(0, 0, width, height);
+  if (clear) ctx.clearRect(0, 0, width, height);
   if (!landmarks?.length) return;
   ctx.lineWidth = Math.max(2, width / 280);
   ctx.strokeStyle = "rgba(224, 64, 42, 0.95)";
