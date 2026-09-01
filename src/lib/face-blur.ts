@@ -26,6 +26,25 @@ import type { PoseFrame } from "@/lib/landing-analysis";
 
 export type FaceBox = { x: number; y: number; width: number; height: number };
 
+/**
+ * Which rung of the ladder answered. Carried out of here and onto the exported
+ * image, because "the face is covered" is a claim, and a claim the viewer
+ * cannot check is worth very little — the first report of this feature was that
+ * the mosaic had not been applied, and nothing in the file could say whether
+ * that was true, false, or a sample session with no photograph in it.
+ */
+export type FaceCover =
+  /** Found on the exported frame itself. */
+  | "frame"
+  /** The tracker lost it there; a neighbouring frame supplied the box. */
+  | "neighbour"
+  /** No frame in the clip had a face. The whole upper third is covered. */
+  | "fallback"
+  /** There is no photograph to cover: the sample session draws a stick figure. */
+  | "no-photo";
+
+export type FaceCoverResult = { box: FaceBox; source: FaceCover };
+
 /** Landmarks that lie on the face. */
 const FACE_POINTS = [
   LM.nose,
@@ -99,18 +118,26 @@ export function faceBoxNear(
   width: number,
   height: number,
   maxSearch = 6,
-): FaceBox | null {
+): FaceCoverResult | null {
   const direct = faceBoxFrom(frames[index]?.landmarks ?? null, width, height);
-  if (direct) return direct;
+  if (direct) return { box: direct, source: "frame" };
   for (let step = 1; step <= maxSearch; step++) {
     for (const at of [index - step, index + step]) {
       if (at < 0 || at >= frames.length) continue;
       const box = faceBoxFrom(frames[at]?.landmarks ?? null, width, height);
-      if (box) return box;
+      if (box) return { box, source: "neighbour" };
     }
   }
   return null;
 }
+
+/** What the exported image says about the face, in the corner where it says it. */
+export const FACE_COVER_LABEL: Record<FaceCover, string> = {
+  frame: "얼굴 모자이크 적용",
+  neighbour: "얼굴 모자이크 적용 (앞뒤 프레임 기준)",
+  fallback: "얼굴을 찾지 못해 상단 전체를 모자이크",
+  "no-photo": "샘플 세션 · 영상 없음",
+};
 
 /**
  * What to cover when no frame in the clip yielded a face: the whole upper
@@ -145,6 +172,39 @@ function clampBox(box: FaceBox, width: number, height: number): FaceBox {
  */
 const MOSAIC_CELLS = 6;
 
+export type MosaicPlan = {
+  /** Size of the reduced copy the region is rebuilt from. */
+  smallWidth: number;
+  smallHeight: number;
+  /** Source rectangle on the full-size canvas, snapped to whole pixels. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * The arithmetic of the mosaic, kept apart from the canvas so it can be
+ * checked. Both sides have to stay whole-pixel and at least two cells across,
+ * or the reduced copy collapses to a single colour on one axis and the result
+ * is a flat rectangle rather than a mosaic.
+ */
+export function mosaicPlan(box: FaceBox, cells = MOSAIC_CELLS): MosaicPlan {
+  const x = Math.max(0, Math.floor(box.x));
+  const y = Math.max(0, Math.floor(box.y));
+  const width = Math.max(1, Math.round(box.width));
+  const height = Math.max(1, Math.round(box.height));
+  const across = Math.max(2, Math.min(cells, width, height));
+  return {
+    smallWidth: across,
+    smallHeight: Math.max(2, Math.round((height / width) * across)),
+    x,
+    y,
+    width,
+    height,
+  };
+}
+
 /**
  * Pixelates one region of a canvas in place. Returns false when the browser
  * would not give the scratch context, which is the caller's signal to refuse
@@ -156,24 +216,40 @@ export function pixelateRegion(
 ): boolean {
   const ctx = canvas.getContext("2d");
   if (!ctx) return false;
-  const w = Math.max(1, Math.round(box.width));
-  const h = Math.max(1, Math.round(box.height));
-  const cells = Math.max(2, Math.min(MOSAIC_CELLS, w, h));
-  const smallW = cells;
-  const smallH = Math.max(2, Math.round((h / w) * cells));
+  const plan = mosaicPlan(box);
 
   const scratch = document.createElement("canvas");
-  scratch.width = smallW;
-  scratch.height = smallH;
+  scratch.width = plan.smallWidth;
+  scratch.height = plan.smallHeight;
   const scratchCtx = scratch.getContext("2d");
   if (!scratchCtx) return false;
 
   scratchCtx.imageSmoothingEnabled = true;
-  scratchCtx.drawImage(canvas, box.x, box.y, w, h, 0, 0, smallW, smallH);
+  scratchCtx.drawImage(
+    canvas,
+    plan.x,
+    plan.y,
+    plan.width,
+    plan.height,
+    0,
+    0,
+    plan.smallWidth,
+    plan.smallHeight,
+  );
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(scratch, 0, 0, smallW, smallH, box.x, box.y, w, h);
+  ctx.drawImage(
+    scratch,
+    0,
+    0,
+    plan.smallWidth,
+    plan.smallHeight,
+    plan.x,
+    plan.y,
+    plan.width,
+    plan.height,
+  );
   ctx.restore();
   return true;
 }

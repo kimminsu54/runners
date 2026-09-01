@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { renderExportFrame } from "@/lib/export-frame";
+import { FACE_COVER_LABEL } from "@/lib/face-blur";
 import { buildHudFrame } from "@/lib/hud-frame";
 import {
   analyzeLandings,
@@ -93,7 +94,7 @@ export function LandingAnalyzer() {
   // state, not a ref.
   const [poseFrames, setPoseFrames] = useState<PoseFrame[]>([]);
   const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const clockFactor =
     detectedSlowMotion && detectedSlowMotion > 0 ? detectedSlowMotion : 1;
 
@@ -335,7 +336,7 @@ export function LandingAnalyzer() {
     const landing = result.landings[selected];
     if (!landing) return;
     setExporting(true);
-    setExportError(null);
+    setExportNote(null);
     try {
       await jumpTo(landing.tContact);
       const videoT = videoTimeFromAnalysis(landing.tContact, clockFactor);
@@ -347,26 +348,29 @@ export function LandingAnalyzer() {
             : best,
         0,
       );
-      const blob = await renderExportFrame({
+      const rendered = await renderExportFrame({
         video: videoUrl ? videoRef.current : null,
         frames: poseFrames,
         frameIndex,
         hud: buildHudFrame(result, landing, selected + 1),
       });
-      if (!blob) {
-        setExportError(
+      if (!rendered) {
+        setExportNote(
           "이 프레임은 얼굴을 가리지 못해 내보내지 않았습니다. 다른 착지를 골라 보세요.",
         );
         return;
       }
-      const url = URL.createObjectURL(blob);
+      // Say which rung of the fail-closed ladder answered. Without it there is
+      // no way to tell a sample session from a mosaic that did not run.
+      setExportNote(`저장했습니다 · ${FACE_COVER_LABEL[rendered.faceCover]}`);
+      const url = URL.createObjectURL(rendered.blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = `stride-lab-착지${selected + 1}.png`;
       link.click();
       URL.revokeObjectURL(url);
     } catch {
-      setExportError("이미지를 만들지 못했습니다. 영상을 다시 불러와 주세요.");
+      setExportNote("이미지를 만들지 못했습니다. 영상을 다시 불러와 주세요.");
     } finally {
       setExporting(false);
     }
@@ -730,7 +734,7 @@ export function LandingAnalyzer() {
           </div>
           <CardContent className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="truncate text-sm text-muted-foreground">
-              {exportError ?? (
+              {exportNote ?? (
                 <>
                   {fileName ?? (cameraOn ? "카메라 미리보기" : "선택된 영상 없음")}
                   {status === "done" && result

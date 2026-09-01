@@ -73,7 +73,13 @@ import {
   syntheticRunningFrames,
 } from "./synthetic-jump";
 import { liveMomentAt } from "./live-readout";
-import { fallbackFaceBox, faceBoxFrom, faceBoxNear } from "./face-blur";
+import {
+  FACE_COVER_LABEL,
+  fallbackFaceBox,
+  faceBoxFrom,
+  faceBoxNear,
+  mosaicPlan,
+} from "./face-blur";
 import { buildHudFrame, HUD_NOTE } from "./hud-frame";
 import { LM, type Landmark } from "./pose";
 import { buildLandingGuidance } from "./training-guidance";
@@ -1490,11 +1496,45 @@ console.log("shoe photos ok", {
     { t: 0.03, landmarks: null },
     { t: 0.06, landmarks: null },
   ];
-  if (!faceBoxNear(frames, 1, WIDTH, HEIGHT)) {
-    throw new Error("the search did not reach the neighbouring frame");
+  const found = faceBoxNear(frames, 1, WIDTH, HEIGHT);
+  if (!found) throw new Error("the search did not reach the neighbouring frame");
+  // Which rung answered is reported on the image, so it has to be right.
+  if (found.source !== "neighbour") {
+    throw new Error(`a neighbouring frame answered but was reported as ${found.source}`);
+  }
+  const onFrame = faceBoxNear(frames, 0, WIDTH, HEIGHT);
+  if (onFrame?.source !== "frame") {
+    throw new Error(`the frame's own face was reported as ${onFrame?.source}`);
   }
   if (faceBoxNear([{ t: 0, landmarks: null }], 0, WIDTH, HEIGHT) !== null) {
     throw new Error("faceBoxNear invented a box out of nothing");
+  }
+  for (const source of ["frame", "neighbour", "fallback", "no-photo"] as const) {
+    if (!FACE_COVER_LABEL[source]) {
+      throw new Error(`no label for face cover ${source}`);
+    }
+  }
+
+  // The mosaic arithmetic. A reduced copy that is one pixel on either axis is a
+  // flat rectangle, not a mosaic, and a source rectangle that is not whole
+  // pixels reads a smeared edge back — both are silent failures in the image.
+  const plan = mosaicPlan({ x: 10.4, y: 20.6, width: 213.2, height: 193.7 });
+  if (plan.smallWidth < 2 || plan.smallHeight < 2) {
+    throw new Error(`the mosaic collapsed to ${plan.smallWidth}x${plan.smallHeight}`);
+  }
+  if (!Number.isInteger(plan.x) || !Number.isInteger(plan.y)) {
+    throw new Error("the mosaic reads from fractional coordinates");
+  }
+  // The reduced copy must keep the box's proportions, or the rebuilt cells come
+  // out stretched and the mosaic looks like a rendering fault.
+  const boxRatio = plan.height / plan.width;
+  const planRatio = plan.smallHeight / plan.smallWidth;
+  if (Math.abs(boxRatio - planRatio) > 0.25) {
+    throw new Error(`the mosaic cells are the wrong shape: ${planRatio.toFixed(2)} vs ${boxRatio.toFixed(2)}`);
+  }
+  const tiny = mosaicPlan({ x: 0, y: 0, width: 3, height: 2 });
+  if (tiny.smallWidth < 2 || tiny.smallHeight < 2) {
+    throw new Error("a small box produced a degenerate mosaic");
   }
   // Rung three: cover the top third rather than nothing.
   const fallback = fallbackFaceBox(WIDTH, HEIGHT);

@@ -10,9 +10,11 @@
 
 import { drawPose } from "@/components/pose-overlay";
 import {
+  FACE_COVER_LABEL,
   fallbackFaceBox,
   faceBoxNear,
   pixelateRegion,
+  type FaceCover,
 } from "@/lib/face-blur";
 import type { PoseFrame } from "@/lib/landing-analysis";
 import type { HudFrame } from "@/lib/hud-frame";
@@ -29,9 +31,11 @@ export type ExportFrameInput = {
 const FALLBACK_WIDTH = 1280;
 const FALLBACK_HEIGHT = 720;
 
+export type ExportFrameResult = { blob: Blob; faceCover: FaceCover };
+
 export async function renderExportFrame(
   input: ExportFrameInput,
-): Promise<Blob | null> {
+): Promise<ExportFrameResult | null> {
   const { video, frames, frameIndex, hud } = input;
   const width = video?.videoWidth || FALLBACK_WIDTH;
   const height = video?.videoHeight || FALLBACK_HEIGHT;
@@ -49,22 +53,28 @@ export async function renderExportFrame(
   // anything looks for one. "We found no landmarks, so there is nothing to
   // hide" would be the fail-open branch this module exists to avoid; "there is
   // no photograph here at all" is a different statement, and the only one that
-  // licenses skipping the mosaic.
+  // licenses skipping the mosaic. It is also the case that looks, from outside,
+  // exactly like the feature not working — so it is reported rather than left
+  // silent.
+  let faceCover: FaceCover = "no-photo";
   if (video) {
     ctx.drawImage(video, 0, 0, width, height);
-    const box =
-      faceBoxNear(frames, frameIndex, width, height) ??
-      fallbackFaceBox(width, height);
+    const found = faceBoxNear(frames, frameIndex, width, height);
+    faceCover = found?.source ?? "fallback";
+    const box = found?.box ?? fallbackFaceBox(width, height);
     if (!pixelateRegion(canvas, box)) return null;
   }
 
   drawPose(ctx, frames[frameIndex]?.landmarks ?? null, width, height, {
     clear: false,
   });
-  drawHud(ctx, hud, width, height);
+  drawHud(ctx, hud, width, height, faceCover);
 
   return new Promise((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), "image/png");
+    canvas.toBlob(
+      (blob) => resolve(blob ? { blob, faceCover } : null),
+      "image/png",
+    );
   });
 }
 
@@ -74,6 +84,7 @@ function drawHud(
   hud: HudFrame,
   width: number,
   height: number,
+  faceCover: FaceCover,
 ): void {
   const s = width / FALLBACK_WIDTH;
   const pad = 28 * s;
@@ -143,6 +154,17 @@ function drawHud(
   ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
   ctx.font = `${15 * s}px system-ui, sans-serif`;
   ctx.fillText(hud.note, pad, top + noteOffset);
+
+  // The mosaic's own receipt, on the image, where anyone holding the file can
+  // read it without taking the app's word for anything.
+  ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+  ctx.font = `${15 * s}px system-ui, sans-serif`;
+  const cover = FACE_COVER_LABEL[faceCover];
+  ctx.fillText(
+    cover,
+    width - pad - ctx.measureText(cover).width,
+    top + hintOffset,
+  );
 
   ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
   ctx.font = `700 ${15 * s}px system-ui, sans-serif`;
