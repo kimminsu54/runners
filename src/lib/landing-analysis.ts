@@ -60,6 +60,21 @@ export function clampedPeakGrfBw(dutyFactor: number): number {
 export type PoseFrame = {
   t: number;
   landmarks: Landmark[] | null;
+  /**
+   * Foot keypoints an estimator supplies that MediaPipe's 33 have no slot for.
+   *
+   * HALPE_26 — the set behind Sports2D's default model — carries the big *and*
+   * small toe per side, which allows a foot long axis from heel to the midpoint
+   * of the two rather than to one toe, and so a strike angle that does not
+   * swing with toe-out. Filled by the adapter and deliberately not read yet:
+   * the estimator comparison has to change one thing at a time, and a better
+   * foot axis landing in the same commit as a better estimator would make the
+   * difference unattributable.
+   */
+  footExtras?: {
+    leftSmallToe?: Landmark;
+    rightSmallToe?: Landmark;
+  };
 };
 
 export type SeriesPoint = {
@@ -184,6 +199,20 @@ export type AnalyzeOptions = {
   slowMotionFactor?: number;
   /** Optional real pace supplied by the runner, in minutes per kilometre. */
   reportedPaceMinPerKm?: number;
+  /**
+   * Whether the trajectories arrived already low-pass filtered.
+   *
+   * Sports2D runs a Hampel outlier pass and a fourth-order Butterworth at 6 Hz
+   * before it writes anything, and two low-pass stages in series widen the
+   * effective window — which is the mechanism that would broaden the contact
+   * edges and shift stance. The size of that on real filtered input is not
+   * known yet and is one of the things the estimator comparison is for; on a
+   * clean fixture, turning our own smoothing off moves the contact estimate by
+   * under a tenth of a millisecond, shifts mean force by about 2%, and finds
+   * one more contact. The flag exists so the comparison is not partly
+   * measuring our smoothing and reporting it as pose estimation.
+   */
+  preFiltered?: boolean;
 };
 
 function riskFromScore(score: number): Risk {
@@ -604,9 +633,20 @@ export function analyzeLandings(
     kneeRaw.push(flexes.length ? flexes.reduce((a, b) => a + b, 0) / flexes.length : Number.NaN);
   }
 
+  /**
+   * Position smoothing, skipped when the input arrived filtered.
+   *
+   * A branch rather than a window of 1: `movingAverage` floors its half-window
+   * at one sample, so the narrowest window it can express is three, and asking
+   * for 1 still averages three. Derivatives keep their smoothing either way —
+   * differentiating amplifies noise whatever was done to the positions.
+   */
+  const smoothPath = (values: number[], window: number) =>
+    options.preFiltered ? values : movingAverage(values, window);
+
   // Only bridge momentary dropouts. Holding the last value across a long gap
   // invents a motionless body, which then reads as a very long ground contact.
-  const comAbsolute = movingAverage(fillShortGaps(comRaw, 3), 5);
+  const comAbsolute = smoothPath(fillShortGaps(comRaw, 3), 5);
   // Subtract the slow drift so camera tilt and depth changes do not show up as
   // a steady vertical velocity of the runner. The window has to stay well above
   // one gait cycle or it would flatten the motion we are trying to measure.
@@ -621,37 +661,37 @@ export function analyzeLandings(
   const vel = movingAverage(derivative(com, t), 5);
   const acc = movingAverage(derivative(vel, t), 5);
   const knee = fillGaps(kneeRaw);
-  const leftFoot = movingAverage(fillShortGaps(leftFootRaw, 2), 3);
-  const rightFoot = movingAverage(fillShortGaps(rightFootRaw, 2), 3);
+  const leftFoot = smoothPath(fillShortGaps(leftFootRaw, 2), 3);
+  const rightFoot = smoothPath(fillShortGaps(rightFootRaw, 2), 3);
   const leftFootVel = movingAverage(derivative(leftFoot, t), 3);
   const rightFootVel = movingAverage(derivative(rightFoot, t), 3);
   // Absolute foot speed tells stance from swing even while the hip rises and
   // falls, which the hip-relative height alone cannot do.
   const leftFootSpeed = movingAverage(
-    derivative(movingAverage(fillShortGaps(leftFootAbsRaw, 2), 3), t),
+    derivative(smoothPath(fillShortGaps(leftFootAbsRaw, 2), 3), t),
     3,
   ).map(Math.abs);
   const rightFootSpeed = movingAverage(
-    derivative(movingAverage(fillShortGaps(rightFootAbsRaw, 2), 3), t),
+    derivative(smoothPath(fillShortGaps(rightFootAbsRaw, 2), 3), t),
     3,
   ).map(Math.abs);
   // Same treatment as the other per-foot signals: bridge single-frame dropouts,
   // then smooth, so one occluded ankle cannot move a contact by centimetres.
-  const leftFootAhead = movingAverage(fillShortGaps(leftAheadRaw, 2), 3);
-  const rightFootAhead = movingAverage(fillShortGaps(rightAheadRaw, 2), 3);
+  const leftFootAhead = smoothPath(fillShortGaps(leftAheadRaw, 2), 3);
+  const rightFootAhead = smoothPath(fillShortGaps(rightAheadRaw, 2), 3);
   // Joint angles from a lite pose model are noisier than positions, and these
   // two are read as peaks over stance, where a single bad frame would set the
   // whole number. Smooth them before anything takes a maximum.
-  const leftValgus = movingAverage(fillShortGaps(leftValgusRaw, 2), 5);
-  const rightValgus = movingAverage(fillShortGaps(rightValgusRaw, 2), 5);
-  const pelvicTilt = movingAverage(fillShortGaps(pelvicTiltRaw, 2), 5);
+  const leftValgus = smoothPath(fillShortGaps(leftValgusRaw, 2), 5);
+  const rightValgus = smoothPath(fillShortGaps(rightValgusRaw, 2), 5);
+  const pelvicTilt = smoothPath(fillShortGaps(pelvicTiltRaw, 2), 5);
   const leftFootStrikeAngle = normalizeFootAngles(
-    movingAverage(leftStrikeAngleRaw, 3),
+    smoothPath(leftStrikeAngleRaw, 3),
     leftFootSpeed,
     leftFoot,
   );
   const rightFootStrikeAngle = normalizeFootAngles(
-    movingAverage(rightStrikeAngleRaw, 3),
+    smoothPath(rightStrikeAngleRaw, 3),
     rightFootSpeed,
     rightFoot,
   );

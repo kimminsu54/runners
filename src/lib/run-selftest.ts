@@ -27,6 +27,7 @@ import { recommendShoes as rankShoes } from "./Shoeranking";
 import {
   analyzeLandings,
   analyzeLandingsAuto,
+  type PoseFrame,
   cadenceSpm,
   classifyFootStrike,
   clampedPeakGrfBw,
@@ -70,11 +71,18 @@ import {
   analyzeSyntheticFrontRun,
   analyzeSyntheticRun,
   analyzeSyntheticSideRun,
+  syntheticSideRunFrames,
   assertDetectsLanding,
   assertDetectsRunningSteps,
   syntheticRunningFrames,
 } from "./synthetic-jump";
 import { liveMomentAt } from "./live-readout";
+import {
+  detectVerticalAxis,
+  halpe26ToPoseFrames,
+  HALPE26_TO_MEDIAPIPE,
+  parseTrc,
+} from "./sports2d";
 import {
   blurPlan,
   FACE_COVER_LABEL,
@@ -1972,5 +1980,141 @@ console.log("shoe photos ok", {
     steady: steady.direction,
     thin: thinFlight?.direction,
     force: force.direction,
+  });
+}
+
+// Reading Sports2D output into this app's analysis. The point of the adapter is
+// that a comparison between pose estimators is a controlled experiment — same
+// clip, same analysis, one variable — so the adapter itself must add nothing.
+// It is checked by round-tripping a fixture out to a TRC and back and requiring
+// the report to be identical.
+{
+  const W = 1280;
+  const H = 720;
+
+  /** A HALPE_26 pixel TRC written from frames whose report we already know. */
+  const writeTrc = (frames: PoseFrame[], flipY: boolean): string => {
+    const names = Array.from({ length: 26 }, (_, i) => `M${i}`);
+    names[0] = "Nose";
+    names[24] = "LHeel";
+    names[25] = "RHeel";
+    const rate = 1 / (frames[1].t - frames[0].t);
+    const header = [
+      "PathFileType\t4\t(X/Y/Z)\tfixture.trc",
+      "DataRate\tCameraRate\tNumFrames\tNumMarkers\tUnits\tOrigDataRate\tOrigDataStartFrame\tOrigNumFrames",
+      `${rate}\t${rate}\t${frames.length}\t26\tpx\t${rate}\t1\t${frames.length}`,
+      "Frame#\tTime\t" + names.map((n) => `${n}\t\t`).join(""),
+      "\t\t" + names.map((_, i) => `X${i + 1}\tY${i + 1}\tZ${i + 1}`).join("\t"),
+    ];
+    const rows = frames.map((frame, i) => {
+      const cells: string[] = [String(i + 1), frame.t.toFixed(6)];
+      for (let halpe = 0; halpe < 26; halpe++) {
+        const pair = HALPE26_TO_MEDIAPIPE.find(([from]) => from === halpe);
+        const mark = pair && frame.landmarks ? frame.landmarks[pair[1]] : undefined;
+        if (!mark || mark.visibility === 0) {
+          // A gap in a TRC is blank cells, which is the case the parser has to
+          // tell apart from a marker that really sits at the origin.
+          cells.push("", "", "");
+          continue;
+        }
+        const y = flipY ? (1 - mark.y) * H : mark.y * H;
+        cells.push((mark.x * W).toFixed(4), y.toFixed(4), "0.0000");
+      }
+      return cells.join("\t");
+    });
+    return [...header, ...rows, ""].join("\n");
+  };
+
+  const original = syntheticSideRunFrames({ ahead: 0.066 });
+  const opts = { statureM: 1.7, massKg: 70, width: W, height: H };
+  const digest = (result: ReturnType<typeof analyzeLandings>) =>
+    result.landings
+      .map(
+        (l) =>
+          `${l.tContact.toFixed(3)}/${l.footStrike}/${l.peakGrfBw.toFixed(2)}/${l.footAheadRatio.toFixed(3)}`,
+      )
+      .join(" ");
+  const expected = digest(analyzeLandings(original, opts));
+
+  // Both vertical conventions, because the analysis speaks image coordinates
+  // and a world-up file flips every strike angle — which does not fail, it
+  // reports rearfoot contacts as forefoot. The convention is read out of the
+  // data rather than remembered.
+  for (const flipY of [false, true]) {
+    const table = parseTrc(writeTrc(original, flipY));
+    if (table.units !== "px") throw new Error(`TRC units read as ${table.units}`);
+    if (table.markers.length !== 26) {
+      throw new Error(`TRC marker count read as ${table.markers.length}`);
+    }
+    if (table.frames.length !== original.length) {
+      throw new Error(
+        `TRC frame count read as ${table.frames.length}, wrote ${original.length}`,
+      );
+    }
+    const axis = detectVerticalAxis(table);
+    const wanted = flipY ? "world-up" : "image-down";
+    if (axis !== wanted) {
+      throw new Error(`vertical axis detected as ${axis}, wrote ${wanted}`);
+    }
+    const adapted = halpe26ToPoseFrames(table, {
+      width: W,
+      height: H,
+      verticalAxis: axis,
+    });
+    if (digest(analyzeLandings(adapted, opts)) !== expected) {
+      throw new Error(
+        `the adapter changed the report (flipY=${flipY}):\n  wrote  ${expected}\n  read   ${digest(analyzeLandings(adapted, opts))}`,
+      );
+    }
+  }
+
+  // Blank cells are a tracking gap, not a marker at the origin. A parser that
+  // read them as 0,0 would put a foot in the corner of the frame and the
+  // analysis would believe it.
+  const gapped = writeTrc(original, false)
+    .split("\n")
+    .map((line, i) => (i === 8 ? [line.split("\t")[0], line.split("\t")[1], ...Array(78).fill("")].join("\t") : line))
+    .join("\n");
+  const gappedTable = parseTrc(gapped);
+  const gappedFrame = gappedTable.frames[8 - 5];
+  if (gappedFrame && gappedFrame.points.some((point) => point !== null)) {
+    throw new Error("a blank TRC row produced marker positions");
+  }
+  const gappedPoses = halpe26ToPoseFrames(gappedTable, {
+    width: W,
+    height: H,
+    verticalAxis: "image-down",
+  });
+  if (gappedPoses[8 - 5]?.landmarks !== null) {
+    throw new Error("a frame with no markers must adapt to a null pose");
+  }
+
+  // Every joint the analysis reads needs a source in HALPE_26, or it silently
+  // arrives at zero visibility. The mouth is the one documented exception —
+  // HALPE_26 has no mouth, and the face box is built from nose, eyes and ears.
+  const mapped = new Set(HALPE26_TO_MEDIAPIPE.map(([, to]) => to));
+  const exempt = new Set<number>([LM.mouthLeft, LM.mouthRight]);
+  const unmapped = Object.entries(LM).filter(
+    ([, index]) => !mapped.has(index) && !exempt.has(index),
+  );
+  if (unmapped.length) {
+    throw new Error(
+      `no HALPE_26 source for ${unmapped.map(([name]) => name).join(", ")}`,
+    );
+  }
+
+  // The flag has to do something, or a comparison would quietly include our
+  // own smoothing on top of Sports2D's.
+  const smoothed = analyzeLandings(original, opts);
+  const asGiven = analyzeLandings(original, { ...opts, preFiltered: true });
+  if (digest(smoothed) === digest(asGiven)) {
+    throw new Error("preFiltered changed nothing — the flag is not wired");
+  }
+
+  console.log("sports2d adapter ok", {
+    roundTrip: "image-down · world-up 모두 동일",
+    axis: "데이터에서 판별",
+    landings: analyzeLandings(original, opts).landings.length,
+    preFiltered: "동작",
   });
 }
