@@ -12,7 +12,12 @@ import {
 import { SaveSessionButton } from "@/components/save-session";
 import { ShoeRecommendations } from "@/components/shoe-recommendations";
 import type { AnalysisResult } from "@/lib/landing-analysis";
-import { buildSessionSummary, paceLabel, type PaceBand } from "@/lib/session-summary";
+import {
+  buildSessionSummary,
+  paceLabel,
+  type PaceBand,
+  type SessionMetric,
+} from "@/lib/session-summary";
 import type { GuidanceLevel } from "@/lib/training-guidance";
 import { cn } from "@/lib/utils";
 import { ClipboardList } from "lucide-react";
@@ -88,10 +93,12 @@ export function SessionSummaryCard({
           <Badge variant="outline" className={qualityClass}>
             {qualityLabel}
           </Badge>
-          <span className="text-xs text-muted-foreground">
-            사람 크기 {Math.round(result.quality.subjectHeightRatio * 100)}% ·
-            자세 포착 {Math.round(result.quality.detectedRatio * 100)}%
-          </span>
+          {result.quality.level === "good" ? null : (
+            <span className="text-xs text-muted-foreground">
+              사람 크기 {Math.round(result.quality.subjectHeightRatio * 100)}% ·
+              자세 포착 {Math.round(result.quality.detectedRatio * 100)}%
+            </span>
+          )}
         </div>
         <SaveSessionButton
           result={result}
@@ -100,52 +107,7 @@ export function SessionSummaryCard({
         />
         <p className="text-lg font-medium leading-7">{summary.headline}</p>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {summary.metrics.map((metric) => (
-            <div
-              key={metric.label}
-              className="rounded-xl border border-border bg-neutral-50 px-3 py-3"
-            >
-              <p className="text-xs text-muted-foreground">{metric.label}</p>
-              <p className="text-base font-semibold tabular-nums">{metric.value}</p>
-              {metric.hint ? (
-                <p className="text-xs text-muted-foreground">{metric.hint}</p>
-              ) : null}
-            </div>
-          ))}
-        </div>
-
-        {summary.pace !== "unknown" ? (
-          <div>
-            <div className="mb-2 flex items-baseline justify-between">
-              <h3 className="text-sm font-medium">페이스 위치</h3>
-              <span className="text-xs text-muted-foreground">
-                듀티 팩터가 낮을수록 빠른 페이스입니다. 충격량은 반력으로 따로 봅니다.
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-1 sm:grid-cols-6">
-              {PACE_SCALE.map((step) => {
-                const active = step.band === summary.pace;
-                return (
-                  <div
-                    key={step.band}
-                    className={cn(
-                      "rounded-lg border px-2 py-2 text-center",
-                      active
-                        ? "border-primary bg-accent text-accent-foreground"
-                        : "border-border text-muted-foreground",
-                    )}
-                  >
-                    <p className="text-meta leading-tight font-medium">
-                      {paceLabel[step.band]}
-                    </p>
-                    <p className="mt-0.5 font-mono text-micro">{step.duty}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
+        <MetricGrid metrics={summary.metrics.filter((metric) => metric.primary)} />
 
         {summary.strikeCounts.length ? (
           <div>
@@ -191,6 +153,8 @@ export function SessionSummaryCard({
         <AnalysisDetailsButton />
 
         <AnalysisDetails className="space-y-5">
+        <MetricGrid metrics={summary.metrics.filter((metric) => !metric.primary)} />
+        <PaceScale pace={summary.pace} />
         {result.quality.reasons.length ? (
           <ul className="list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-7 py-3 text-xs leading-5 text-amber-900">
             {result.quality.reasons.map((reason, index) => (
@@ -278,5 +242,69 @@ export function SessionSummaryCard({
         </AnalysisDetails>
       </CardContent>
     </Card>
+  );
+}
+
+function MetricGrid({ metrics }: { metrics: SessionMetric[] }) {
+  if (!metrics.length) return null;
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {metrics.map((metric) => (
+        <div
+          key={metric.label}
+          className="rounded-xl border border-border bg-neutral-50 px-3 py-3"
+        >
+          <p className="text-xs text-muted-foreground">{metric.label}</p>
+          <p className="text-base font-semibold tabular-nums">{metric.value}</p>
+          {metric.hint ? (
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+              {metric.hint}
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Where this run sits on the walking-to-sprinting scale.
+ *
+ * Behind the detail toggle, because the row is labelled in duty factor — the
+ * share of a stride spent on the ground — and a reader who wanted to know
+ * whether they ran fast has already been told, in words, by the pace tile.
+ */
+function PaceScale({ pace }: { pace: PaceBand }) {
+  if (pace === "unknown") return null;
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-4">
+        <h3 className="text-sm font-medium">페이스 위치</h3>
+        <span className="text-right text-xs text-muted-foreground">
+          한 걸음 중 땅에 붙어 있는 비율입니다. 낮을수록 빠른 페이스입니다.
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1 sm:grid-cols-6">
+        {PACE_SCALE.map((step) => {
+          const active = step.band === pace;
+          return (
+            <div
+              key={step.band}
+              className={cn(
+                "rounded-lg border px-2 py-2 text-center",
+                active
+                  ? "border-primary bg-accent text-accent-foreground"
+                  : "border-border text-muted-foreground",
+              )}
+            >
+              <p className="text-meta leading-tight font-medium">
+                {paceLabel[step.band]}
+              </p>
+              <p className="mt-0.5 font-mono text-micro">{step.duty}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

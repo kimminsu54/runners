@@ -56,7 +56,10 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
         />
       ) : null}
 
-      {rec.others.length ? (
+      {/* Three picks is a recommendation; six is a catalogue. The next-ranked
+          brands open with the detail, alongside the reasons each shoe was
+          chosen — the same toggle already governs those. */}
+      {rec.others.length && showDetails ? (
         <div className={rec.primary.length ? "mt-5" : undefined}>
           <ShoePickGrid
             title="다른 브랜드"

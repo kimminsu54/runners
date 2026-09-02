@@ -22,6 +22,14 @@ export type SessionMetric = {
   label: string;
   value: string;
   hint?: string;
+  /**
+   * Shown before the reader asks for detail.
+   *
+   * Four of these answer "how did I run?" — how fast, how I landed, how hard,
+   * how many times. The rest answer a follow-up question, and putting all
+   * seven up front left the reader to work out which was which.
+   */
+  primary?: boolean;
 };
 
 export type PaceBand =
@@ -429,12 +437,15 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         : "영상 전체로 보면 뚜렷한 고부하 패턴은 적습니다. 통증과 주간 훈련량을 함께 관찰하세요.",
   ];
 
+  // The most-read sentence in the report, so it says the unit in words. It
+  // used to open with "평균 2.1 BW", which is the shorthand the tile now keeps
+  // in its hint.
   const paceHeadline =
     pace === "unknown"
       ? ""
       : forceTrusted
-        ? `${paceLabel[pace]} · 평균 ${avgGrf.toFixed(1)} BW — `
-        : `${paceLabel[pace]} · 충격량 측정 불가 — `;
+        ? `${paceLabel[pace]} · 착지 충격은 체중의 ${avgGrf.toFixed(1)}배 — `
+        : `${paceLabel[pace]} · 충격은 측정 불가 — `;
   const headline =
     !forceTrusted
       ? paceHeadline + "촬영 조건을 먼저 개선해 주세요."
@@ -447,14 +458,20 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
           ? "여러 착지를 모아 본 전체 부하는 비교적 고른 편입니다."
           : "잡은 착지가 적어 전체 경향은 참고 수준입니다.");
 
+  // Units carry the reading, so the number says them in words and the
+  // shorthand moves to the hint. "2.1 BW" is exact and means nothing to
+  // somebody who has not read the README; "체중의 2.1배" is the same fact in
+  // words they already have. Duty factor is a share of one stride spent on the
+  // ground, and can simply say so.
   const metrics: SessionMetric[] = [
     {
       label: "페이스",
       value: paceLabel[pace],
+      primary: true,
       hint: hasReportedPace
         ? `${formatPace(result.reportedPaceMinPerKm!)} · 직접 입력`
         : Number.isFinite(meanDutyFactor)
-          ? `듀티 ${meanDutyFactor.toFixed(2)} · 영상 추정`
+          ? `한 걸음의 ${Math.round(meanDutyFactor * 100)}%를 땅에서 · 영상 추정`
         : `착지 ${gaitCount}/${landings.length}회 측정`,
     },
     {
@@ -463,37 +480,42 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         dominantStrike === "mixed"
           ? "혼합형"
           : footStrikeLabel[dominantStrike],
+      primary: true,
       hint: strikeDistribution || "옆모습에서 발 전체 필요",
+    },
+    {
+      label: "착지 충격",
+      value: forceTrusted ? `체중의 ${avgGrf.toFixed(1)}배` : "측정 불가",
+      primary: true,
+      // The half-sine stance model is good to roughly a sixth either way.
+      hint: forceTrusted
+        ? `평균 최대 지면반력 ${avgGrf.toFixed(1)} BW · 추정 범위 ${(avgGrf * 0.85).toFixed(1)}–${(avgGrf * 1.15).toFixed(1)}배`
+        : "사람을 화면 높이 25% 이상으로 촬영",
     },
     {
       label: forceTrusted ? "착지" : "착지 후보",
       value: `${landings.length}회`,
+      primary: true,
       hint: forceTrusted ? cadenceText : "품질 개선 후 확정",
     },
     {
       label: "접지 / 체공",
       value: formatTimingPair(meanContactMs, meanFlightMs),
-      hint: "접지 시간은 페이스와 함께 움직입니다. 충격량은 반력으로 봅니다.",
-    },
-    {
-      label: "평균 반력",
-      value: forceTrusted ? `${avgGrf.toFixed(1)} BW` : "측정 불가",
-      // The half-sine stance model is good to roughly a sixth either way.
-      hint: forceTrusted
-        ? `추정 범위 ${(avgGrf * 0.85).toFixed(1)}–${(avgGrf * 1.15).toFixed(1)} BW`
-        : "사람을 화면 높이 25% 이상으로 촬영",
+      hint: "한 발이 땅에 붙어 있던 시간과, 두 발이 모두 떠 있던 시간입니다.",
     },
     {
       label: "평균 점수",
       value: forceTrusted ? String(Math.round(avgScore)) : "측정 불가",
-      hint: forceTrusted ? `부하율 ${avgRate.toFixed(0)} BW/s` : undefined,
+      hint: forceTrusted
+        ? `0–100. 낮을수록 충격을 나눠 받은 착지입니다. 힘이 실리는 속도 ${avgRate.toFixed(0)} BW/s.`
+        : undefined,
     },
   ];
 
   if (bothSides && forceTrusted) {
     metrics.push({
-      label: "좌우",
-      value: `L ${leftShown.toFixed(1)} / R ${rightShown.toFixed(1)}`,
+      label: "좌우 충격",
+      value: `왼 ${leftShown.toFixed(1)} / 오른 ${rightShown.toFixed(1)}배`,
       hint: Number.isFinite(asymmetryPct)
         ? `차이 ${Math.round(asymmetryPct)}%`
         : undefined,

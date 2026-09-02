@@ -402,7 +402,7 @@ if (
 ) {
   throw new Error("poor sessions must not emit strike, risk, or load-pattern lists");
 }
-for (const label of ["평균 반력", "평균 점수", "접지 / 체공"] as const) {
+for (const label of ["착지 충격", "평균 점수", "접지 / 체공"] as const) {
   const metric = poorSummary.metrics.find((row) => row.label === label);
   if (metric?.value !== "측정 불가") {
     throw new Error(`${label} should read 측정 불가 when quality is poor`);
