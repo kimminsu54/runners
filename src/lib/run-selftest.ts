@@ -1811,3 +1811,78 @@ console.log("shoe photos ok", {
   }
   console.log("theme tokens ok", { spacing: names.join(", ") });
 }
+
+// Cadence. The number a runner is most likely to check against a watch, and it
+// used to come from the 40th percentile of the step gaps — a deliberate lean
+// towards the short cluster, which read 2 to 3 percent high on clean fixtures
+// and doubled outright when the detector split footfalls.
+{
+  const rows = (gaps: number[], contactMs: number) => {
+    let t = 0.5;
+    const out = [{ tContact: t, contactMs }];
+    for (const gap of gaps) {
+      t += gap;
+      out.push({ tContact: t, contactMs });
+    }
+    return out;
+  };
+
+  // Against fixtures whose true cadence is known by construction, across the
+  // range the app claims to cover.
+  for (const gait of [
+    { contactS: 0.3, flightS: 0.14 },
+    { contactS: 0.26, flightS: 0.12 },
+    { contactS: 0.24, flightS: 0.1 },
+    { contactS: 0.2, flightS: 0.1 },
+    { contactS: 0.14, flightS: 0.1 },
+  ]) {
+    const truth = 60 / (gait.contactS + gait.flightS);
+    const reported = cadenceSpm(
+      analyzeSyntheticRun({ ...gait, steps: 10, fps: 60 }).landings,
+    );
+    if (!(Math.abs(reported - truth) <= 3)) {
+      throw new Error(
+        `cadence off by ${(reported - truth).toFixed(1)} spm at ${truth.toFixed(0)}: reported ${reported.toFixed(1)}`,
+      );
+    }
+  }
+
+  // A 0.34 s step is 176 spm. Half of the gaps split, then most, then all —
+  // the last only recoverable because a foot cannot be on the ground for
+  // longer than the step it belongs to, and 270 ms of stance rules out a
+  // 170 ms step.
+  const split = [
+    ["some", [0.34, 0.17, 0.17, 0.34, 0.34, 0.34]],
+    ["most", [0.17, 0.17, 0.34, 0.17, 0.17, 0.17, 0.17]],
+    ["all", [0.17, 0.17, 0.17, 0.17, 0.17, 0.17]],
+  ] as const;
+  for (const [label, gaps] of split) {
+    const reported = cadenceSpm(rows([...gaps], 270));
+    if (!(Math.abs(reported - 176) <= 6)) {
+      throw new Error(
+        `${label} split footfalls reported ${reported.toFixed(0)} spm instead of ~176`,
+      );
+    }
+  }
+
+  // And the guard must not fire on a gait that is simply fast. A 0.24 s step
+  // with 100 ms of stance is a sprint, not a split 0.48 s step.
+  const sprint = cadenceSpm(rows([0.24, 0.24, 0.24, 0.24, 0.24, 0.24], 100));
+  if (!(Math.abs(sprint - 250) <= 6)) {
+    throw new Error(`a real 250 spm sprint reported ${sprint.toFixed(0)} spm`);
+  }
+
+  // Walking spends more than half the stride on the ground, so stance exceeds
+  // one step interval there. That is a gait, not evidence of a split.
+  const walk = cadenceSpm(rows([0.55, 0.55, 0.55, 0.55], 620));
+  if (!(Math.abs(walk - 109) <= 6)) {
+    throw new Error(`walking reported ${walk.toFixed(0)} spm instead of ~109`);
+  }
+
+  console.log("cadence ok", {
+    fixtures: "136–250 spm 오차 3 이내",
+    split: "절반 간격 보정",
+    sprint: Math.round(sprint),
+    walk: Math.round(walk),
+  });
+}

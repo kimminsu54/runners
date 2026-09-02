@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 4)
+// Source: shared/thresholds.yaml (version 5)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 4;
+export const THRESHOLDS_VERSION = 5;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -30,6 +30,8 @@ export type ThresholdKey =
   | "max_contact_s"
   | "min_step_s"
   | "max_step_s"
+  | "cadence_step_agreement"
+  | "cadence_max_contact_per_step"
   | "stance_edge_allowance_s"
   | "peak_grf_min_bw"
   | "peak_grf_max_bw"
@@ -208,6 +210,26 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "케이던스 86 spm 에 해당합니다. 이보다 긴 간격은 중간에 착지를 놓친 것으로 봅니다.",
     validationStatus: "derived",
     note: "60 / 0.7 ≈ 86 spm.",
+  },
+  cadence_step_agreement: {
+    key: "cadence_step_agreement",
+    label: "케이던스 · 같은 걸음으로 볼 오차",
+    value: 0.25,
+    unit: "ratio",
+    appliesTo: "running",
+    source: "착지 간격이 후보 주기와 이 비율 안에 들면 같은 걸음 간격으로 셉니다. 케이던스는 그렇게 모인 간격의 평균입니다.",
+    validationStatus: "internal",
+    note: "너무 좁으면 정상적인 걸음 편차까지 버리고, 너무 넓으면 절반 간격과 정상 간격이 한 덩어리가 됩니다.",
+  },
+  cadence_max_contact_per_step: {
+    key: "cadence_max_contact_per_step",
+    label: "케이던스 · 접지/걸음 상한",
+    value: 1.3,
+    unit: "ratio",
+    appliesTo: "running",
+    source: "한 발이 땅에 붙어 있는 시간은 한 걸음 간격의 이 배수를 넘을 수 없습니다. 넘으면 재고 있는 간격이 실제 걸음의 절반이라는 뜻이라 두 배로 잡습니다.",
+    validationStatus: "derived",
+    note: "듀티 팩터 = 접지/(2×걸음). 달리기는 0.18~0.48 이라 접지 ≤ 걸음, 걷기는 0.5 를 넘어 약 0.65 까지 가므로 접지 ≤ 1.3×걸음입니다.",
   },
   stance_edge_allowance_s: {
     key: "stance_edge_allowance_s",

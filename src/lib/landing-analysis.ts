@@ -1740,16 +1740,90 @@ export function formatStrikeAngleDeg(deg: number, strike: FootStrike): string {
   return `약 ${shown > 0 ? "+" : ""}${shown}°`;
 }
 
-/** Cadence from the typical short step, not first-to-last span (missed contacts). */
-export function cadenceSpm(landings: Array<{ tContact: number }>): number {
+/**
+ * Steps per minute, from the spacing the clip actually repeats.
+ *
+ * Not from the first-to-last span, which a missed contact stretches, and no
+ * longer from the 40th percentile of the gaps either. That percentile was
+ * chosen to lean past a doubled gap where a footfall was missed, and leaning
+ * short is exactly the wrong instinct: a detector that splits one footfall in
+ * two halves a gap, and a percentile that favours the short cluster then
+ * reports twice the cadence. Even with no split at all it ran 2–3% high on
+ * clean fixtures, which is a bias in the direction nobody wants — telling a
+ * runner their cadence is higher than it is.
+ */
+export function cadenceSpm(
+  landings: Array<{ tContact: number; contactMs?: number }>,
+): number {
+  const step = stepPeriodSeconds(landings);
+  return Number.isFinite(step) && step > 0 ? 60 / step : Number.NaN;
+}
+
+/** How close a gap has to sit to a candidate period to count as that period. */
+const STEP_AGREEMENT = threshold("cadence_step_agreement");
+
+/**
+ * The most of a step interval one foot can spend on the ground.
+ *
+ * Stance over stride is the duty factor, and this analysis computes it as
+ * contact / (2 × step). Running sits between 0.18 and 0.48, so contact never
+ * exceeds one step interval; walking goes past 0.5 and can reach about 0.65,
+ * so contact can exceed a step but not by half again. Past that the candidate
+ * is not a gait, and the interval being measured is half of the real one.
+ */
+const MAX_CONTACT_PER_STEP = threshold("cadence_max_contact_per_step");
+
+/**
+ * The repeated step interval, in seconds.
+ *
+ * The median first, which assumes nothing about which way the errors go. Then
+ * one check against its own double: a split footfall halves gaps, so if twice
+ * the median is the spacing more of the clip agrees with, the median was the
+ * half and the double is the step. Finally an average of the gaps that agree,
+ * so the answer comes from every step rather than the one in the middle.
+ */
+function stepPeriodSeconds(
+  landings: Array<{ tContact: number; contactMs?: number }>,
+): number {
   if (landings.length < 2) return Number.NaN;
   const gaps = landings
     .slice(1)
     .map((landing, i) => landing.tContact - landings[i].tContact)
     .filter((gap) => gap >= MIN_STEP_S && gap <= MAX_STEP_S);
-  // A missed contact doubles one gap. The shorter cluster is the real step.
-  const step = percentile(gaps, 0.4);
-  return Number.isFinite(step) && step > 0 ? 60 / step : Number.NaN;
+  if (!gaps.length) return Number.NaN;
+
+  const middle = median(gaps);
+  if (!Number.isFinite(middle) || middle <= 0) return Number.NaN;
+
+  const agreeing = (period: number) =>
+    gaps.filter((gap) => Math.abs(gap - period) <= period * STEP_AGREEMENT);
+
+  // Two ways the median can be half of the real step, and they need different
+  // evidence. Where only some footfalls were split, the unsplit ones are still
+  // there and outnumber the halves. Where most were split they do not, and the
+  // measurement that settles it is how long a foot was on the ground: a foot
+  // cannot be down for longer than the step it is part of.
+  const contact =
+    median(
+      landings
+        .map((landing) => landing.contactMs ?? Number.NaN)
+        .filter(Number.isFinite),
+    ) / 1000;
+  const impossible =
+    Number.isFinite(contact) && middle * MAX_CONTACT_PER_STEP < contact;
+
+  const doubled = middle * 2;
+  // Only worth asking when a doubled step is still a step a person could take.
+  const fundamental =
+    doubled <= MAX_STEP_S &&
+    (impossible || agreeing(doubled).length > agreeing(middle).length)
+      ? doubled
+      : middle;
+
+  const matched = agreeing(fundamental);
+  return matched.length
+    ? matched.reduce((sum, gap) => sum + gap, 0) / matched.length
+    : fundamental;
 }
 
 /**
