@@ -1786,3 +1786,28 @@ console.log("shoe photos ok", {
   }
   console.log("catalog order independence ok", { combinations: compared });
 }
+
+// Theme token names, which are not free-form: Tailwind turns every
+// --spacing-<name> into an inline-<name> utility as well, so a token called
+// `block` makes `inline-block` ambiguous — and Tailwind emits both meanings.
+// That set every inline-block element in the app to 3.5rem wide; the header's
+// 분석 시작 button became 56px holding four lines of one character, hanging out
+// of the top of the header. Nothing in the build, the types or the linter said
+// a word about it.
+{
+  const css = readFileSync(
+    join(import.meta.dirname, "../app/globals.css"),
+    "utf8",
+  );
+  // Display keywords that can follow `inline-` in a Tailwind utility.
+  const reserved = new Set(["block", "flex", "grid", "table"]);
+  const names = [...css.matchAll(/--spacing-([a-z0-9-]+)\s*:/g)].map((m) => m[1]);
+  if (!names.length) throw new Error("no --spacing-* tokens found; has the theme moved?");
+  const clashing = names.filter((name) => reserved.has(name));
+  if (clashing.length) {
+    throw new Error(
+      `spacing token(s) named after a display keyword: ${clashing.join(", ")} — inline-${clashing[0]} would mean two things`,
+    );
+  }
+  console.log("theme tokens ok", { spacing: names.join(", ") });
+}

@@ -216,7 +216,7 @@ export default function Home() {
       </section>
 
       <footer className="border-t border-border">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-block sm:flex-row sm:items-start sm:justify-between sm:px-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-stack sm:flex-row sm:items-start sm:justify-between sm:px-6">
           <div>
             <p className="display-type text-xl text-foreground">
               STRIDE<span className="text-primary">/</span>LAB

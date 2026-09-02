@@ -18,8 +18,15 @@
  * same shape as the others without anyone remembering to make it so.
  */
 @theme {
-  /* Vertical rhythm: inside a section, between sections, and the hero. */
-  --spacing-block: 3.5rem;
+  /* Vertical rhythm: inside a section, between sections, and the hero.
+   *
+   * Not named `block`. Every --spacing-* name also becomes an inline-size
+   * utility, so --spacing-block made `inline-block` mean two things at once —
+   * and Tailwind emitted both, which set every inline-block element in the app
+   * to 3.5rem wide. The header's 분석 시작 button was 56px holding four lines
+   * of one character each, hanging out of the top of the header. Avoid any name
+   * that is also a display keyword: block, flex, grid, table. */
+  --spacing-stack: 3.5rem;
   --spacing-section: 5rem;
   --spacing-hero: 7rem;
 
