@@ -52,7 +52,7 @@ RTMLib/RTMPose 기반 파이썬 도구입니다.
 |---|---|---|
 | 발꿈치 | `29` / `30` | `24` / `25` |
 | 엄지발가락 | — | `20` / `21` |
-| 새끼발가락 | — | `22` / `23` |
+| 새끼발가락 | — | `22` / `23` (`LSmallToe`/`RSmallToe`) |
 | 발끝 | `foot_index 31` / `32` (단일) | — |
 
 MediaPipe의 `foot_index` 는 발끝 한 점입니다. HALPE_26은 **엄지와 새끼를 따로** 줍니다.
@@ -160,22 +160,43 @@ MediaPipe ───────────────────────�
 
 `analyzeLandings` 가 실제로 읽는 것만 채우면 됩니다.
 
-| MediaPipe 인덱스 | HALPE_26 | 쓰는 곳 |
+**실제 파일을 열어 본 뒤 두 군데를 고쳤습니다.** 처음엔 HALPE_26 인덱스로 열을
+읽도록 썼는데, Sports2D의 TRC는 (1) **키포인트 번호순이 아니라 골격 순서**로 쓰고
+(2) 26개가 아니라 **22개**만 씁니다 — 눈과 귀는 아예 없습니다. 인덱스로 읽었다면
+24번 열을 왼발꿈치로 착각해 **엉뚱한 관절로 만든 포즈를 에러 없이** 내놓았을
+겁니다. 그래서 매칭은 **이름 기준**입니다(`markerKey` 가 소문자·영숫자만 남겨
+비교).
+
+실제 열 순서:
+
+```
+Hip RHip RKnee RAnkle RBigToe RSmallToe RHeel
+    LHip LKnee LAnkle LBigToe LSmallToe LHeel
+    Neck Head Nose RShoulder RElbow RWrist LShoulder LElbow LWrist
+```
+
+| MediaPipe 인덱스 | TRC 마커 | 쓰는 곳 |
 |---|---|---|
-| `0` nose | `0` Nose | 신장 측정, 얼굴 박스 |
-| `2` / `5` eye | `1` / `2` LEye/REye | 얼굴 박스 |
-| `7` / `8` ear | `3` / `4` LEar/REar | 얼굴 박스 |
-| `11` / `12` shoulder | `5` / `6` | 옆모습 판정, 머리 크기 |
-| `23` / `24` hip | `11` / `12` | 무게중심, 골반 기울기 |
-| `25` / `26` knee | `13` / `14` | 무릎 각도, 정면 정렬 |
-| `27` / `28` ankle | `15` / `16` | 접지 검출, 몸 앞 착지 |
-| `29` / `30` heel | `24` / `25` LHeel/RHeel | 접지 검출, 주법 각도 |
-| `31` / `32` foot_index | `20` / `21` LBigToe/RBigToe | 주법 각도 |
+| `0` nose | `Nose` | 신장 측정 |
+| `11` / `12` shoulder | `LShoulder` / `RShoulder` | 옆모습 판정, 머리 크기 |
+| `23` / `24` hip | `LHip` / `RHip` | 무게중심, 골반 기울기 |
+| `25` / `26` knee | `LKnee` / `RKnee` | 무릎 각도, 정면 정렬 |
+| `27` / `28` ankle | `LAnkle` / `RAnkle` | 접지 검출, 몸 앞 착지 |
+| `29` / `30` heel | `LHeel` / `RHeel` | 접지 검출, 주법 각도 |
+| `31` / `32` foot_index | `LBigToe` / `RBigToe` | 주법 각도 |
+| — | `LSmallToe` / `RSmallToe` | `footExtras` (아래) |
+| — | `Hip` `Neck` `Head` | 대응 관절 없음 → 버림 |
 
-`9` / `10` mouth 는 HALPE_26에 없습니다 → `visibility: 0` 으로 채웁니다. 얼굴 박스는
-코·눈·귀 5점으로 충분히 잡힙니다(현재 코드도 2점 이상이면 동작).
+**얼굴은 TRC에서 만들 수 없습니다.** `9`/`10` mouth 는 HALPE_26에 없고, 눈과 귀는
+키포인트 셋에는 있지만 **Sports2D가 TRC에 쓰지 않습니다.** 오프라인 비교는 미리보기를
+그리지 않으니 손해가 없고, 나중에 B(서버 경로)에서 서버가 돌려준 좌표로 미리보기를
+그리려면 얼굴은 **다른 데서** 받아야 합니다. `faceBoxFrom` 은 2점 미만이면 null을
+돌려주므로 이 경우 fail-closed로 떨어집니다 — 조용히 얼굴이 드러나지는 않습니다.
 
-**새끼발가락 `22`/`23` 은 MediaPipe에 대응이 없습니다.** 33개 배열에 그냥 담을 수 없으니,
+`Units` 필드도 믿을 수 없습니다. **픽셀 파일인데 헤더에 `m` 이라고 적혀 있습니다.**
+그래서 어댑터는 이 필드로 분기하지 않고, 프레임 크기를 호출자가 넘깁니다.
+
+**새끼발가락은 MediaPipe에 대응이 없습니다.** 33개 배열에 그냥 담을 수 없으니,
 발 장축을 개선하려면 `PoseFrame` 에 선택 필드를 추가해야 합니다:
 
 ```ts

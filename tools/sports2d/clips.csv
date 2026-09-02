@@ -1,0 +1,19 @@
+id,file,height_m,pace,strike,visible_side,note
+01,clips/easy-rear-side.mp4,1.70,easy,rearfoot,auto,정확한 옆모습
+02,clips/easy-mid-side.mp4,1.70,easy,midfoot,auto,정확한 옆모습
+03,clips/easy-fore-side.mp4,1.70,easy,forefoot,auto,정확한 옆모습
+04,clips/steady-rear-side.mp4,1.70,steady,rearfoot,auto,정확한 옆모습
+05,clips/steady-mid-side.mp4,1.70,steady,midfoot,auto,정확한 옆모습
+06,clips/steady-fore-side.mp4,1.70,steady,forefoot,auto,정확한 옆모습
+07,clips/fast-rear-side.mp4,1.70,fast,rearfoot,auto,정확한 옆모습
+08,clips/fast-mid-side.mp4,1.70,fast,midfoot,auto,정확한 옆모습
+09,clips/fast-fore-side.mp4,1.70,fast,forefoot,auto,정확한 옆모습
+10,clips/easy-rear-oblique.mp4,1.70,easy,rearfoot,auto,15~30° 사선
+11,clips/easy-mid-oblique.mp4,1.70,easy,midfoot,auto,15~30° 사선
+12,clips/easy-fore-oblique.mp4,1.70,easy,forefoot,auto,15~30° 사선
+13,clips/steady-rear-oblique.mp4,1.70,steady,rearfoot,auto,15~30° 사선
+14,clips/steady-mid-oblique.mp4,1.70,steady,midfoot,auto,15~30° 사선
+15,clips/steady-fore-oblique.mp4,1.70,steady,forefoot,auto,15~30° 사선
+16,clips/fast-rear-oblique.mp4,1.70,fast,rearfoot,auto,15~30° 사선
+17,clips/fast-mid-oblique.mp4,1.70,fast,midfoot,auto,15~30° 사선
+18,clips/fast-fore-oblique.mp4,1.70,fast,forefoot,auto,15~30° 사선

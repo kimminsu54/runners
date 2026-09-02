@@ -42,3 +42,10 @@ next-env.d.ts
 
 # Python bytecode from the one-off asset scripts in scripts/
 __pycache__/
+
+# The offline Sports2D reference tool: its virtual environment holds model
+# weights, and clips/ and out/ hold running videos and their derivatives.
+# Neither belongs in a repository whose whole point is that videos stay put.
+tools/sports2d/.venv/
+tools/sports2d/clips/
+tools/sports2d/out/

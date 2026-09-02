@@ -80,7 +80,9 @@ import { liveMomentAt } from "./live-readout";
 import {
   detectVerticalAxis,
   halpe26ToPoseFrames,
-  HALPE26_TO_MEDIAPIPE,
+  MARKER_TO_MEDIAPIPE,
+  SMALL_TOE_MARKERS,
+  markerKey,
   parseTrc,
 } from "./sports2d";
 import {
@@ -1992,28 +1994,57 @@ console.log("shoe photos ok", {
   const W = 1280;
   const H = 720;
 
-  /** A HALPE_26 pixel TRC written from frames whose report we already know. */
-  const writeTrc = (frames: PoseFrame[], flipY: boolean): string => {
-    const names = Array.from({ length: 26 }, (_, i) => `M${i}`);
-    names[0] = "Nose";
-    names[24] = "LHeel";
-    names[25] = "RHeel";
+  // The marker list, order and header of a real Sports2D pixel TRC — taken
+  // from one, not from the HALPE_26 numbering. Two things in it caught the
+  // first version of the adapter out: the order is the skeleton's, not the
+  // keypoint set's, and there are 22 markers rather than 26 because the eyes
+  // and ears are never written. An adapter reading by column index would have
+  // built a pose from the wrong joints without failing.
+  const TRC_MARKERS = [
+    "Hip", "RHip", "RKnee", "RAnkle", "RBigToe", "RSmallToe", "RHeel",
+    "LHip", "LKnee", "LAnkle", "LBigToe", "LSmallToe", "LHeel",
+    "Neck", "Head", "Nose",
+    "RShoulder", "RElbow", "RWrist", "LShoulder", "LElbow", "LWrist",
+  ];
+
+  /** A pixel TRC written from frames whose report we already know. */
+  const writeTrc = (
+    frames: PoseFrame[],
+    flipY: boolean,
+    names: string[] = TRC_MARKERS,
+  ): string => {
     const rate = 1 / (frames[1].t - frames[0].t);
     const header = [
       "PathFileType\t4\t(X/Y/Z)\tfixture.trc",
       "DataRate\tCameraRate\tNumFrames\tNumMarkers\tUnits\tOrigDataRate\tOrigDataStartFrame\tOrigNumFrames",
-      `${rate}\t${rate}\t${frames.length}\t26\tpx\t${rate}\t1\t${frames.length}`,
+      // Units says metres in a file of pixels, exactly as the real one does.
+      // Nothing may branch on this field.
+      `${rate}\t${rate}\t${frames.length}\t${names.length}\tm\t${rate}\t0\t${frames.length}`,
       "Frame#\tTime\t" + names.map((n) => `${n}\t\t`).join(""),
       "\t\t" + names.map((_, i) => `X${i + 1}\tY${i + 1}\tZ${i + 1}`).join("\t"),
     ];
     const rows = frames.map((frame, i) => {
-      const cells: string[] = [String(i + 1), frame.t.toFixed(6)];
-      for (let halpe = 0; halpe < 26; halpe++) {
-        const pair = HALPE26_TO_MEDIAPIPE.find(([from]) => from === halpe);
-        const mark = pair && frame.landmarks ? frame.landmarks[pair[1]] : undefined;
+      const cells: string[] = [String(i), frame.t.toFixed(6)];
+      for (const name of names) {
+        const key = markerKey(name);
+        const index = MARKER_TO_MEDIAPIPE[key];
+        // Small toes have no MediaPipe slot, so they are written from the big
+        // toe — enough to check that the adapter carries them into footExtras
+        // from wherever the column happens to be.
+        const from =
+          index !== undefined
+            ? index
+            : key === markerKey(SMALL_TOE_MARKERS.left)
+              ? LM.leftFootIndex
+              : key === markerKey(SMALL_TOE_MARKERS.right)
+                ? LM.rightFootIndex
+                : undefined;
+        const mark =
+          from !== undefined && frame.landmarks ? frame.landmarks[from] : undefined;
         if (!mark || mark.visibility === 0) {
           // A gap in a TRC is blank cells, which is the case the parser has to
-          // tell apart from a marker that really sits at the origin.
+          // tell apart from a marker that really sits at the origin. Hip, Neck
+          // and Head take this path too: the app has no equivalent joint.
           cells.push("", "", "");
           continue;
         }
@@ -2042,8 +2073,7 @@ console.log("shoe photos ok", {
   // data rather than remembered.
   for (const flipY of [false, true]) {
     const table = parseTrc(writeTrc(original, flipY));
-    if (table.units !== "px") throw new Error(`TRC units read as ${table.units}`);
-    if (table.markers.length !== 26) {
+    if (table.markers.length !== TRC_MARKERS.length) {
       throw new Error(`TRC marker count read as ${table.markers.length}`);
     }
     if (table.frames.length !== original.length) {
@@ -2073,7 +2103,15 @@ console.log("shoe photos ok", {
   // analysis would believe it.
   const gapped = writeTrc(original, false)
     .split("\n")
-    .map((line, i) => (i === 8 ? [line.split("\t")[0], line.split("\t")[1], ...Array(78).fill("")].join("\t") : line))
+    .map((line, i) =>
+      i === 8
+        ? [
+            line.split("\t")[0],
+            line.split("\t")[1],
+            ...Array(TRC_MARKERS.length * 3).fill(""),
+          ].join("\t")
+        : line,
+    )
     .join("\n");
   const gappedTable = parseTrc(gapped);
   const gappedFrame = gappedTable.frames[8 - 5];
@@ -2089,17 +2127,57 @@ console.log("shoe photos ok", {
     throw new Error("a frame with no markers must adapt to a null pose");
   }
 
-  // Every joint the analysis reads needs a source in HALPE_26, or it silently
-  // arrives at zero visibility. The mouth is the one documented exception —
-  // HALPE_26 has no mouth, and the face box is built from nose, eyes and ears.
-  const mapped = new Set(HALPE26_TO_MEDIAPIPE.map(([, to]) => to));
-  const exempt = new Set<number>([LM.mouthLeft, LM.mouthRight]);
+  // Markers are found by name, so the column order must not matter. Reversing
+  // it has to leave the report untouched; the index-based mapping this
+  // replaced would have produced a pose made of the wrong joints instead.
+  const reversed = parseTrc(writeTrc(original, false, [...TRC_MARKERS].reverse()));
+  const fromReversed = halpe26ToPoseFrames(reversed, {
+    width: W,
+    height: H,
+    verticalAxis: "image-down",
+  });
+  if (digest(analyzeLandings(fromReversed, opts)) !== expected) {
+    throw new Error("marker order changed the report — matching is positional");
+  }
+
+  // The small toes are the reason for the whole exercise, so their arrival is
+  // checked rather than assumed: MediaPipe has no slot for them and they ride
+  // in footExtras, from whatever column the file put them in.
+  const withToes = halpe26ToPoseFrames(parseTrc(writeTrc(original, false)), {
+    width: W,
+    height: H,
+    verticalAxis: "image-down",
+  });
+  const tracked = withToes.find((frame) => frame.landmarks);
+  if (!tracked?.footExtras?.leftSmallToe || !tracked.footExtras.rightSmallToe) {
+    throw new Error("small toes did not reach footExtras");
+  }
+
+  // Every joint the analysis reads needs a source in the file, or it silently
+  // arrives at zero visibility. The exemptions are the face: HALPE_26 has no
+  // mouth at all, and Sports2D does not write the eyes and ears even though
+  // the keypoint set defines them — so no face box can be built from a TRC.
+  // Offline comparison never draws one; a server path that wanted to would
+  // have to get the face from somewhere else.
+  const mapped = new Set(
+    TRC_MARKERS.map((name) => MARKER_TO_MEDIAPIPE[markerKey(name)]).filter(
+      (index): index is number => index !== undefined,
+    ),
+  );
+  const exempt = new Set<number>([
+    LM.mouthLeft,
+    LM.mouthRight,
+    LM.leftEye,
+    LM.rightEye,
+    LM.leftEar,
+    LM.rightEar,
+  ]);
   const unmapped = Object.entries(LM).filter(
     ([, index]) => !mapped.has(index) && !exempt.has(index),
   );
   if (unmapped.length) {
     throw new Error(
-      `no HALPE_26 source for ${unmapped.map(([name]) => name).join(", ")}`,
+      `no TRC marker for ${unmapped.map(([name]) => name).join(", ")}`,
     );
   }
 
@@ -2113,7 +2191,9 @@ console.log("shoe photos ok", {
 
   console.log("sports2d adapter ok", {
     roundTrip: "image-down · world-up 모두 동일",
+    markers: `${TRC_MARKERS.length}개 · 이름으로 매칭 (순서 무관)`,
     axis: "데이터에서 판별",
+    smallToes: "footExtras 도달",
     landings: analyzeLandings(original, opts).landings.length,
     preFiltered: "동작",
   });

@@ -22,6 +22,18 @@
  * interpolated across gaps of up to ten frames. Interpolated frames are
  * therefore indistinguishable from measured ones here, which matters because
  * the quality gate counts tracked frames.
+ *
+ * Two things a real file corrected, both of which would have failed quietly.
+ *
+ * Markers are matched by name, not by position. Sports2D writes them in a
+ * skeleton order — Hip, RHip, RKnee, RAnkle, RBigToe … — which is not the
+ * HALPE_26 numbering, and it writes 22 of the 26: the eyes and ears are not
+ * there. Reading column 24 as the left heel would have produced a pose made of
+ * the wrong joints, with every value plausible.
+ *
+ * The `Units` field cannot be trusted. The pixel file this was built against
+ * declares `m` in its header while holding pixels, so nothing here branches on
+ * it; the caller says what it is by passing the frame size.
  */
 
 import type { PoseFrame } from "@/lib/landing-analysis";
@@ -105,40 +117,53 @@ export function parseTrc(text: string): TrcTable {
 }
 
 /**
- * HALPE_26, the keypoint set behind Sports2D's default `body_with_feet` model,
- * mapped onto the MediaPipe indices this app's analysis reads.
+ * Sports2D's marker names for the `body_with_feet` skeleton, mapped onto the
+ * MediaPipe indices this app's analysis reads.
  *
- * The two that matter are the last pair. MediaPipe has one point at the end of
- * the foot; HALPE_26 has the big toe and the small toe separately, which is
- * what makes a foot long axis possible that does not swing with toe-out. The
- * small toes have no MediaPipe index and so are carried in `footExtras`.
+ * The last pair is the reason for all of this. MediaPipe has one point at the
+ * end of the foot; this skeleton has the big toe and the small toe separately,
+ * which is what allows a foot long axis that does not swing with toe-out. The
+ * small toes have no MediaPipe index and travel in `footExtras`.
+ *
+ * The eyes and ears are absent on purpose, because the file does not have
+ * them: HALPE_26 defines them but Sports2D does not write them to the TRC. So
+ * a face box cannot be built from this data — which costs the offline
+ * comparison nothing, and would matter to a server path that wanted to draw a
+ * preview from returned coordinates.
  */
-export const HALPE26_TO_MEDIAPIPE: ReadonlyArray<readonly [number, number]> = [
-  [0, LM.nose],
-  [1, LM.leftEye],
-  [2, LM.rightEye],
-  [3, LM.leftEar],
-  [4, LM.rightEar],
-  [5, LM.leftShoulder],
-  [6, LM.rightShoulder],
-  [7, 13], // left elbow
-  [8, 14], // right elbow
-  [9, 15], // left wrist
-  [10, 16], // right wrist
-  [11, LM.leftHip],
-  [12, LM.rightHip],
-  [13, LM.leftKnee],
-  [14, LM.rightKnee],
-  [15, LM.leftAnkle],
-  [16, LM.rightAnkle],
-  [24, LM.leftHeel],
-  [25, LM.rightHeel],
-  [20, LM.leftFootIndex],
-  [21, LM.rightFootIndex],
-];
+export const MARKER_TO_MEDIAPIPE: Readonly<Record<string, number>> = {
+  nose: LM.nose,
+  lshoulder: LM.leftShoulder,
+  rshoulder: LM.rightShoulder,
+  lelbow: 13,
+  relbow: 14,
+  lwrist: 15,
+  rwrist: 16,
+  lhip: LM.leftHip,
+  rhip: LM.rightHip,
+  lknee: LM.leftKnee,
+  rknee: LM.rightKnee,
+  lankle: LM.leftAnkle,
+  rankle: LM.rightAnkle,
+  lheel: LM.leftHeel,
+  rheel: LM.rightHeel,
+  lbigtoe: LM.leftFootIndex,
+  rbigtoe: LM.rightFootIndex,
+};
 
-/** HALPE_26 index of the small toes, which MediaPipe has no slot for. */
-export const HALPE26_SMALL_TOE = { left: 22, right: 23 } as const;
+/** Marker names for the small toes, which MediaPipe has no slot for. */
+export const SMALL_TOE_MARKERS = { left: "lsmalltoe", right: "rsmalltoe" } as const;
+
+/**
+ * Marker names are compared loosely: lowercased with anything that is not a
+ * letter or digit removed, so `LHeel`, `L_Heel` and `left heel` all land on the
+ * same key. A different model or a later version renaming a joint should miss
+ * and be caught by the test that requires every joint the analysis reads, not
+ * silently match something else.
+ */
+export function markerKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
 
 /**
  * Which way the vertical axis runs in the file.
@@ -161,8 +186,8 @@ export type VerticalAxis = "image-down" | "world-up";
  * caller has to say.
  */
 export function detectVerticalAxis(table: TrcTable): VerticalAxis | null {
-  const noseAt = table.markers.findIndex((name) => /^nose$/i.test(name));
-  const heelAt = table.markers.findIndex((name) => /heel/i.test(name));
+  const noseAt = table.markers.findIndex((name) => markerKey(name) === "nose");
+  const heelAt = table.markers.findIndex((name) => markerKey(name).endsWith("heel"));
   if (noseAt < 0 || heelAt < 0) return null;
 
   let down = 0;
@@ -221,23 +246,35 @@ export function halpe26ToPoseFrames(
     visibility: 1,
   });
 
+  // Column for each marker we know how to place, resolved once rather than
+  // per frame.
+  const columns: Array<[number, number]> = [];
+  table.markers.forEach((name, column) => {
+    const index = MARKER_TO_MEDIAPIPE[markerKey(name)];
+    if (index !== undefined) columns.push([column, index]);
+  });
+  const smallToeColumn = (side: "left" | "right") =>
+    table.markers.findIndex((name) => markerKey(name) === SMALL_TOE_MARKERS[side]);
+  const leftSmallToeAt = smallToeColumn("left");
+  const rightSmallToeAt = smallToeColumn("right");
+
   return table.frames.map((frame) => {
     const landmarks: Landmark[] = Array.from({ length: 33 }, () => ({ ...missing }));
     let seen = 0;
-    for (const [halpe, mediapipe] of HALPE26_TO_MEDIAPIPE) {
-      const point = frame.points[halpe];
+    for (const [column, mediapipe] of columns) {
+      const point = frame.points[column];
       if (!point) continue;
       landmarks[mediapipe] = toLandmark(point);
       seen += 1;
     }
     if (!seen) return { t: frame.time, landmarks: null };
 
-    const smallToe = (index: number) => {
-      const point = frame.points[index];
+    const smallToe = (column: number) => {
+      const point = column >= 0 ? frame.points[column] : null;
       return point ? toLandmark(point) : undefined;
     };
-    const leftSmallToe = smallToe(HALPE26_SMALL_TOE.left);
-    const rightSmallToe = smallToe(HALPE26_SMALL_TOE.right);
+    const leftSmallToe = smallToe(leftSmallToeAt);
+    const rightSmallToe = smallToe(rightSmallToeAt);
 
     return {
       t: frame.time,
