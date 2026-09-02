@@ -30,7 +30,7 @@ export function InjuryGuidance({ landing }: { landing: Landing }) {
   const guidance = buildLandingGuidance(landing);
 
   return (
-    <Card className="rounded-2xl border-border bg-white">
+    <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-primary" aria-hidden />

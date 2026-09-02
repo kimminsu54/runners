@@ -54,7 +54,7 @@ export default function DownloadsPage() {
         </Link>
       </div>
 
-      <p className="font-mono text-[10px] tracking-[0.18em] text-primary uppercase">
+      <p className="font-mono text-micro tracking-[0.18em] text-primary uppercase">
         Files / A-1 A-2 A-3
       </p>
       <h1 className="display-type mt-2 text-4xl text-foreground">파일 받기</h1>
@@ -72,7 +72,7 @@ export default function DownloadsPage() {
         여섯 파일 한꺼번에 받기
       </a>
 
-      <ul className="mt-8 divide-y divide-border rounded-2xl border border-border bg-white">
+      <ul className="mt-8 divide-y divide-border rounded-card border border-border bg-white">
         {FILES.map((file) => (
           <li
             key={file.name}
@@ -82,7 +82,7 @@ export default function DownloadsPage() {
               <FileText className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
               <div>
                 <p className="font-medium">{file.name}</p>
-                <p className="font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+                <p className="font-mono text-micro tracking-[0.14em] text-muted-foreground uppercase">
                   {file.kind}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">{file.note}</p>

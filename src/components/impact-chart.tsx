@@ -42,10 +42,10 @@ export function ImpactChart({ series, landingTimes, selectedTime, onSelectTime }
       aria-label="시간에 따른 추정 지면반력"
     >
       <line x1={pad.l} y1={y(1)} x2={w - pad.r} y2={y(1)} className="stroke-border" strokeDasharray="4 4" />
-      <text x={4} y={y(1) + 4} className="fill-muted-foreground text-[10px]">
+      <text x={4} y={y(1) + 4} className="fill-muted-foreground text-micro">
         1 BW
       </text>
-      <text x={4} y={y(maxG) + 10} className="fill-muted-foreground text-[10px]">
+      <text x={4} y={y(maxG) + 10} className="fill-muted-foreground text-micro">
         {maxG.toFixed(1)}
       </text>
       <path d={path} fill="none" className="stroke-primary" strokeWidth={2} />
@@ -60,10 +60,10 @@ export function ImpactChart({ series, landingTimes, selectedTime, onSelectTime }
           strokeWidth={selectedTime !== null && Math.abs(selectedTime - t) < 0.04 ? 2.5 : 1}
         />
       ))}
-      <text x={pad.l} y={h - 8} className="fill-muted-foreground text-[10px]">
+      <text x={pad.l} y={h - 8} className="fill-muted-foreground text-micro">
         {formatSeconds(t0)}
       </text>
-      <text x={w - pad.r} y={h - 8} textAnchor="end" className="fill-muted-foreground text-[10px]">
+      <text x={w - pad.r} y={h - 8} textAnchor="end" className="fill-muted-foreground text-micro">
         {formatSeconds(t1)}
       </text>
       {onSelectTime ? (

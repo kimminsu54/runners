@@ -17,7 +17,7 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
 
   if (rec.kind === "general") {
     return (
-      <div className="rounded-2xl border border-dashed border-border bg-neutral-50 px-4 py-4">
+      <div className="rounded-card border border-dashed border-border bg-neutral-50 px-4 py-4">
         <div className="mb-1 flex items-center gap-2">
           <Footprints className="size-4 text-muted-foreground" aria-hidden />
           <h3 className="text-sm font-medium">러닝화 추천</h3>
@@ -40,7 +40,7 @@ export function ShoeRecommendations({ summary }: { summary: SessionSummary }) {
           </div>
           <p className="text-sm text-foreground">{rec.headline}</p>
         </div>
-        <span className="shrink-0 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+        <span className="shrink-0 font-mono text-micro tracking-[0.18em] text-muted-foreground uppercase">
           04 / Shoe match
         </span>
       </div>
@@ -106,8 +106,8 @@ function ShoePickGrid({
               key={`${pick.shoe.brand}-${pick.shoe.model}`}
               className={
                 featured
-                  ? "flex flex-col overflow-hidden rounded-2xl border border-primary/25 bg-white"
-                  : "flex flex-col overflow-hidden rounded-2xl border border-border bg-white"
+                  ? "flex flex-col overflow-hidden rounded-card border border-primary/25 bg-white"
+                  : "flex flex-col overflow-hidden rounded-card border border-border bg-white"
               }
             >
               <div className="relative aspect-[4/3] bg-neutral-50">
@@ -124,7 +124,7 @@ function ShoePickGrid({
                     <Footprints className="size-8" aria-hidden />
                   </div>
                 )}
-                <span className="absolute top-3 left-3 font-mono text-[10px] text-muted-foreground">
+                <span className="absolute top-3 left-3 font-mono text-micro text-muted-foreground">
                   {String(startIndex + index).padStart(2, "0")}
                 </span>
                 <Badge variant="outline" className="absolute top-3 right-3 bg-white/90">

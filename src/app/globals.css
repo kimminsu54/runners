@@ -4,6 +4,37 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/**
+ * The measurements the layout is built from.
+ *
+ * Each one replaces a number somebody picked once and nobody could find again.
+ * Section padding ran py-16, py-14, py-12 and py-10 down a single page, so no
+ * two sections started on the same beat. The small labels were written at 9,
+ * 10, 11 and 15 pixels across sixteen places — four sizes doing one job. Nine
+ * components each set their own card radius, and two had already drifted.
+ *
+ * Naming them is not tidiness. It is that "a little more air between sections"
+ * becomes one edit rather than a search, and that a card added tomorrow is the
+ * same shape as the others without anyone remembering to make it so.
+ */
+@theme {
+  /* Vertical rhythm: inside a section, between sections, and the hero. */
+  --spacing-block: 3.5rem;
+  --spacing-section: 5rem;
+  --spacing-hero: 7rem;
+
+  /* Type. xs and sm stay Tailwind's — two thirds of the app already speaks
+     them. These name the two sizes below xs that were written in pixels. */
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 0.875rem;
+  --text-meta: 0.6875rem;
+  --text-meta--line-height: 1rem;
+
+  /* One radius for every raised surface, cards and the handful of plain
+     elements that sit beside them. */
+  --radius-card: calc(var(--radius) + 0.25rem);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -132,9 +163,13 @@ html {
 
 /* A hairline and a whisper of shadow. The old card lifted off the page with a
    32px drop shadow, which read as depth when the background was a grid and as
-   grime once it was not. */
+   grime once it was not.
+
+   The radius joins them, for the same reason they are here: a card should not
+   have to be told what shape a card is. */
 [data-slot="card"] {
   border: 1px solid var(--border);
+  border-radius: var(--radius-card);
   box-shadow: 0 1px 2px oklch(0.19 0.005 285 / 4%);
 }
 

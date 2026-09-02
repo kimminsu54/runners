@@ -85,7 +85,7 @@ export default function Home() {
             for the headline to sit on the quiet side. */}
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[oklch(0.16_0.1_290/0.88)] via-[oklch(0.16_0.1_290/0.66)] to-[oklch(0.16_0.1_290/0.5)] sm:via-[oklch(0.16_0.1_290/0.28)] sm:to-transparent" />
 
-        <div className="mx-auto w-full max-w-6xl px-4 pt-16 pb-14 sm:px-6 lg:pt-24 lg:pb-20">
+        <div className="mx-auto w-full max-w-6xl px-4 py-section sm:px-6 lg:py-hero">
           <p className="animate-rise inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white/90 backdrop-blur-sm">
             <ShieldCheck className="size-3.5 text-volt" aria-hidden />
             영상은 업로드되지 않고 브라우저 안에서만 처리됩니다
@@ -152,18 +152,22 @@ export default function Home() {
       </section>
 
       <section className="border-b border-border bg-card">
+        {/* Three outputs, stated once. On a phone this was three stacked rows
+            with hairlines between them, which reads as a table with no data —
+            so there it is a spec list, label left and value right on one line,
+            and only the wide layout gets the columns. */}
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <dl className="hairline-grid grid sm:grid-cols-3">
+          <dl className="grid divide-y divide-border sm:hairline-grid sm:grid-cols-3 sm:divide-y-0">
             {READS.map((item) => (
               <div
                 key={item.label}
-                className="group bg-card px-1 py-6 transition-colors sm:px-5 sm:first:pl-0 sm:last:pr-0"
+                className="flex items-baseline justify-between gap-4 bg-card py-3.5 sm:block sm:px-5 sm:py-6 sm:first:pl-0 sm:last:pr-0"
               >
                 <dt className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="size-1.5 rounded-full bg-primary" />
                   {item.label}
                 </dt>
-                <dd className="mt-1.5 text-[15px] font-medium text-foreground">
+                <dd className="text-sm font-medium text-foreground sm:mt-1.5">
                   {item.value}
                 </dd>
               </div>
@@ -174,7 +178,7 @@ export default function Home() {
 
       <main
         id="analyze"
-        className="mx-auto w-full max-w-6xl flex-1 scroll-mt-16 px-4 py-14 sm:px-6"
+        className="mx-auto w-full max-w-6xl flex-1 scroll-mt-16 px-4 py-section sm:px-6"
       >
         <div className="mb-8 max-w-xl">
           <span className="mb-4 block h-1 w-14 rounded-full bg-gradient-to-r from-[oklch(0.4_0.19_290)] to-[oklch(0.72_0.18_45)]" />
@@ -190,7 +194,7 @@ export default function Home() {
 
       <section className="relative isolate overflow-hidden border-t border-border bg-ink text-white">
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(55%_75%_at_88%_0%,oklch(0.68_0.19_45/0.4),transparent_65%),radial-gradient(45%_70%_at_10%_100%,oklch(0.4_0.19_290/0.45),transparent_70%)]" />
-        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
+        <div className="mx-auto w-full max-w-6xl px-4 py-section sm:px-6">
           <h2 className="text-sm font-medium text-volt">어떻게 동작하나요</h2>
           <div className="mt-8 grid gap-10 sm:grid-cols-3">
             {STEPS.map((step, index) => (
@@ -212,7 +216,7 @@ export default function Home() {
       </section>
 
       <footer className="border-t border-border">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-block sm:flex-row sm:items-start sm:justify-between sm:px-6">
           <div>
             <p className="display-type text-xl text-foreground">
               STRIDE<span className="text-primary">/</span>LAB

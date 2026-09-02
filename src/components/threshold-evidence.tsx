@@ -14,7 +14,6 @@ import {
   type ThresholdRecord,
   type ValidationStatus,
 } from "@/lib/thresholds";
-import { cn } from "@/lib/utils";
 import { ScrollText } from "lucide-react";
 
 /**
@@ -60,7 +59,7 @@ export function ThresholdEvidence({ className }: { className?: string }) {
   const statuses = [...new Set(records.map((r) => r.validationStatus))].sort();
 
   return (
-    <Card className={cn("rounded-2xl border-border bg-white", className)}>
+    <Card className={className}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <ScrollText className="size-4 text-muted-foreground" aria-hidden />
@@ -68,7 +67,7 @@ export function ThresholdEvidence({ className }: { className?: string }) {
         </CardTitle>
         <CardDescription>
           이 화면의 판정을 가른 경계값과, 그 경계가 어디에 기대고 있는지입니다.
-          값은 <code className="text-[11px]">shared/thresholds.yaml</code> 한 곳에서만
+          값은 <code className="text-meta">shared/thresholds.yaml</code> 한 곳에서만
           바뀌며, 코드와 어긋나면 테스트가 실패합니다.
         </CardDescription>
       </CardHeader>

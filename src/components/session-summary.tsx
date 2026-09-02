@@ -69,9 +69,9 @@ export function SessionSummaryCard({
   }[result.quality.level];
 
   return (
-    <Card className="rounded-2xl border-border bg-white">
+    <Card>
       <CardHeader>
-        <p className="font-mono text-[9px] tracking-[0.18em] text-primary uppercase">
+        <p className="font-mono text-micro tracking-[0.18em] text-primary uppercase">
           03 / Session report
         </p>
         <div className="flex items-center gap-2">
@@ -136,10 +136,10 @@ export function SessionSummaryCard({
                         : "border-border text-muted-foreground",
                     )}
                   >
-                    <p className="text-[11px] leading-tight font-medium">
+                    <p className="text-meta leading-tight font-medium">
                       {paceLabel[step.band]}
                     </p>
-                    <p className="mt-0.5 font-mono text-[10px]">{step.duty}</p>
+                    <p className="mt-0.5 font-mono text-micro">{step.duty}</p>
                   </div>
                 );
               })}

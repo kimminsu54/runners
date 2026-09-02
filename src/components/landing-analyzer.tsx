@@ -564,7 +564,7 @@ export function LandingAnalyzer() {
   // finished, which made Chrome draw its own — the stray "▼ 세부정보" that sat
   // above the form on a page that had no details to show yet.
   const runnerSetup = (
-  <Card className="rounded-2xl border-border bg-white">
+  <Card>
     <CardHeader className="border-b border-border pb-4">
       <CardTitle className="text-base font-semibold text-foreground">러너 세팅</CardTitle>
       <CardDescription>
@@ -572,28 +572,43 @@ export function LandingAnalyzer() {
       </CardDescription>
     </CardHeader>
     <CardContent className="flex flex-col gap-4">
+      {/* Units sit inside the field, the way the pace row already did it. They
+          used to be in the label here and in the field there, which is two
+          conventions in one form. */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label htmlFor="stature">키 (cm)</Label>
-          <Input
-            id="stature"
-            type="number"
-            min={120}
-            max={220}
-            value={statureCm}
-            onChange={(e) => setStatureCm(Number(e.target.value) || 170)}
-          />
+          <Label htmlFor="stature">키</Label>
+          <div className="relative">
+            <Input
+              id="stature"
+              type="number"
+              min={120}
+              max={220}
+              value={statureCm}
+              onChange={(e) => setStatureCm(Number(e.target.value) || 170)}
+              className="pr-10"
+            />
+            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
+              cm
+            </span>
+          </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="mass">체중 (kg)</Label>
-          <Input
-            id="mass"
-            type="number"
-            min={30}
-            max={160}
-            value={massKg}
-            onChange={(e) => setMassKg(Number(e.target.value) || 70)}
-          />
+          <Label htmlFor="mass">체중</Label>
+          <div className="relative">
+            <Input
+              id="mass"
+              type="number"
+              min={30}
+              max={160}
+              value={massKg}
+              onChange={(e) => setMassKg(Number(e.target.value) || 70)}
+              className="pr-10"
+            />
+            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">
+              kg
+            </span>
+          </div>
         </div>
       </div>
       <div className="space-y-2">
@@ -717,13 +732,17 @@ export function LandingAnalyzer() {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="overflow-hidden rounded-2xl border-border bg-white">
+        <Card>
+          {/* With footage the box is the shape of the footage. Empty, it grows
+              to whatever height the row has instead of holding a 16:9 hole:
+              beside a taller settings card, a fixed aspect ratio left a third
+              of the card blank under the drop target. */}
           <div
             className={cn(
-              "relative aspect-video transition",
+              "relative transition",
               videoUrl || cameraOn || (status === "done" && Boolean(result))
-                ? "bg-neutral-900"
-                : "m-3 rounded-xl border-2 border-dashed border-border bg-secondary/40",
+                ? "aspect-video bg-neutral-900"
+                : "m-3 flex min-h-64 flex-1 rounded-xl border-2 border-dashed border-border bg-secondary/40",
               dragging && "border-primary bg-accent",
             )}
             onDragOver={(e) => {
@@ -789,6 +808,15 @@ export function LandingAnalyzer() {
                 </span>
                 <span className="max-w-xs text-xs leading-5 text-muted-foreground">
                   전신이 나오는 러닝 영상. 옆모습이 무릎 각도를 더 잘 잡습니다.
+                </span>
+                {/* What an uploader is expected to tell you before you go and
+                    find a file: what it takes, and how much of it it reads. */}
+                <span className="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-meta text-muted-foreground">
+                  <span>MP4 · MOV · WebM</span>
+                  <span aria-hidden className="text-border">·</span>
+                  <span>앞 {MAX_SECONDS}초 분석</span>
+                  <span aria-hidden className="text-border">·</span>
+                  <span>업로드 없음</span>
                 </span>
               </label>
             ) : null}
@@ -883,7 +911,7 @@ export function LandingAnalyzer() {
           ) : null}
 
         {status === "done" && result ? (
-          <details className="rounded-2xl border border-border bg-white">
+          <details className="rounded-card border border-border bg-white">
             <summary className="cursor-pointer px-5 py-3 text-sm font-medium">
               러너 세팅 바꾸기
             </summary>
@@ -910,7 +938,7 @@ export function LandingAnalyzer() {
         <AnalysisDetails>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-6">
-            <Card className="rounded-2xl border-border bg-white">
+            <Card>
               <CardHeader>
                 <CardTitle>추정 지면반력</CardTitle>
                 <CardDescription>1 BW는 가만히 서 있을 때의 체중 하중입니다. 세로 선은 착지 순간입니다.</CardDescription>
@@ -989,7 +1017,7 @@ export function LandingAnalyzer() {
 
           <div className="flex flex-col gap-3">
             {result.landings.length === 0 ? (
-              <Card className="rounded-2xl border-border bg-white">
+              <Card>
                 <CardHeader>
                   <CardTitle>결과 없음</CardTitle>
                   <CardDescription>

@@ -250,7 +250,7 @@ export function CompareSessions() {
   if (snapshots.length < 2) {
     return (
       <div className="flex flex-col gap-6">
-        <Card className="rounded-2xl border-dashed border-border bg-white">
+        <Card className="border-dashed">
           <CardHeader>
             <CardTitle>비교하려면 세션이 두 개 필요합니다</CardTitle>
             <CardDescription>
@@ -294,7 +294,7 @@ export function CompareSessions() {
           같은 세션을 양쪽에 골랐습니다. 서로 다른 두 세션을 선택해 주세요.
         </p>
       ) : comparison?.kind === "blocked" ? (
-        <Card className="rounded-2xl border-amber-200 bg-amber-50">
+        <Card className="border-amber-200 bg-amber-50">
           <CardHeader>
             <CardTitle className="text-base text-amber-900">
               품질이 부족해 비교하지 않습니다
@@ -305,7 +305,7 @@ export function CompareSessions() {
           </CardHeader>
         </Card>
       ) : comparison?.kind === "ready" && before && after ? (
-        <Card className="rounded-2xl border-border bg-white">
+        <Card>
           <CardHeader>
             <CardTitle className="display-type text-2xl">변화</CardTitle>
             <CardDescription>
@@ -382,7 +382,7 @@ function SessionPicker({
   onDelete: (id: string) => void;
 }) {
   return (
-    <Card className="rounded-2xl border-border bg-white">
+    <Card>
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>

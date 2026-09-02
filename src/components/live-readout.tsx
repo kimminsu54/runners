@@ -37,9 +37,9 @@ export function LiveReadout({
   const trusted = moment.trusted && result.quality.level !== "poor";
 
   return (
-    <Card className="rounded-2xl border-border bg-white">
+    <Card>
       <CardHeader className="border-b border-border pb-4">
-        <p className="font-mono text-[9px] tracking-[0.18em] text-primary uppercase">
+        <p className="font-mono text-micro tracking-[0.18em] text-primary uppercase">
           02 / Live frame
         </p>
         <div className="flex items-start justify-between gap-3">
@@ -120,7 +120,7 @@ export function LiveReadout({
         </div>
 
         <div>
-          <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+          <div className="mb-1.5 flex items-center justify-between text-meta text-muted-foreground">
             <span>세션 타임라인</span>
             <span className="font-mono tabular-nums">
               {formatLiveClock(moment.t)} / {formatLiveClock(duration)}

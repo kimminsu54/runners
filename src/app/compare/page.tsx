@@ -9,9 +9,9 @@ export const metadata: Metadata = {
 
 export default function ComparePage() {
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 lg:py-16">
+    <div className="mx-auto w-full max-w-5xl px-4 py-section sm:px-6">
       <div className="mb-8 border-b border-border pb-6">
-        <p className="mb-2 font-mono text-[10px] tracking-[0.2em] text-primary uppercase">
+        <p className="mb-2 font-mono text-micro tracking-[0.2em] text-primary uppercase">
           05 / Compare
         </p>
         <h1 className="display-type text-4xl text-foreground sm:text-5xl">

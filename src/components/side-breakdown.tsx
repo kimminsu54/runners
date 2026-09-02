@@ -88,7 +88,7 @@ export function SideBreakdown({ summary }: { summary: SessionSummary }) {
   const { left, right, unassigned } = sides;
 
   return (
-    <Card className="rounded-2xl border-border bg-white">
+    <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
           <Footprints className="size-4 text-primary" aria-hidden />
