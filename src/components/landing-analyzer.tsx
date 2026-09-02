@@ -731,7 +731,7 @@ export function LandingAnalyzer() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <Card>
           {/* With footage the box is the shape of the footage. Empty, it grows
               to whatever height the row has instead of holding a 16:9 hole:
@@ -828,16 +828,19 @@ export function LandingAnalyzer() {
             ) : null}
           </div>
           <CardContent className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="truncate text-sm text-muted-foreground">
-              {exportNote ?? (
-                <>
-                  {fileName ?? (cameraOn ? "카메라 미리보기" : "선택된 영상 없음")}
-                  {status === "done" && result
-                    ? " · 재생하면 오른쪽이 그 순간을 따라갑니다"
-                    : ""}
-                </>
-              )}
-            </p>
+            <div className="min-w-0">
+              <p className="font-mono text-micro tracking-[0.18em] text-muted-foreground uppercase">
+                01 / Source clip
+              </p>
+              {/* The line that used to live here also said "playing it follows
+                  along on the right", which is the sentence the live-frame card
+                  opens with. Once is enough. */}
+              <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                {exportNote ??
+                  fileName ??
+                  (cameraOn ? "카메라 미리보기" : "선택된 영상 없음")}
+              </p>
+            </div>
             <div className="flex flex-wrap gap-2">
               {videoUrl || cameraOn ? (
                 <Button
@@ -1008,11 +1011,6 @@ export function LandingAnalyzer() {
             {selectedLanding && result.quality.level !== "poor" ? (
               <InjuryGuidance landing={selectedLanding} />
             ) : null}
-            {/* Last in the column on purpose: it explains the numbers above it,
-                and it is the same table whatever the clip turned out to be —
-                including a clip that was refused, where the reader most wants
-                to know which boundary refused it. */}
-            <ThresholdEvidence />
           </div>
 
           <div className="flex flex-col gap-3">
@@ -1040,6 +1038,11 @@ export function LandingAnalyzer() {
                 />
               ))
             )}
+            {/* Last in the column on purpose: it explains the numbers above it,
+                and it is the same table whatever the clip turned out to be —
+                including a clip that was refused, where the reader most wants
+                to know which boundary refused it. */}
+            <ThresholdEvidence />
           </div>
         </div>
         </AnalysisDetails>

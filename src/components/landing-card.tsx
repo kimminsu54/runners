@@ -45,12 +45,24 @@ export function LandingCard({
         )}
       >
         <CardHeader className="flex flex-row items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground">착지 {order}</p>
             <CardTitle className="text-base">
               {formatSeconds(landing.tContact)} ·{" "}
               {trusted ? `점수 ${landing.damageScore}` : "측정 참고용"}
             </CardTitle>
+            {/* Rule §UI: a score on screen shows the values that move it. The
+                load score is peakGrfBw + loadingRateBwS + kneeFlexContact, and
+                the rule is why they stay on the collapsed row rather than
+                going behind the fold with everything else — a row that showed
+                23 and hid what made it 23 would be the thing the rule forbids.
+                Impact velocity is not here: it reads as an input but never
+                enters the score. */}
+            <p className="mt-1 truncate font-mono text-xs tabular-nums text-muted-foreground">
+              {trusted
+                ? `${landing.peakGrfBw.toFixed(1)} BW · ${formatLoadingRateBwS(landing.loadingRateBwS)} · 무릎 ${formatKneeFlexDeg(landing.kneeFlexContact)}`
+                : "촬영 품질이 부족해 평가하지 않았습니다"}
+            </p>
           </div>
           {trusted ? (
             <Badge variant="outline" className={cn("border", riskClass[landing.risk])}>
@@ -60,10 +72,11 @@ export function LandingCard({
             <Badge variant="outline">품질 부족</Badge>
           )}
         </CardHeader>
-        {/* Rule §UI: a score on screen shows the values that move it. The load
-            score is peakGrfBw + loadingRateBwS + kneeFlexContact, so all three
-            sit here. Impact velocity was dropped — it reads as an input but
-            never enters the score. */}
+        {/* Nine of these stacked as full cards was a wall you scrolled past
+            rather than read. The rest of the numbers open on the landing you
+            picked — which is a click you were already making, since choosing a
+            landing seeks the video to it. */}
+        {selected ? (
         <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
           <Metric
             label="착지 주법"
@@ -71,22 +84,6 @@ export function LandingCard({
               trusted && landing.footStrike !== "unknown"
                 ? `${footStrikeLabel[landing.footStrike]} · ${formatStrikeAngleDeg(landing.footStrikeAngleDeg, landing.footStrike)}`
                 : "판정 불가"
-            }
-          />
-          <Metric
-            label="추정 최대 반력"
-            value={trusted ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가"}
-          />
-          <Metric
-            label="부하율"
-            value={
-              trusted ? formatLoadingRateBwS(landing.loadingRateBwS) : "측정 불가"
-            }
-          />
-          <Metric
-            label="접지 순간 무릎"
-            value={
-              trusted ? formatKneeFlexDeg(landing.kneeFlexContact) : "측정 불가"
             }
           />
           <Metric
@@ -118,11 +115,14 @@ export function LandingCard({
             }
           />
         </CardContent>
-        <p className="px-4 pb-4 text-sm text-muted-foreground">
-          {trusted
-            ? `${landing.note} ${compareHint(landing.damageScore)}`
-            : "착지 후보는 찾았지만 사람 크기·추적 품질이 부족해 충격을 평가하지 않았습니다."}
-        </p>
+        ) : null}
+        {selected ? (
+          <p className="px-4 pb-4 text-sm text-muted-foreground">
+            {trusted
+              ? `${landing.note} ${compareHint(landing.damageScore)}`
+              : "착지 후보는 찾았지만 사람 크기·추적 품질이 부족해 충격을 평가하지 않았습니다."}
+          </p>
+        ) : null}
       </Card>
     </button>
   );
