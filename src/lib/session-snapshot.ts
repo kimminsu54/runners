@@ -118,7 +118,8 @@ export type ComparableMetric = {
 export const COMPARABLE_METRICS: ComparableMetric[] = [
   {
     key: "meanPeakGrfBw",
-    label: "평균 반력",
+    // The same wording the session report uses for it.
+    label: "착지 충격",
     format: (v) => `${v.toFixed(1)} BW`,
     gentler: "lower",
     noise: 0.1,
@@ -168,8 +169,8 @@ export const COMPARABLE_METRICS: ComparableMetric[] = [
   },
   {
     key: "meanDutyFactor",
-    label: "듀티 팩터",
-    format: (v) => v.toFixed(2),
+    label: "땅에 붙은 비율",
+    format: (v) => `한 걸음의 ${Math.round(v * 100)}%`,
     gentler: null,
     noise: 0.02,
   },
@@ -200,6 +201,26 @@ export type ComparisonBlock =
  * `poor` clip publishes no numbers, so it cannot be half of a comparison
  * either. Refusing here beats rendering a delta against a blank.
  */
+/**
+ * How much of a metric's single-measurement noise survives in a session mean.
+ *
+ * The noise floors below are written per measurement — one frame of timing, a
+ * tenth of a bodyweight — but what is being compared is the mean of every
+ * landing in a clip, and a mean of nine is steadier than one landing by about
+ * three. Judging a nine-landing mean with a single-landing floor is what made
+ * a 150 ms → 120 ms change in flight time report as 변화 없음.
+ *
+ * Capped rather than open-ended: past this many landings the samples stop
+ * being independent — same runner, same clip, same surface — and the standard
+ * error of the mean stops being the right model.
+ */
+const NOISE_SAMPLE_CAP = 9;
+
+function resolvableChange(base: number, samples: number): number {
+  const effective = Math.max(1, Math.min(samples, NOISE_SAMPLE_CAP));
+  return base / Math.sqrt(effective);
+}
+
 export function compareSnapshots(
   before: SessionSnapshot,
   after: SessionSnapshot,
@@ -215,6 +236,7 @@ export function compareSnapshots(
     };
   }
 
+  const samples = Math.min(before.landingCount, after.landingCount);
   const changes = COMPARABLE_METRICS.map<MetricChange>((metric) => {
     const a = before[metric.key];
     const b = after[metric.key];
@@ -223,7 +245,9 @@ export function compareSnapshots(
     }
     const diff = b - a;
     let direction: MetricChange["direction"];
-    if (Math.abs(diff) < metric.noise) direction = "flat";
+    if (Math.abs(diff) < resolvableChange(metric.noise, samples)) {
+      direction = "flat";
+    }
     else if (metric.gentler === null) direction = "descriptive";
     else if (metric.gentler === "lower") direction = diff < 0 ? "softer" : "firmer";
     else direction = diff > 0 ? "softer" : "firmer";

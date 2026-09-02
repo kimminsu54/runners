@@ -1886,3 +1886,91 @@ console.log("shoe photos ok", {
     walk: Math.round(walk),
   });
 }
+
+// Session comparison. The card puts two rounded numbers side by side and a
+// verdict underneath, so the two have to be reachable from the same
+// measurement — a row reading 약 150 ms → 약 120 ms above the words 변화 없음
+// is the report contradicting itself in the space of one card.
+{
+  const base = {
+    version: 2,
+    id: "before",
+    savedAt: 0,
+    label: "이전",
+    quality: "good" as const,
+    durationS: 3.2,
+    landingCount: 9,
+    cadenceSpm: 176,
+    pace: "easy" as const,
+    dominantStrike: "midfoot" as const,
+    strikePercents: { rearfoot: 0, midfoot: 100, forefoot: 0 },
+    meanDutyFactor: 0.38,
+    meanContactMs: 270,
+    meanFlightMs: 148.6,
+    meanPeakGrfBw: 2.62,
+    meanLoadingRateBwS: 21,
+    meanKneeFlexContact: 20,
+    meanScore: 26.4,
+    asymmetryPct: 0,
+  };
+  const direction = (over: Partial<typeof base>, key: string) => {
+    const cmp = compareSnapshots(base, { ...base, ...over, id: "after" });
+    if (cmp.kind !== "ready") throw new Error("two good sessions must compare");
+    const row = cmp.changes.find((c) => c.metric.key === key);
+    if (!row) throw new Error(`no comparison row for ${key}`);
+    return row;
+  };
+
+  // The reported case: a 15 ms shift in the mean of nine landings. It was
+  // measured against one frame of single-landing noise and came back flat.
+  const flight = direction({ meanFlightMs: 133.2 }, "meanFlightMs");
+  if (flight.direction === "flat") {
+    throw new Error(
+      `a ${Math.abs(flight.diff).toFixed(0)} ms shift across nine landings still reads flat`,
+    );
+  }
+  // Whatever the verdict, the two rounded numbers must not disagree with it.
+  const shown = (row: typeof flight) => ({
+    before: row.metric.format(row.before),
+    after: row.metric.format(row.after),
+  });
+  const flightShown = shown(flight);
+  if (flightShown.before === flightShown.after) {
+    throw new Error("a reported change shows the same number twice");
+  }
+
+  // Two and a half milliseconds is not a change, and there both numbers round
+  // to the same thing so the card has nothing to contradict.
+  const steady = direction({ meanFlightMs: 146 }, "meanFlightMs");
+  if (steady.direction !== "flat") {
+    throw new Error(`2.6 ms reads as ${steady.direction}`);
+  }
+
+  // Fewer landings, same shift: a mean of three is not a mean of nine, and the
+  // verdict has to be allowed to say so.
+  const thin = compareSnapshots(
+    { ...base, landingCount: 3 },
+    { ...base, id: "after", landingCount: 3, meanFlightMs: 133.2 },
+  );
+  if (thin.kind !== "ready") throw new Error("thin sessions must still compare");
+  const thinFlight = thin.changes.find((c) => c.metric.key === "meanFlightMs");
+  if (thinFlight?.direction !== "flat") {
+    throw new Error(
+      `the same shift over three landings reads ${thinFlight?.direction}, not flat`,
+    );
+  }
+
+  // A tenth of a bodyweight across nine landings is a real difference, and the
+  // card was showing 2.6 → 2.5 while calling it unchanged.
+  const force = direction({ meanPeakGrfBw: 2.54 }, "meanPeakGrfBw");
+  if (force.direction === "flat") {
+    throw new Error("0.08 BW across nine landings still reads flat");
+  }
+
+  console.log("session comparison ok", {
+    flight: `${flightShown.before} → ${flightShown.after} · ${flight.direction}`,
+    steady: steady.direction,
+    thin: thinFlight?.direction,
+    force: force.direction,
+  });
+}

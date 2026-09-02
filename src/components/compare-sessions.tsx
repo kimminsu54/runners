@@ -309,8 +309,9 @@ export function CompareSessions() {
           <CardHeader>
             <CardTitle className="display-type text-2xl">변화</CardTitle>
             <CardDescription>
-              {before.label} → {after.label}. 한 프레임(30 ms)보다 작은 차이는 변화로
-              보지 않습니다.
+              {before.label} → {after.label}. 두 세션 모두 여러 착지의 평균이라,
+              착지를 많이 모은 비교일수록 작은 차이도 변화로 읽습니다. 구분되지
+              않는 항목은 숫자를 하나만 보여 줍니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -328,15 +329,29 @@ export function CompareSessions() {
                     <p className="text-base font-semibold">비교 불가</p>
                   ) : (
                     <>
-                      <p className="flex items-center gap-1.5 text-sm tabular-nums">
-                        <span className="text-muted-foreground">
-                          {change.metric.format(change.before)}
-                        </span>
-                        <ArrowRight className="size-3 text-muted-foreground" aria-hidden />
-                        <span className="text-base font-semibold">
+                      {/* Displayed values are rounded — timings to 30 ms, force
+                          to a tenth — so two readings the analysis cannot tell
+                          apart can still land in different buckets and print as
+                          150 → 120 under the words 변화 없음. When there is no
+                          change to report, report one number. */}
+                      {change.direction === "flat" ? (
+                        <p className="text-base font-semibold tabular-nums">
                           {change.metric.format(change.after)}
-                        </span>
-                      </p>
+                        </p>
+                      ) : (
+                        <p className="flex items-center gap-1.5 text-sm tabular-nums">
+                          <span className="text-muted-foreground">
+                            {change.metric.format(change.before)}
+                          </span>
+                          <ArrowRight
+                            className="size-3 text-muted-foreground"
+                            aria-hidden
+                          />
+                          <span className="text-base font-semibold">
+                            {change.metric.format(change.after)}
+                          </span>
+                        </p>
+                      )}
                       <p
                         className={cn(
                           "mt-1 flex items-center gap-1 text-xs",
