@@ -731,14 +731,12 @@ export function analyzeLandings(
   const rightFootVel = movingAverage(derivative(rightFoot, t), 3);
   // Absolute foot speed tells stance from swing even while the hip rises and
   // falls, which the hip-relative height alone cannot do.
-  const leftFootSpeed = movingAverage(
-    derivative(smoothPath(fillShortGaps(leftFootAbsRaw, 2), 3), t),
-    3,
-  ).map(Math.abs);
-  const rightFootSpeed = movingAverage(
-    derivative(smoothPath(fillShortGaps(rightFootAbsRaw, 2), 3), t),
-    3,
-  ).map(Math.abs);
+  // Absolute foot speed tells stance from swing even while the hip rises and
+  // falls, which the hip-relative height alone cannot do.
+  const leftFootAbs = smoothPath(fillShortGaps(leftFootAbsRaw, 2), 3);
+  const rightFootAbs = smoothPath(fillShortGaps(rightFootAbsRaw, 2), 3);
+  const leftFootSpeed = movingAverage(derivative(leftFootAbs, t), 3).map(Math.abs);
+  const rightFootSpeed = movingAverage(derivative(rightFootAbs, t), 3).map(Math.abs);
   // Same treatment as the other per-foot signals: bridge single-frame dropouts,
   // then smooth, so one occluded ankle cannot move a contact by centimetres.
   const leftFootAhead = smoothPath(fillShortGaps(leftAheadRaw, 2), 3);
