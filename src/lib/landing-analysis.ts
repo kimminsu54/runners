@@ -228,9 +228,9 @@ export type AnalyzeOptions = {
    */
   preFiltered?: boolean;
   /**
-   * Where to read the foot's inclination for each contact. Defaults to the
-   * window this analysis has always used; see StrikeAngleSampling for why the
-   * other one exists and what decides between them.
+   * Where to read the foot's inclination for each contact. See
+   * StrikeAngleSampling for what the default is, what the alternatives are,
+   * and what measurement decided between them.
    */
   strikeAngleSampling?: StrikeAngleSampling;
 };
@@ -1324,7 +1324,7 @@ function detectLandings(
   massKg: number,
   statureM: number,
   view: CameraView = "side",
-  strikeAngleSampling: StrikeAngleSampling = "around",
+  strikeAngleSampling: StrikeAngleSampling = "before",
 ): Landing[] {
   if (series.length < 8) return [];
   const acc = series.map((s) => s.acc);
@@ -1537,9 +1537,9 @@ function dedupe(
 /**
  * Where in time to read the foot's inclination for a contact.
  *
- * `around` reads a frame either side of the detected contact, which is what
- * this analysis has always done. `before` reads the two samples up to and
- * including it, and never the one after.
+ * `before` is the default, and reads the two samples up to and including the
+ * detected contact, never the one after. `around` reads a frame either side of
+ * it, which is what this analysis did until the trajectory below was measured.
  *
  * The difference is not a matter of taste at 30 fps, which is the frame rate
  * ordinary phone video gives and therefore the rate this has to work at. A
@@ -1566,11 +1566,29 @@ function dedupe(
  * larger and comes in bursts. It is kept because a rejected option with its
  * measurement attached is worth more than a deleted one.
  *
- * Left as options rather than simply changed, because the detected contact
- * index can itself lead or trail the true first contact by a sample, and which
- * window wins is a question for measurement — tools/sports2d/strike-bias.ts on
- * a known answer, tools/sports2d/framerate.ts on real footage — and not for an
- * argument.
+ * What settled it was measuring the angle through the frames around contact on
+ * real footage, with both pipelines, which is what
+ * tools/sports2d/angle-window.ts prints. The two agree closely on the shape and
+ * it decides both questions at once. One frame after touchdown the foot has
+ * already rotated about seven degrees, so `around` gives away a measurable
+ * amount by including it — that is `before`'s premise, confirmed. Three frames
+ * before touchdown the angle is ten to thirteen degrees from its contact value,
+ * so the foot is not set and holding: that is the premise `before-wide` and
+ * `peak` rest on, refuted. Their better showing against the synthetic runner
+ * was the fixture agreeing with the assumption it was built on, and on real
+ * clips their absolute readings collapse — thirty of thirty-three contacts
+ * called forefoot, a mean of fifty-four degrees.
+ *
+ * `before` improves on every measure available: 22 of 32 verdicts against 12
+ * on a known answer, and strike agreement between the two pipelines rising
+ * from 13 to 18 of 28 on one real clip and from 0 to 5 of 12 on another. It
+ * does not remove the 30 fps bias, only reduce it; a −10° rearfoot contact is
+ * still read as midfoot. What remains is not a wider window but the contact
+ * instant itself, which falls between frames — the trajectory moves several
+ * degrees per frame, so there is something to interpolate to.
+ *
+ * The rejected options stay, because a rejected approach with its measurement
+ * attached is worth more than a deletion.
  */
 export type StrikeAngleSampling = "around" | "before" | "before-wide" | "peak";
 
@@ -1593,7 +1611,7 @@ function strikeAngleAt(
   series: SeriesPoint[],
   index: number,
   side: FootSide,
-  sampling: StrikeAngleSampling = "around",
+  sampling: StrikeAngleSampling = "before",
   dt = 1 / 30,
 ): number {
   let resolved = side;

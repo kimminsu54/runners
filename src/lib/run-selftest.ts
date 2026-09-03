@@ -2627,10 +2627,27 @@ console.log("shoe photos ok", {
     );
   }
 
+  // The default itself, so it cannot drift back without this failing. Pinned
+  // by behaviour rather than by reading the constant: what matters is which
+  // window an ordinary call gets.
+  const byDefault = read(-18, 30, undefined as unknown as StrikeAngleSampling);
+  const asBefore = read(-18, 30, "before");
+  const asAround = read(-18, 30, "around");
+  if (Math.abs(byDefault.mean - asBefore.mean) > 0.01) {
+    throw new Error(
+      `the default window reads ${byDefault.mean.toFixed(1)}° where 'before' reads` +
+        ` ${asBefore.mean.toFixed(1)}° — the default is no longer 'before'`,
+    );
+  }
+  if (Math.abs(byDefault.mean - asAround.mean) < 1) {
+    throw new Error("the default is indistinguishable from 'around'");
+  }
+
   console.log("strike sampling ok", {
     truth: `240fps ${truth.mean.toFixed(1)}°`,
     around: `30fps -10° → ${around10.mean.toFixed(1)}° · 정답 0`,
     peak: `30fps 전 구간 정답 · 평평한 발 ${flat.mean.toFixed(1)}°`,
+    default: `before (${byDefault.mean.toFixed(1)}°) · around 이 아님 (${asAround.mean.toFixed(1)}°)`,
     grid: `표본창 차이 30fps ${coarse.toFixed(1)}° · 240fps ${fine.toFixed(1)}°`,
   });
 }
