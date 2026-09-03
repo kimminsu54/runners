@@ -84,13 +84,13 @@ function report(target: string): void {
     };
   });
 
-  // The same clip with the angle read before contact instead of around it.
-  // Both at full rate: this asks whether the sampling window is costing us
-  // anything, which is a separate question from what the grid costs.
-  const before = analyzeLandings(run.frames, {
-    ...options,
-    strikeAngleSampling: "before" as const,
-  });
+  // The same clip with the angle read differently. Both at full rate: this asks
+  // whether the sampling window is costing us anything, which is a separate
+  // question from what the grid costs.
+  const alternatives = (["before", "before-wide", "peak"] as const).map((sampling) => ({
+    sampling,
+    result: analyzeLandings(run.frames, { ...options, strikeAngleSampling: sampling }),
+  }));
 
   console.log(`\n=== ${target} ===`);
   console.log(`원본 ${baseRate} fps · ${run.frames.length}프레임 · ${run.width}x${run.height}`);
@@ -108,9 +108,9 @@ function report(target: string): void {
   // Reading the angle before contact rather than around it. A frame after
   // touchdown has already lost part of the rotation it is meant to measure, so
   // if that is costing us the verdict this is where it shows.
-  {
+  for (const { sampling, result } of alternatives) {
     const base = passes[0].result.landings;
-    const { paired } = pairLandings(base, before.landings);
+    const { paired } = pairLandings(base, result.landings);
     const flipped = paired.filter((pair) => !pair.sameStrike);
     const shift = mean(
       paired.map(
@@ -118,10 +118,10 @@ function report(target: string): void {
       ),
     );
     console.log(
-      `  각도 표본 around → before: 짝 ${paired.length}쌍 · 주법 바뀜 ${flipped.length} · ` +
-        `각도 평균 변화 ${show(shift, 1, "°")} · ${strikeMix(before.landings)}`,
+      `  각도 표본 around → ${sampling}: 짝 ${paired.length}쌍 · 주법 바뀜 ${flipped.length} · ` +
+        `각도 평균 변화 ${show(shift, 1, "°")} · ${strikeMix(result.landings)}`,
     );
-    for (const pair of flipped.slice(0, 6)) {
+    for (const pair of flipped.slice(0, 4)) {
       console.log(
         `      ${pair.browser.tContact.toFixed(2)}s  ` +
           `${footStrikeLabel[pair.browser.footStrike]} ${show(pair.browser.footStrikeAngleDeg, 1, "°")}` +

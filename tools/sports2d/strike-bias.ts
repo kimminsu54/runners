@@ -46,7 +46,7 @@ const STRIKES = [
 ];
 
 const RATES = [240, 60, 30];
-const SAMPLINGS: StrikeAngleSampling[] = ["around", "before", "peak"];
+const SAMPLINGS: StrikeAngleSampling[] = ["around", "before", "before-wide", "peak"];
 
 /**
  * The conditions worth asking under.
@@ -141,7 +141,7 @@ function frameRateTable(): void {
 
 function stressTable(): void {
   console.log("== 30fps, 조건별 오차 — peak 가 잡음에 얼마나 노출되는지 ==\n");
-  const header = SAMPLINGS.map((s) => s.padStart(8)).join("  ");
+  const header = SAMPLINGS.map((s) => s.padStart(12)).join("  ");
   for (const strike of STRIKES) {
     console.log(`── ${strike.name} ─────────────────────────────`);
     console.log(`  ${"조건".padEnd(16)} ${header}`);
@@ -152,7 +152,7 @@ function stressTable(): void {
         const shown = Number.isFinite(error)
           ? `${error > 0 ? "+" : ""}${error.toFixed(1)}°`
           : "없음";
-        return shown.padStart(8);
+        return shown.padStart(12);
       });
       console.log(`  ${condition.name.padEnd(16)} ${cells.join("  ")}`);
     }

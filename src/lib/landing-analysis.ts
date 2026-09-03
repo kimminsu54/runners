@@ -1435,23 +1435,32 @@ function dedupe(
  * the foot is set during late swing and its orientation barely changes over
  * the last frame of flight.
  *
- * `peak` goes further and takes the largest inclination over the few samples
- * up to contact. Its justification is the same physics from the other end: the
- * foot is set during late swing and holds that orientation until it lands, so
- * the biggest angle in that window is the landing angle, while everything
- * after touchdown is smaller. Its risk is the mirror image — landmark noise
- * only ever inflates a maximum, so a jittery heel or toe reads as a more
- * extreme strike than it was.
+ * `before-wide` is `before` over a longer reach — the median of everything in
+ * the 50 ms before contact — which buys more of the pre-contact signal without
+ * changing how the samples are combined.
+ *
+ * `peak` takes the largest inclination in that same window instead of the
+ * median. Its justification is the same physics from the other end: the foot
+ * is set during late swing and holds that orientation until it lands, so the
+ * biggest angle in the window should be the landing angle. Its risk is the
+ * mirror image, and on real footage the risk won. Landmark noise can only ever
+ * inflate a maximum, and on a side-on clip `peak` moved the mean angle by 24°
+ * and pushed eight of twenty-three contacts past the plausibility limit
+ * entirely — readings of fifty degrees for a foot that cannot land past forty.
+ * Synthetic jitter of a few pixels never reproduced that; real pose noise is
+ * larger and comes in bursts. It is kept because a rejected option with its
+ * measurement attached is worth more than a deleted one.
  *
  * Left as options rather than simply changed, because the detected contact
  * index can itself lead or trail the true first contact by a sample, and which
- * window wins is a question for measurement (tools/sports2d/strike-bias.ts)
- * and not for an argument.
+ * window wins is a question for measurement — tools/sports2d/strike-bias.ts on
+ * a known answer, tools/sports2d/framerate.ts on real footage — and not for an
+ * argument.
  */
-export type StrikeAngleSampling = "around" | "before" | "peak";
+export type StrikeAngleSampling = "around" | "before" | "before-wide" | "peak";
 
 /**
- * How far back `peak` looks, in seconds.
+ * How far back the wide windows look, in seconds.
  *
  * Seconds and not frames. A fixed number of samples means a different physical
  * window at every frame rate — three frames is 100 ms at 30 fps and 12 ms at
@@ -1476,10 +1485,10 @@ function strikeAngleAt(
   if (resolved === "unknown") resolved = inferFootSide(series[index]);
   if (resolved === "unknown") return Number.NaN;
 
-  // At least one sample back whatever the rate, or at 10 fps the window would
-  // be the contact frame alone and `peak` would collapse into reading it.
-  const lookback =
-    sampling === "peak" ? Math.max(1, Math.round(PEAK_LOOKBACK_S / dt)) : 1;
+  // At least one sample back whatever the rate, or at 10 fps a wide window
+  // would be the contact frame alone and collapse into reading it.
+  const wide = sampling === "peak" || sampling === "before-wide";
+  const lookback = wide ? Math.max(1, Math.round(PEAK_LOOKBACK_S / dt)) : 1;
   const first = Math.max(0, index - lookback);
   const last = Math.min(series.length - 1, sampling === "around" ? index + 1 : index);
 
