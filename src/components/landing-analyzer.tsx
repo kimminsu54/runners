@@ -38,6 +38,7 @@ import {
   syntheticFrontRunFrames,
   syntheticRunningFrames,
 } from "@/lib/synthetic-jump";
+import { importTrc } from "@/lib/trc-import";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, ImageDown, UploadCloud } from "lucide-react";
 import {
@@ -70,6 +71,19 @@ const MAX_SECONDS = 12;
 const FRAME_BUDGET = 360;
 const MIN_FPS = 24;
 const MAX_FPS = 60;
+
+/**
+ * Whether to offer importing a Sports2D result.
+ *
+ * Sports2D cannot run in a browser — it is Python driving native onnxruntime —
+ * so this is not a way to analyse with it here. It reads a run Sports2D
+ * already did, so its numbers can be read in this report next to the
+ * browser's own pass over the same clip. That is a measurement instrument for
+ * comparing the two pipelines, not a feature for someone checking their form,
+ * and it stays out of the shipped interface for the same reason the reference
+ * tool lives in tools/ rather than src/.
+ */
+const OFFER_TRC_IMPORT = process.env.NODE_ENV === "development";
 
 export function LandingAnalyzer() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -149,6 +163,8 @@ export function LandingAnalyzer() {
     () => null,
   );
   const [demoSeeded, setDemoSeeded] = useState(false);
+  /** What an imported Sports2D file was, so the report says where it came from. */
+  const [trcNote, setTrcNote] = useState<string | null>(null);
   if (demoRequested && !demoSeeded) {
     const frames =
       demoRequested === "front"
@@ -210,6 +226,7 @@ export function LandingAnalyzer() {
   }, [needsPreviewFace]);
 
   const attachFile = useCallback((file: File) => {
+    setTrcNote(null);
     setPoseFrames([]);
     setResult(null);
     setError(null);
@@ -253,6 +270,7 @@ export function LandingAnalyzer() {
       streamRef.current = stream;
       setCameraOn(true);
       setResult(null);
+      setTrcNote(null);
       setPoseFrames([]);
       setDemoPlaying(false);
       if (videoRef.current) {
@@ -289,6 +307,84 @@ export function LandingAnalyzer() {
     recorderRef.current = rec;
     rec.start();
     setRecording(true);
+  };
+
+  /**
+   * Fill the report from a Sports2D run instead of from this browser's pass.
+   *
+   * The files are read here and nowhere else — the same promise the hero makes
+   * about video holds for these. What arrives is the same PoseFrame[] the
+   * MediaPipe loop produces, so every card below renders unchanged; that is
+   * the point, because a comparison is only worth anything if the analysis on
+   * both sides is literally the same code.
+   */
+  const importSports2d = async (list: FileList | null) => {
+    if (!list?.length) return;
+    setError(null);
+    setTrcNote(null);
+    const named = await Promise.all(
+      Array.from(list).map(async (file) => ({
+        name: file.name,
+        text: await file.text(),
+      })),
+    );
+    const parsed = importTrc(named);
+    if (!parsed.ok) {
+      setError(parsed.reason);
+      setStatus("error");
+      return;
+    }
+
+    const {
+      frames,
+      width,
+      height,
+      rate,
+      markerCount,
+      trackedFrames,
+      verticalAxis,
+      sourceName,
+    } = parsed.value;
+    stopCamera();
+    setVideoUrl(null);
+    setDemoPlaying(false);
+    setOverlay(null);
+    setPoseFrames(frames);
+
+    // preFiltered because Sports2D already ran Hampel and a 6 Hz Butterworth
+    // before writing; smoothing again would widen the effective window and we
+    // would be measuring our own filter and calling it a pose difference.
+    //
+    // slowMotionFactor 1 rather than the auto detector, because TRC timestamps
+    // are already real time. The detector reads frame spacing to decide
+    // whether a clip was shot in slow motion, and here that spacing is the
+    // sample rate of the reference tool, which means nothing about the runner.
+    const analysis = analyzeLandings(frames, {
+      statureM: statureCm / 100,
+      massKg,
+      width,
+      height,
+      slowMotionFactor: 1,
+      preFiltered: true,
+      reportedPaceMinPerKm:
+        Number(paceMinutes) > 0
+          ? Number(paceMinutes) +
+            Math.min(59, Math.max(0, Number(paceSeconds) || 0)) / 60
+          : undefined,
+    });
+
+    setResult(analysis);
+    setSelected(0);
+    setDetectedSlowMotion(1);
+    setSuggestedSlowMotion(null);
+    setFileName(sourceName);
+    setTrcNote(
+      `Sports2D · ${width}×${height} · ${rate} fps · 마커 ${markerCount}개 · ` +
+        `추적 ${trackedFrames}/${frames.length} · y축 ${verticalAxis} · 내부 평활 반영`,
+    );
+    setPlayheadT(analysis.landings[0]?.tContact ?? 0);
+    setStatus("done");
+    setProgress(100);
   };
 
   const analyze = async () => {
@@ -840,6 +936,13 @@ export function LandingAnalyzer() {
                   fileName ??
                   (cameraOn ? "카메라 미리보기" : "선택된 영상 없음")}
               </p>
+              {/* A report built from a TRC is not a report of this browser's
+                  measurement, and nothing else on screen would say so. */}
+              {trcNote ? (
+                <p className="mt-1 font-mono text-meta leading-4 break-words text-muted-foreground">
+                  {trcNote}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
               {videoUrl || cameraOn ? (
@@ -879,6 +982,24 @@ export function LandingAnalyzer() {
                   }}
                 />
               </label>
+              {OFFER_TRC_IMPORT && !cameraOn ? (
+                <label
+                  className={buttonVariants({ variant: "ghost", size: "sm" })}
+                  title="Sports2D가 만든 픽셀 TRC와 _calib.toml 을 함께 고르세요"
+                >
+                  TRC 불러오기
+                  <input
+                    type="file"
+                    multiple
+                    accept=".trc,.toml"
+                    className="sr-only"
+                    onChange={(e) => {
+                      void importSports2d(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              ) : null}
               {cameraOn ? (
                 <>
                   <Button size="sm" variant={recording ? "destructive" : "default"} onClick={toggleRecord}>

@@ -85,6 +85,7 @@ import {
   markerKey,
   parseTrc,
 } from "./sports2d";
+import { importTrc } from "./trc-import";
 import {
   blurPlan,
   FACE_COVER_LABEL,
@@ -2188,6 +2189,83 @@ console.log("shoe photos ok", {
   if (digest(smoothed) === digest(asGiven)) {
     throw new Error("preFiltered changed nothing — the flag is not wired");
   }
+
+  // Bringing a Sports2D result into the browser. The refusals are the point:
+  // every one of them exists because the alternative is a plausible wrong
+  // answer rather than a visible failure.
+  const CALIB = 'size = [ 720, 1280]\nmatrix = [ [ 1.0, 0.0, 360.0] ]\n';
+  const named = (name: string, text: string) => ({ name, text });
+  const trcText = writeTrc(original, false);
+  const good = importTrc([
+    named("clip_Sports2D_px_person00.trc", trcText),
+    named("clip_Sports2D_calib.toml", CALIB),
+  ]);
+  if (!good.ok) throw new Error(`a complete pair was refused: ${good.reason}`);
+  if (good.value.width !== 720 || good.value.height !== 1280) {
+    throw new Error(
+      `frame size read as ${good.value.width}x${good.value.height}, calib says 720x1280`,
+    );
+  }
+  if (good.value.verticalAxis !== "image-down") {
+    throw new Error(`axis read as ${good.value.verticalAxis}`);
+  }
+
+  // No calibration file means no frame size, and a guessed one tilts every
+  // foot angle. It has to refuse rather than pick the video's usual shape.
+  const noCalib = importTrc([named("clip_Sports2D_px_person00.trc", trcText)]);
+  if (noCalib.ok) throw new Error("a TRC with no calib.toml was accepted");
+
+  // The metre TRC sits in the same folder and is the easy file to grab. Taking
+  // it would silently swap Sports2D's scale in for ours, which is a change we
+  // mean to measure separately.
+  const metre = importTrc([
+    named("clip_Sports2D_m_person00.trc", trcText),
+    named("clip_Sports2D_calib.toml", CALIB),
+  ]);
+  if (metre.ok) throw new Error("the metre TRC was accepted as the pixel one");
+  if (!metre.reason.includes("_px_")) {
+    throw new Error(`the metre refusal does not say what to pick: ${metre.reason}`);
+  }
+
+  // A file with no one tracked in it is a refusal, not an empty report.
+  const emptyRows = trcText
+    .split("\n")
+    .map((line, i) =>
+      i >= 5 && line.trim()
+        ? [
+            line.split("\t")[0],
+            line.split("\t")[1],
+            ...Array(TRC_MARKERS.length * 3).fill(""),
+          ].join("\t")
+        : line,
+    )
+    .join("\n");
+  const nobody = importTrc([
+    named("clip_Sports2D_px_person00.trc", emptyRows),
+    named("clip_Sports2D_calib.toml", CALIB),
+  ]);
+  if (nobody.ok) throw new Error("a TRC with no tracked frames was accepted");
+
+  // What the screen shows must come from the same import that produced the
+  // frames, so the analysis and the provenance line cannot disagree.
+  const imported = analyzeLandings(good.value.frames, {
+    statureM: 1.7,
+    massKg: 70,
+    width: good.value.width,
+    height: good.value.height,
+    slowMotionFactor: 1,
+    preFiltered: true,
+  });
+  if (!imported.landings.length) {
+    throw new Error("an imported TRC produced no landings");
+  }
+
+  console.log("trc import ok", {
+    size: `${good.value.width}x${good.value.height}`,
+    tracked: `${good.value.trackedFrames}/${good.value.frames.length}`,
+    landings: imported.landings.length,
+    refusals: "calib 없음 · 미터 TRC · 추적 0",
+  });
 
   console.log("sports2d adapter ok", {
     roundTrip: "image-down · world-up 모두 동일",
