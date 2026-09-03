@@ -1,8 +1,24 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { footStrikeLabel } from "@/lib/landing-analysis";
 import { comparePipelines, type PipelinePass } from "@/lib/pipeline-compare";
 import { cn } from "@/lib/utils";
+
+/**
+ * A strike and the angle behind it, in the words the rest of the app uses.
+ *
+ * The angle is missing whenever the estimator could not resolve the foot, and
+ * printing `NaN°` there says the code broke rather than that the measurement
+ * did not happen — which is the difference between a bug and a finding.
+ */
+const strikeCell = (strike: string, deg: number) => {
+  const label = footStrikeLabel[strike as keyof typeof footStrikeLabel] ?? strike;
+  return Number.isFinite(deg) ? `${label} ${deg.toFixed(1)}°` : `${label} · 각도 없음`;
+};
+
+const degreeGap = (a: number, b: number) =>
+  Number.isFinite(a) && Number.isFinite(b) ? `${(b - a).toFixed(1)}°` : "—";
 
 /**
  * Two estimators over one clip, side by side.
@@ -125,14 +141,16 @@ export function PipelineCompare({
                         Δ{Math.round(pair.apart * 1000)}ms
                       </td>
                       <td className="py-1 pr-3">
-                        {pair.browser.footStrike} {pair.browser.footStrikeAngleDeg.toFixed(1)}°
+                        {strikeCell(pair.browser.footStrike, pair.browser.footStrikeAngleDeg)}
                       </td>
                       <td className="py-1 pr-3">
-                        {pair.sports2d.footStrike}{" "}
-                        {pair.sports2d.footStrikeAngleDeg.toFixed(1)}°
+                        {strikeCell(pair.sports2d.footStrike, pair.sports2d.footStrikeAngleDeg)}
                       </td>
                       <td className="py-1 tabular-nums">
-                        {(pair.sports2d.footStrikeAngleDeg - pair.browser.footStrikeAngleDeg).toFixed(1)}°
+                        {degreeGap(
+                          pair.browser.footStrikeAngleDeg,
+                          pair.sports2d.footStrikeAngleDeg,
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -41,7 +41,50 @@ export type TrcImport = {
   verticalAxis: VerticalAxis;
   /** The TRC's file name, shown where an uploaded clip's name would be. */
   sourceName: string;
+  /**
+   * Which clip this was, and which part of it, from the manifest run.py
+   * writes. Both are needed to draw the skeleton over the footage: a TRC times
+   * itself from zero, so a run of seconds 5 to 8 would line up against the
+   * first three seconds of video and look plausible while being wrong.
+   *
+   * `clip` is null for a run made before the manifest existed, or one whose
+   * manifest was not handed over. The caller must then not claim to know which
+   * footage it belongs to.
+   */
+  clip: string | null;
+  startS: number;
+  /** How Sports2D was run, when the manifest says. For the provenance line. */
+  mode: string | null;
 };
+
+/** The manifest run.py writes beside each run's outputs. */
+const MANIFEST_NAME = "stride-lab.json";
+
+type Manifest = { clip: string | null; startS: number; mode: string | null };
+
+/**
+ * Read the manifest, tolerating its absence and its malformation alike.
+ *
+ * A missing or broken manifest is not a reason to refuse the TRC — the numbers
+ * in it are still worth reading. It is a reason not to claim which clip they
+ * came from, which is why every field comes back nullable rather than
+ * defaulted to something convenient.
+ */
+function readManifest(files: NamedText[]): Manifest {
+  const found = files.find((file) => file.name.toLowerCase() === MANIFEST_NAME);
+  if (!found) return { clip: null, startS: 0, mode: null };
+  try {
+    const parsed = JSON.parse(found.text) as Record<string, unknown>;
+    const start = Number(parsed.start_s);
+    return {
+      clip: typeof parsed.clip === "string" ? parsed.clip : null,
+      startS: Number.isFinite(start) ? start : 0,
+      mode: typeof parsed.mode === "string" ? parsed.mode : null,
+    };
+  } catch {
+    return { clip: null, startS: 0, mode: null };
+  }
+}
 
 export type TrcImportResult =
   | { ok: true; value: TrcImport }
@@ -68,7 +111,12 @@ const isCalib = (name: string) => /_calib\.toml$/i.test(name);
  * that says which file to use, rather than silently nothing.
  */
 export function isImportCandidate(name: string): boolean {
-  return isPixelTrc(name) || isMetreTrc(name) || isCalib(name);
+  return (
+    isPixelTrc(name) ||
+    isMetreTrc(name) ||
+    isCalib(name) ||
+    name.toLowerCase() === MANIFEST_NAME
+  );
 }
 
 /** Frame size out of the calibration file Sports2D writes beside the TRC. */
@@ -152,6 +200,7 @@ export function importTrc(files: NamedText[]): TrcImportResult {
       trackedFrames,
       verticalAxis,
       sourceName: trc.name,
+      ...readManifest(files),
     },
   };
 }

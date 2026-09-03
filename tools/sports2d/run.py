@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import subprocess
 import sys
@@ -40,6 +41,16 @@ def sports2d_exe() -> str:
 
 CLIPS = HERE / "clips.csv"
 OUT = HERE / "out"
+
+# What the TRC does not say about itself.
+#
+# A TRC records frames and times starting at zero, so it cannot tell you which
+# clip it came from or which part of it. That matters as soon as the app draws
+# the skeleton over the video: a run of seconds 5 to 8 would line up against
+# seconds 0 to 3 of the footage and look plausible while being wrong, and a run
+# of a different clip entirely would look like a tracking failure. So each run
+# writes this beside its outputs and the app reads it.
+MANIFEST = "stride-lab.json"
 
 # Why these and not the defaults.
 #
@@ -152,6 +163,28 @@ def main() -> int:
         started = time.monotonic()
         result = subprocess.run(command, cwd=target)
         took = time.monotonic() - started
+
+        (target / MANIFEST).write_text(
+            json.dumps(
+                {
+                    "id": row["id"],
+                    "clip": clip.name,
+                    "start_s": float(args.time_range[0]) if args.time_range else 0.0,
+                    "end_s": float(args.time_range[1]) if args.time_range else None,
+                    "height_m": float(row["height_m"]),
+                    "pose_model": POSE_MODEL,
+                    "mode": args.mode,
+                    "backend": args.backend,
+                    "det_frequency": int(DET_FREQUENCY),
+                    "full_outputs": bool(args.full),
+                    "seconds": round(took, 1),
+                    "exit_code": result.returncode,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
         produced = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
         trcs = [p for p in produced if p.suffix == ".trc"]

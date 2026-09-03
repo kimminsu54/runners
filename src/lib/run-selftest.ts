@@ -85,6 +85,10 @@ import {
   markerKey,
   parseTrc,
 } from "./sports2d";
+import {
+  analysisTimeFromVideo,
+  videoTimeFromAnalysis,
+} from "./live-readout";
 import { importTrc, isImportCandidate } from "./trc-import";
 import {
   comparePipelines,
@@ -2277,13 +2281,60 @@ console.log("shoe photos ok", {
     "clip_Sports2D.mp4",
     "clip_Sports2D_angles_person00.mot",
     "clip_Sports2D_img/clip_Sports2D_00042.png",
+    "stride-lab.json",
   ];
   const candidates = folder.filter(isImportCandidate);
-  if (candidates.length !== 3) {
+  if (candidates.length !== 4) {
     throw new Error(`folder filter kept ${candidates.join(", ")}`);
   }
   if (candidates.some((name) => /\.(mp4|png|mot)$/i.test(name))) {
     throw new Error("a video, image or mot file would have been read as text");
+  }
+
+  // The manifest is what lets the skeleton be drawn over the footage: a TRC
+  // times itself from zero whatever part of the clip it covers, so without the
+  // window start a run of seconds 5 to 8 lines up against the first three
+  // seconds and looks plausible while being wrong.
+  const withManifest = importTrc([
+    named("clip_Sports2D_px_person00.trc", trcText),
+    named("clip_Sports2D_calib.toml", CALIB),
+    named(
+      "stride-lab.json",
+      JSON.stringify({ clip: "clip.mp4", start_s: 5, mode: "performance" }),
+    ),
+  ]);
+  if (!withManifest.ok) throw new Error(`manifest refused: ${withManifest.reason}`);
+  if (withManifest.value.clip !== "clip.mp4" || withManifest.value.startS !== 5) {
+    throw new Error(
+      `manifest read as ${withManifest.value.clip} @ ${withManifest.value.startS}`,
+    );
+  }
+
+  // No manifest, or a broken one, is not a reason to refuse the numbers — it is
+  // a reason not to claim which clip they came from. A start of zero here would
+  // be a claim.
+  if (good.value.clip !== null || good.value.startS !== 0) {
+    throw new Error("a run with no manifest claimed a clip");
+  }
+  const broken = importTrc([
+    named("clip_Sports2D_px_person00.trc", trcText),
+    named("clip_Sports2D_calib.toml", CALIB),
+    named("stride-lab.json", "{ not json"),
+  ]);
+  if (!broken.ok) throw new Error("a broken manifest refused the whole run");
+  if (broken.value.clip !== null) throw new Error("a broken manifest was believed");
+
+  // The window offset has to survive the round trip through the time mapping,
+  // or the overlay sits on the wrong part of the clip.
+  const videoAt = videoTimeFromAnalysis(2, 1, 5);
+  if (videoAt !== 7) throw new Error(`analysis 2s at offset 5 mapped to ${videoAt}`);
+  if (analysisTimeFromVideo(videoAt, 1, 5) !== 2) {
+    throw new Error("the time mapping does not round-trip with an offset");
+  }
+  // Slow motion and the offset compose in the order the video sees them: the
+  // clip is scaled, then the window starts somewhere.
+  if (videoTimeFromAnalysis(2, 4, 5) !== 13) {
+    throw new Error("offset and slow motion do not compose");
   }
 
   console.log("trc import ok", {
@@ -2292,6 +2343,7 @@ console.log("shoe photos ok", {
     landings: imported.landings.length,
     refusals: "calib 없음 · 미터 TRC · 추적 0",
     folder: `${folder.length}개 중 ${candidates.length}개만 읽음`,
+    manifest: "클립·구간 시작 읽음 · 없거나 깨지면 주장하지 않음",
   });
 
   console.log("sports2d adapter ok", {
@@ -2327,6 +2379,7 @@ console.log("shoe photos ok", {
     totalFrames: frames.length,
     clip: "same-clip",
     windowS: 12,
+    clockFactor: 1,
     ...over,
   });
 
@@ -2393,6 +2446,25 @@ console.log("shoe photos ok", {
     throw new Error("an incomparable pair gave no reason");
   }
 
+  // The one that got through the first version of this check. A clip read as
+  // eight-times slow motion covers the same footage on a clock eight times
+  // slower: the source window matches to the second, and not one landing time
+  // does. Real numbers from a real clip were compared this way before the
+  // clock became part of the question.
+  const otherClock = comparePipelines(
+    pass("browser", { clockFactor: 8, windowS: 1.5 }),
+    pass("sports2d"),
+  );
+  if (otherClock.comparable.ok) throw new Error("8x and 1x clocks compared as one");
+  if (!otherClock.comparable.reasons.some((reason) => reason.includes("배속"))) {
+    throw new Error(`the clock mismatch was not named: ${otherClock.comparable.reasons}`);
+  }
+  // And a clock mismatch alone, with the spans agreeing, must still refuse.
+  const sneaky = comparePipelines(pass("browser", { clockFactor: 4 }), pass("sports2d"));
+  if (sneaky.comparable.sameClock || sneaky.comparable.ok) {
+    throw new Error("a clock mismatch passed when the windows agreed");
+  }
+
   // Every strike the union allows gets counted, `unknown` included: an
   // estimator that cannot tell would otherwise have those landings disappear
   // from the table meant to show disagreement.
@@ -2406,7 +2478,7 @@ console.log("shoe photos ok", {
   console.log("pipeline compare ok", {
     self: `${self.paired.length}쌍 · 차이 0`,
     gap: "빠진 착지 1개만 미짝",
-    refuses: "다른 클립 · 다른 구간",
+    refuses: "다른 클립 · 다른 구간 · 다른 배속",
     strikes: `${counted}회 전부 분류`,
   });
 }

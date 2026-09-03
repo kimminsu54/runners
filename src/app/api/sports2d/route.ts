@@ -38,13 +38,14 @@ const notFound = () => new NextResponse("Not found", { status: 404 });
  */
 const isRunId = (id: string) => /^[A-Za-z0-9_-]{1,32}$/.test(id);
 
-type Found = { trc: string; calib: string; name: string };
+type Found = { trc: string; calib: string; name: string; manifest: string | null };
 
 /** The two files worth reading, from anywhere under a run's directory. */
 async function findFiles(dir: string): Promise<Found | null> {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
   let trcAt: string | null = null;
   let calibAt: string | null = null;
+  let manifestAt: string | null = null;
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     // parentPath is where the entry actually lives, which for a recursive read
@@ -52,13 +53,17 @@ async function findFiles(dir: string): Promise<Found | null> {
     const path = join(entry.parentPath ?? dir, entry.name);
     if (/_px_.*\.trc$/i.test(entry.name)) trcAt = path;
     else if (/_calib\.toml$/i.test(entry.name)) calibAt = path;
+    else if (entry.name.toLowerCase() === "stride-lab.json") manifestAt = path;
   }
   if (!trcAt || !calibAt) return null;
   const [trc, calib] = await Promise.all([
     readFile(trcAt, "utf8"),
     readFile(calibAt, "utf8"),
   ]);
-  return { trc, calib, name: trcAt.split(/[\\/]/).pop() ?? "result.trc" };
+  // A run from before the manifest existed is still worth serving; the client
+  // then does not claim to know which clip it belongs to.
+  const manifest = manifestAt ? await readFile(manifestAt, "utf8").catch(() => null) : null;
+  return { trc, calib, manifest, name: trcAt.split(/[\\/]/).pop() ?? "result.trc" };
 }
 
 /** Frame count and rate straight from the TRC header, for the run list. */
@@ -109,7 +114,16 @@ export async function GET(request: Request) {
       if (!(await stat(dir)).isDirectory()) continue;
       const found = await findFiles(dir);
       if (!found) continue;
-      runs.push({ id: runId, name: found.name, ...summarise(found.trc) });
+      // The clip name goes in the listing so a button can say which footage
+      // it belongs to before it is loaded.
+      let clip: string | null = null;
+      try {
+        const parsed = found.manifest ? JSON.parse(found.manifest) : null;
+        if (parsed && typeof parsed.clip === "string") clip = parsed.clip;
+      } catch {
+        // A malformed manifest costs the label, not the run.
+      }
+      runs.push({ id: runId, name: found.name, clip, ...summarise(found.trc) });
     } catch {
       // A half-written run during a Sports2D pass is not an error here.
     }

@@ -182,6 +182,25 @@ export function LandingAnalyzer() {
   const [passes, setPasses] = useState<Partial<Record<"browser" | "sports2d", PipelinePass>>>(
     {},
   );
+  /**
+   * Whether the pose on screen can supply a face.
+   *
+   * MediaPipe returns eyes, ears and a nose; a Sports2D TRC has only the nose,
+   * because Sports2D does not write the others. So a TRC-sourced pose cannot
+   * produce a face box, and covering has to come from somewhere else or the
+   * ladder falls through to blurring the top third of the frame — which is
+   * both useless and, for a runner who is not in the top third, a face left
+   * showing.
+   */
+  const [faceFromPose, setFaceFromPose] = useState(true);
+  /**
+   * Where in the clip the analysis window starts, in video seconds.
+   *
+   * A TRC times itself from zero whatever part of the clip it covers, so
+   * without this a run of seconds 5 to 8 would line up against the first three
+   * seconds of footage and look plausible while being wrong.
+   */
+  const [analysisOffsetS, setAnalysisOffsetS] = useState(0);
   if (demoRequested && !demoSeeded) {
     const frames =
       demoRequested === "front"
@@ -208,7 +227,11 @@ export function LandingAnalyzer() {
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, []);
 
-  const needsPreviewFace = faceHidden && (cameraOn || (Boolean(videoUrl) && !result));
+  // Also while a TRC-sourced report is on screen over real footage: the
+  // skeleton is Sports2D's, the face box is MediaPipe's, and the video stays
+  // covered.
+  const needsPreviewFace =
+    faceHidden && (cameraOn || (Boolean(videoUrl) && (!result || !faceFromPose)));
 
   useEffect(() => {
     if (!needsPreviewFace) return;
@@ -249,6 +272,8 @@ export function LandingAnalyzer() {
   const attachFile = (file: File) => {
     // Both passes belong to the clip that produced them.
     setPasses({});
+    setFaceFromPose(true);
+    setAnalysisOffsetS(0);
     setTrcNote(null);
     setPoseFrames([]);
     setResult(null);
@@ -334,6 +359,8 @@ export function LandingAnalyzer() {
       setCameraOn(true);
       setResult(null);
       setPasses({});
+      setFaceFromPose(true);
+      setAnalysisOffsetS(0);
       setTrcNote(null);
       setPoseFrames([]);
       setDemoPlaying(false);
@@ -401,9 +428,22 @@ export function LandingAnalyzer() {
       trackedFrames,
       verticalAxis,
       sourceName,
+      clip,
+      startS,
+      mode,
     } = parsed.value;
     stopCamera();
-    setVideoUrl(null);
+
+    // Draw over the footage when we can prove it is the right footage. The
+    // manifest names the clip Sports2D read; if that is what is loaded, the
+    // skeleton belongs on it. Without a manifest, or over a different clip, the
+    // video goes — a skeleton on the wrong video looks like a tracking failure
+    // and reads as one.
+    const loaded = fileName;
+    const overFootage = Boolean(videoUrl && clip && loaded && clip === loaded);
+    if (!overFootage) setVideoUrl(null);
+    setAnalysisOffsetS(overFootage ? startS : 0);
+    setFaceFromPose(false);
     setDemoPlaying(false);
     setOverlay(null);
     setPoseFrames(frames);
@@ -434,7 +474,7 @@ export function LandingAnalyzer() {
     setSelected(0);
     setDetectedSlowMotion(1);
     setSuggestedSlowMotion(null);
-    setFileName(sourceName);
+    setFileName(overFootage ? loaded : sourceName);
     setPasses((kept) => ({
       ...kept,
       sports2d: {
@@ -443,19 +483,39 @@ export function LandingAnalyzer() {
         result: analysis,
         trackedFrames,
         totalFrames: frames.length,
-        // Sports2D names its output after the clip, so the stem before
-        // _Sports2D is the clip both passes have to agree on.
-        clip: sourceName.replace(/_Sports2D.*$/, ""),
-        // Frames over rate rather than the last timestamp: the TRC's own
-        // header is the only statement of how much footage this pass read.
-        windowS: rate > 0 ? frames.length / rate : Number.NaN,
+        // The manifest is the statement of which clip this was. Falling back
+        // to the output's own name keeps runs made before the manifest
+        // comparable, at the cost of trusting Sports2D's naming.
+        clip: (clip ?? sourceName.replace(/_Sports2D.*$/, "")).replace(/\.[^.]+$/, ""),
+        // The analysed span in analysis seconds, which for an imported run is
+        // real time because the clock is pinned to 1.
+        windowS: analysis.series.at(-1)?.t ?? 0,
+        clockFactor: 1,
       },
     }));
     setTrcNote(
-      `Sports2D · ${width}×${height} · ${rate} fps · 마커 ${markerCount}개 · ` +
-        `추적 ${trackedFrames}/${frames.length} · y축 ${verticalAxis} · 내부 평활 반영`,
+      [
+        `Sports2D${mode ? ` ${mode}` : ""}`,
+        `${width}×${height} · ${rate} fps`,
+        `마커 ${markerCount}개 · 추적 ${trackedFrames}/${frames.length}`,
+        `y축 ${verticalAxis} · 내부 평활 반영`,
+        overFootage
+          ? `영상 위 · ${startS.toFixed(0)}초부터`
+          : clip
+            ? `영상 없음 (이 결과는 ${clip})`
+            : "영상 없음 (어느 클립인지 기록 없음)",
+      ].join(" · "),
     );
-    setPlayheadT(analysis.landings[0]?.tContact ?? 0);
+    const firstContact = analysis.landings[0]?.tContact ?? 0;
+    setPlayheadT(firstContact);
+    if (overFootage && videoRef.current) {
+      const video = videoRef.current;
+      void seekVideo(video, firstContact + startS).then(() => {
+        video.pause();
+        const frame = nearestPoseFrame(frames, firstContact);
+        if (frame?.landmarks) setOverlay(frame.landmarks);
+      });
+    }
     setStatus("done");
     setProgress(100);
   };
@@ -501,9 +561,13 @@ export function LandingAnalyzer() {
       failed(body.error ?? `${id} 를 읽지 못했습니다.`);
       return;
     }
+    // The manifest travels with the pair. Without it the import cannot say which
+    // clip the run belongs to, so it refuses to draw over footage — correct
+    // behaviour reached for the wrong reason, and the skeleton lands on black.
     importNamed([
       { name: body.name, text: body.trc },
       { name: "run_calib.toml", text: body.calib },
+      ...(body.manifest ? [{ name: "stride-lab.json", text: body.manifest }] : []),
     ]);
   };
 
@@ -572,7 +636,11 @@ export function LandingAnalyzer() {
           trackedFrames: frames.filter((frame) => frame.landmarks).length,
           totalFrames: frames.length,
           clip: (fileName ?? "clip").replace(/\.[^.]+$/, ""),
-          windowS: duration,
+          // Analysis seconds, not video seconds. A clip read as slow motion
+          // covers its whole duration in a fraction of that time, and it is
+          // the analysis clock the landings are timed on.
+          windowS: analysis.series.at(-1)?.t ?? 0,
+          clockFactor: usedFactor > 0 ? usedFactor : 1,
         },
       }));
       setSelected(0);
@@ -582,11 +650,11 @@ export function LandingAnalyzer() {
       if (analysis.landings[0]) {
         const analysisT = analysis.landings[0].tContact;
         setPlayheadT(analysisT);
-        await seekVideo(video, videoTimeFromAnalysis(analysisT, factor));
+        await seekVideo(video, videoTimeFromAnalysis(analysisT, factor, analysisOffsetS));
         video.pause();
         const frame = nearestPoseFrame(
           frames,
-          videoTimeFromAnalysis(analysisT, factor),
+          videoTimeFromAnalysis(analysisT, factor, analysisOffsetS),
         );
         setOverlay(frame?.landmarks ?? null);
       }
@@ -631,7 +699,7 @@ export function LandingAnalyzer() {
     setExportNote(null);
     try {
       await jumpTo(landing.tContact);
-      const videoT = videoTimeFromAnalysis(landing.tContact, clockFactor);
+      const videoT = videoTimeFromAnalysis(landing.tContact, clockFactor, analysisOffsetS);
       const lookupT = videoUrl ? videoT : landing.tContact;
       const frameIndex = poseFrames.reduce(
         (best, frame, i) =>
@@ -672,7 +740,7 @@ export function LandingAnalyzer() {
   const jumpTo = async (analysisT: number) => {
     setPlayheadT(analysisT);
     const video = videoRef.current;
-    const videoT = videoTimeFromAnalysis(analysisT, clockFactor);
+    const videoT = videoTimeFromAnalysis(analysisT, clockFactor, analysisOffsetS);
     if (video && videoUrl) {
       await seekVideo(video, videoT);
       video.pause();
@@ -715,9 +783,12 @@ export function LandingAnalyzer() {
     if (!video || !result || !videoUrl) return;
 
     const apply = () => {
-      const analysisT = analysisTimeFromVideo(video.currentTime, clockFactor);
+      const analysisT = analysisTimeFromVideo(video.currentTime, clockFactor, analysisOffsetS);
       setPlayheadT(analysisT);
-      const frame = nearestPoseFrame(poseFrames, video.currentTime);
+      // poseFrames are timed from the start of the analysed window, which is
+      // the start of the clip for a browser pass and wherever Sports2D was
+      // told to begin for an imported one.
+      const frame = nearestPoseFrame(poseFrames, video.currentTime - analysisOffsetS);
       if (frame?.landmarks) setOverlay(frame.landmarks);
     };
 
@@ -743,7 +814,7 @@ export function LandingAnalyzer() {
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
     };
-  }, [result, videoUrl, clockFactor, poseFrames]);
+  }, [result, videoUrl, clockFactor, poseFrames, analysisOffsetS]);
 
   useEffect(() => {
     if (!demoPlaying || videoUrl || !result) return;
@@ -1326,15 +1397,18 @@ export function LandingAnalyzer() {
                 including a clip that was refused, where the reader most wants
                 to know which boundary refused it. */}
             <ThresholdEvidence />
-            {/* After the evidence table, because it is a statement about the
-                instruments rather than about the run, and only when both
-                estimators have actually read something. */}
-            {OFFER_TRC_IMPORT && passes.browser && passes.sports2d ? (
-              <PipelineCompare browser={passes.browser} sports2d={passes.sports2d} />
-            ) : null}
           </div>
         </div>
         </AnalysisDetails>
+        {/* Outside the collapsible, unlike everything above it. The details
+            section renders nothing while it is shut, and it starts shut, so a
+            comparison placed inside it existed and was never seen — which is
+            indistinguishable from a comparison that failed to appear. This is
+            an answer to a question that was just asked, not detail to expand
+            into. */}
+        {OFFER_TRC_IMPORT && passes.browser && passes.sports2d ? (
+          <PipelineCompare browser={passes.browser} sports2d={passes.sports2d} />
+        ) : null}
         </div>
         </AnalysisDetailsProvider>
       ) : null}

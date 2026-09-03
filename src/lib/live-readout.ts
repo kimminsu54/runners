@@ -73,14 +73,22 @@ export function nearestPoseFrame(
   return index >= 0 ? frames[index] ?? null : null;
 }
 
-export function analysisTimeFromVideo(videoTime: number, clockFactor: number): number {
+export function analysisTimeFromVideo(
+  videoTime: number,
+  clockFactor: number,
+  offsetS = 0,
+): number {
   const factor = clockFactor > 0 ? clockFactor : 1;
-  return videoTime / factor;
+  return (videoTime - offsetS) / factor;
 }
 
-export function videoTimeFromAnalysis(analysisTime: number, clockFactor: number): number {
+export function videoTimeFromAnalysis(
+  analysisTime: number,
+  clockFactor: number,
+  offsetS = 0,
+): number {
   const factor = clockFactor > 0 ? clockFactor : 1;
-  return analysisTime * factor;
+  return analysisTime * factor + offsetS;
 }
 
 function stanceEndS(landing: Landing): number {

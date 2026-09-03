@@ -116,6 +116,20 @@ export type FootSide = "left" | "right" | "unknown";
 export type { FootStrike };
 export { classifyFootStrike };
 
+/**
+ * What each quality level is called on screen.
+ *
+ * Here rather than in the card that first needed it, because a second reader
+ * of the same verdict has to use the same words: a report saying the clip was
+ * unmeasurable and a comparison table calling the same clip something else
+ * would leave the reader deciding which to believe.
+ */
+export const qualityLabel: Record<QualityLevel, string> = {
+  good: "측정 품질 좋음",
+  fair: "측정 오차 큼",
+  poor: "측정 불가",
+};
+
 export const footStrikeLabel: Record<FootStrike, string> = {
   rearfoot: "리어풋",
   midfoot: "미드풋",

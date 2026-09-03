@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { SaveSessionButton } from "@/components/save-session";
 import { ShoeRecommendations } from "@/components/shoe-recommendations";
-import type { AnalysisResult } from "@/lib/landing-analysis";
+import { qualityLabel, type AnalysisResult } from "@/lib/landing-analysis";
 import {
   buildSessionSummary,
   paceLabel,
@@ -62,11 +62,7 @@ export function SessionSummaryCard({
   onSelectPeak?: (index: number) => void;
 }) {
   const summary = buildSessionSummary(result);
-  const qualityLabel = {
-    good: "측정 품질 좋음",
-    fair: "측정 오차 큼",
-    poor: "측정 불가",
-  }[result.quality.level];
+  const quality = qualityLabel[result.quality.level];
   const qualityClass = {
     good: "border-emerald-200 bg-emerald-50 text-emerald-700",
     fair: "border-amber-200 bg-amber-50 text-amber-800",
@@ -91,7 +87,7 @@ export function SessionSummaryCard({
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className={qualityClass}>
-            {qualityLabel}
+            {quality}
           </Badge>
           {result.quality.level === "good" ? null : (
             <span className="text-xs text-muted-foreground">

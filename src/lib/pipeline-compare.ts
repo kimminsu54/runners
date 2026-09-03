@@ -23,6 +23,7 @@
 import {
   cadenceSpm,
   footStrikeLabel,
+  qualityLabel,
   type AnalysisResult,
   type FootStrike,
   type Landing,
@@ -39,13 +40,22 @@ export type PipelinePass = {
   trackedFrames: number;
   totalFrames: number;
   /**
-   * Which clip and how much of it. Both are needed because a comparison is
-   * only a comparison when the two passes read the same footage over the same
-   * window — and a table of differences between two different clips is
-   * indistinguishable from a table of estimator error.
+   * Which clip, how long the analysed stretch is, and on whose clock.
+   *
+   * All three, because a comparison is only a comparison when the two passes
+   * read the same footage over the same stretch of time — and a table of
+   * differences between mismatched inputs is indistinguishable from a table of
+   * estimator error.
+   *
+   * `windowS` is the analysed span in analysis seconds, not video seconds, and
+   * that distinction is the whole reason this field exists in this form. A
+   * clip read as eight-times slow motion covers twelve seconds of video in a
+   * second and a half of analysis: the source window matches, every landing
+   * time does not, and the first version of this check waved it through.
    */
   clip: string;
   windowS: number;
+  clockFactor: number;
 };
 
 /**
@@ -105,6 +115,7 @@ export type PairedLanding = {
 export type Comparability = {
   sameClip: boolean;
   sameWindow: boolean;
+  sameClock: boolean;
   ok: boolean;
   /** What is wrong, in the words the screen shows. */
   reasons: string[];
@@ -136,14 +147,32 @@ function comparability(a: PipelinePass, b: PipelinePass): Comparability {
     Number.isFinite(a.windowS) &&
     Number.isFinite(b.windowS) &&
     Math.abs(a.windowS - b.windowS) <= WINDOW_SLACK_S;
+  // Capture rate is a separate question from window length, and it has to be
+  // asked separately: a pass read as slow motion can cover the same seconds of
+  // footage on a clock eight times slower, which makes every landing time,
+  // every contact and every force incomparable while both windows agree.
+  const sameClock = a.clockFactor === b.clockFactor;
+
   const reasons: string[] = [];
   if (!sameClip) reasons.push(`클립이 다릅니다 — ${a.clip} · ${b.clip}`);
   if (!sameWindow) {
     reasons.push(
-      `구간이 다릅니다 — ${a.windowS.toFixed(1)}초 · ${b.windowS.toFixed(1)}초`,
+      `분석 구간 길이가 다릅니다 — ${a.windowS.toFixed(1)}초 · ${b.windowS.toFixed(1)}초`,
     );
   }
-  return { sameClip, sameWindow, ok: sameClip && sameWindow, reasons };
+  if (!sameClock) {
+    reasons.push(
+      `촬영 배속 설정이 다릅니다 — ${a.clockFactor}배 · ${b.clockFactor}배. ` +
+        "실시간 영상이면 러너 세팅에서 1배로 두고 다시 분석하세요.",
+    );
+  }
+  return {
+    sameClip,
+    sameWindow,
+    sameClock,
+    ok: sameClip && sameWindow && sameClock,
+    reasons,
+  };
 }
 
 const mean = (values: number[]): number =>
@@ -262,6 +291,33 @@ export function comparePipelines(
     mean(finite(landings.map((landing) => landing.contactMs))) / 1000;
 
   const rows: CompareRow[] = [
+    {
+      // First, because it decides how to read everything under it. Several of
+      // these measures are withheld rather than wrong when the gate refuses a
+      // clip, and a column of "측정 불가" means something entirely different
+      // depending on which of those happened.
+      label: "측정 품질",
+      browser: qualityLabel[browser.result.quality.level],
+      sports2d: qualityLabel[sports2d.result.quality.level],
+      delta:
+        browser.result.quality.level === sports2d.result.quality.level
+          ? "같음"
+          : "다름",
+      agree: browser.result.quality.level === sports2d.result.quality.level,
+      // Each reason is attributed. Merged into one list they read as if they
+      // applied to both passes, which is the opposite of what a row comparing
+      // the two is for — and here it matters, because only one of the passes
+      // was refused.
+      note:
+        [
+          ...browser.result.quality.reasons.map(
+            (reason) => `${browser.label}: ${reason}`,
+          ),
+          ...sports2d.result.quality.reasons.map(
+            (reason) => `${sports2d.label}: ${reason}`,
+          ),
+        ].join(" · ") || undefined,
+    },
     {
       label: "추적된 프레임",
       browser: `${browser.trackedFrames}/${browser.totalFrames}`,
