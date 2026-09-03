@@ -24,7 +24,7 @@
 #
 # unit — deg(부호 있는 각도) · deg_abs(크기 한계) · s · BW · score · ratio · px
 
-version: 5
+version: 6
 
 thresholds:
   foot_strike_rearfoot_max_deg:
@@ -44,6 +44,15 @@ thresholds:
     source: "같은 관행의 반대쪽 경계입니다. 발가락이 뒤꿈치보다 이만큼 낮으면 앞꿈치부터 닿은 것으로 봅니다."
     validation_status: "convention"
     note: "경계 포함. 정확히 +8° 는 포어풋. 두 경계 사이는 미드풋입니다."
+
+  side_balance_min_share:
+    label: "좌우 균형 하한"
+    value: 0.3
+    unit: "ratio"
+    applies_to: "running"
+    source: "러너는 발을 번갈아 딛습니다. 완전한 교대라면 한쪽이 다른 쪽보다 최대 한 번 많을 뿐이므로, 적은 쪽이 전체의 30% 아래로 떨어지면 교대로 설명되지 않고 좌우 배정이 틀린 것입니다."
+    validation_status: "derived"
+    note: "착지 6회 이상에서만 판단합니다. 그 아래는 시작·종료 발에 따라 자연스럽게 치우칠 수 있습니다."
 
   foot_strike_max_plausible_deg:
     label: "발 각도 판정 한계"

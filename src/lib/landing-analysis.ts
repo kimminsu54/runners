@@ -400,6 +400,28 @@ export function isFrontal(sideViewRatio: number): boolean {
   );
 }
 
+/**
+ * The share of contacts assigned to the less frequent foot.
+ *
+ * Running alternates, so a complete detection differs by at most one contact
+ * between the feet. A minority share far below a half therefore does not
+ * describe a runner — it describes a detector that lost one foot and assigned
+ * its contacts to the other, which is a specific failure with specific
+ * consequences: contact time comes from no measured stance, and the strike
+ * angle is read off the wrong foot's series, which makes it wrong rather than
+ * merely unlabelled.
+ *
+ * NaN below six contacts, where starting and finishing on the same foot can
+ * skew the count on its own, and NaN when neither foot could be named at all.
+ */
+function sideBalance(landings: Landing[]): number {
+  const named = landings.filter((landing) => landing.side !== "unknown");
+  if (named.length < 6) return Number.NaN;
+  const left = named.filter((landing) => landing.side === "left").length;
+  const right = named.length - left;
+  return Math.min(left, right) / named.length;
+}
+
 function assessQuality(
   subjectHeightRatio: number,
   detectedRatio: number,
@@ -417,6 +439,9 @@ function assessQuality(
         gaps.length
       : Number.NaN;
   const missedLandings = estimateMissedLandings(gaps, typical);
+  const balance = sideBalance(landings);
+  const lopsided =
+    Number.isFinite(balance) && balance < threshold("side_balance_min_share");
 
   const reasons: string[] = [];
   if (!(subjectHeightRatio >= threshold("min_subject_height_ratio"))) {
@@ -435,6 +460,14 @@ function assessQuality(
   // frontal view, and the alignment measurements only exist there. What the
   // view costs — strike pattern, fore-aft distance, knee flexion — is said by
   // the frontal report itself, next to what it buys.
+  if (lopsided) {
+    // Said before the missed-contact reason, because it explains it: a foot
+    // whose stance was never found contributes neither a contact time nor a
+    // gap of the right length.
+    reasons.push(
+      `착지의 ${Math.round((1 - balance) * 100)}%가 한쪽 발로 잡혔습니다. 한 발이 가려져 좌우 구분과 주법 판정을 믿을 수 없습니다. 두 발이 모두 보이는 옆모습 구간으로 다시 찍어 주세요.`,
+    );
+  }
   if (missedLandings >= 2) {
     reasons.push(
       `착지 간격으로 보면 약 ${missedLandings}회를 놓친 것으로 보입니다. 전신이 계속 보이게, 같은 속도로 곧게 달리는 구간이 좋습니다.`,
@@ -455,7 +488,12 @@ function assessQuality(
     detectedRatio < threshold("min_detected_ratio_publish") ||
     (Number.isFinite(cadenceConsistency) &&
       cadenceConsistency < threshold("min_cadence_consistency_publish")) ||
-    missedRatio >= 0.3;
+    missedRatio >= 0.3 ||
+    // Severe rather than a note, because the strike angle is read from the
+    // side's own series: a wrong side does not mislabel the answer, it answers
+    // about the other foot. Everything that depends on it is then withheld by
+    // the machinery that already handles a poor clip.
+    lopsided;
   const level: QualityLevel = severe ? "poor" : reasons.length ? "fair" : "good";
   return {
     level,

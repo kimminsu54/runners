@@ -2612,3 +2612,95 @@ console.log("shoe photos ok", {
     grid: `표본창 차이 30fps ${coarse.toFixed(1)}° · 240fps ${fine.toFixed(1)}°`,
   });
 }
+
+// One foot never accounted for, and everything that quietly followed from it.
+//
+// A real clip put this on screen: twenty-four contacts, twenty of them on the
+// same foot, no contact time for any of them, three pairs of identical
+// readings a third of a step apart — and the quality gate called it `fair`.
+//
+// The consequence is not a mislabelled side. The strike angle is read from
+// whichever foot's series the side names, so a wrong side does not mislabel
+// the answer, it answers about the other foot; the report was publishing
+// plausible angles for feet that were never measured.
+//
+// The fixture holds one foot in the air. Contacts are still found — they come
+// from the body's own acceleration, not from the feet — and every one of them
+// is assigned to the foot that is down. Whether that is an estimator that lost
+// a leg or a clip of somebody hopping does not change what the analysis may
+// say about it.
+{
+  const W = 1280;
+  const H = 720;
+  const opts = { statureM: 1.7, massKg: 70, width: W, height: H };
+  const clean = syntheticSideRunFrames({ ahead: 0.066, strikeDeg: -12, aspect: W / H });
+
+  const oneFooted = (frames: PoseFrame[]) =>
+    frames.map((frame) => ({
+      ...frame,
+      landmarks: frame.landmarks
+        ? frame.landmarks.map((point, index) =>
+            index === LM.leftHeel || index === LM.leftAnkle || index === LM.leftFootIndex
+              ? // Parked at mid-thigh height, well clear of the ground line.
+                { ...point, y: 0.62 }
+              : point,
+          )
+        : null,
+    }));
+
+  const before = analyzeLandings(clean, opts);
+  const after = analyzeLandings(oneFooted(clean), opts);
+
+  const share = (result: ReturnType<typeof analyzeLandings>) => {
+    const named = result.landings.filter((landing) => landing.side !== "unknown");
+    const left = named.filter((landing) => landing.side === "left").length;
+    return named.length ? Math.min(left, named.length - left) / named.length : Number.NaN;
+  };
+
+  // The fixture has to actually produce the lopsided reading, or the assertions
+  // below pass because nothing happened.
+  if (!(share(after) < threshold("side_balance_min_share"))) {
+    throw new Error(
+      `one foot in the air left the sides balanced at ${share(after).toFixed(2)} —` +
+        " the fixture no longer reproduces the failure this guards against",
+    );
+  }
+  if (after.landings.length < 6) {
+    throw new Error(`only ${after.landings.length} contacts, below where the check looks`);
+  }
+  if (after.quality.level !== "poor") {
+    throw new Error(`a clip with one foot unaccounted for is graded ${after.quality.level}`);
+  }
+  if (!after.quality.reasons.some((reason) => reason.includes("한쪽 발"))) {
+    throw new Error(
+      `nothing says a foot went missing: ${after.quality.reasons.join(" / ")}`,
+    );
+  }
+
+  // And it must not fire on a runner whose feet were both seen, or every clip
+  // arrives refused.
+  if (before.quality.reasons.some((reason) => reason.includes("한쪽 발"))) {
+    throw new Error("a two-footed clip was accused of losing a foot");
+  }
+  if (before.quality.level === "poor") {
+    throw new Error("the clean fixture is now graded poor");
+  }
+
+  // Below six contacts the count skews on which foot started and finished, so
+  // the check stays quiet rather than refusing a short clip on arithmetic.
+  const short = analyzeLandings(
+    oneFooted(syntheticSideRunFrames({ ahead: 0.066, steps: 3, aspect: W / H })),
+    opts,
+  );
+  if (short.quality.reasons.some((reason) => reason.includes("한쪽 발"))) {
+    throw new Error(
+      `a ${short.landings.length}-contact clip was judged on side balance`,
+    );
+  }
+
+  console.log("side balance ok", {
+    clean: `${before.landings.length}회 · 소수쪽 ${(share(before) * 100).toFixed(0)}% · ${before.quality.level}`,
+    oneFooted: `${after.landings.length}회 · 소수쪽 ${(share(after) * 100).toFixed(0)}% · ${after.quality.level}`,
+    short: `${short.landings.length}회 · 판단 보류`,
+  });
+}

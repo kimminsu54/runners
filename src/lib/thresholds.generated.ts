@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 5)
+// Source: shared/thresholds.yaml (version 6)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,11 +10,12 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 5;
+export const THRESHOLDS_VERSION = 6;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
   | "foot_strike_forefoot_min_deg"
+  | "side_balance_min_share"
   | "foot_strike_max_plausible_deg"
   | "overstride_ratio_notable"
   | "side_view_max_profile_ratio"
@@ -60,6 +61,16 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "같은 관행의 반대쪽 경계입니다. 발가락이 뒤꿈치보다 이만큼 낮으면 앞꿈치부터 닿은 것으로 봅니다.",
     validationStatus: "convention",
     note: "경계 포함. 정확히 +8° 는 포어풋. 두 경계 사이는 미드풋입니다.",
+  },
+  side_balance_min_share: {
+    key: "side_balance_min_share",
+    label: "좌우 균형 하한",
+    value: 0.3,
+    unit: "ratio",
+    appliesTo: "running",
+    source: "러너는 발을 번갈아 딛습니다. 완전한 교대라면 한쪽이 다른 쪽보다 최대 한 번 많을 뿐이므로, 적은 쪽이 전체의 30% 아래로 떨어지면 교대로 설명되지 않고 좌우 배정이 틀린 것입니다.",
+    validationStatus: "derived",
+    note: "착지 6회 이상에서만 판단합니다. 그 아래는 시작·종료 발에 따라 자연스럽게 치우칠 수 있습니다.",
   },
   foot_strike_max_plausible_deg: {
     key: "foot_strike_max_plausible_deg",
