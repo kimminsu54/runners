@@ -9,6 +9,7 @@ import { LiveReadout } from "@/components/live-readout";
 import { SessionSummaryCard } from "@/components/session-summary";
 import { SideBreakdown } from "@/components/side-breakdown";
 import { ThresholdEvidence } from "@/components/threshold-evidence";
+import { PipelineCompare } from "@/components/pipeline-compare";
 import { PoseOverlay, PoseSketch } from "@/components/pose-overlay";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +39,7 @@ import {
   syntheticFrontRunFrames,
   syntheticRunningFrames,
 } from "@/lib/synthetic-jump";
+import type { PipelinePass } from "@/lib/pipeline-compare";
 import { importTrc, isImportCandidate, type NamedText } from "@/lib/trc-import";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, ImageDown, UploadCloud } from "lucide-react";
@@ -170,6 +172,16 @@ export function LandingAnalyzer() {
   /** The offline runs sitting in tools/sports2d/out, as the dev server sees them. */
   const [runs, setRuns] = useState<Sports2dRun[] | null>(null);
   const [loadingRun, setLoadingRun] = useState<string | null>(null);
+  /**
+   * One completed pass per estimator, kept so the two can be compared.
+   *
+   * Held here rather than in the report because a pass outlives what produced
+   * it: importing a TRC replaces the clip on screen, and the browser's numbers
+   * for that clip have to survive it or there is nothing to compare against.
+   */
+  const [passes, setPasses] = useState<Partial<Record<"browser" | "sports2d", PipelinePass>>>(
+    {},
+  );
   if (demoRequested && !demoSeeded) {
     const frames =
       demoRequested === "front"
@@ -235,6 +247,8 @@ export function LandingAnalyzer() {
   // all — it could not prove the empty dependency list matched what the body
   // reads, and reported that against an unrelated line.
   const attachFile = (file: File) => {
+    // Both passes belong to the clip that produced them.
+    setPasses({});
     setTrcNote(null);
     setPoseFrames([]);
     setResult(null);
@@ -319,6 +333,7 @@ export function LandingAnalyzer() {
       streamRef.current = stream;
       setCameraOn(true);
       setResult(null);
+      setPasses({});
       setTrcNote(null);
       setPoseFrames([]);
       setDemoPlaying(false);
@@ -420,6 +435,22 @@ export function LandingAnalyzer() {
     setDetectedSlowMotion(1);
     setSuggestedSlowMotion(null);
     setFileName(sourceName);
+    setPasses((kept) => ({
+      ...kept,
+      sports2d: {
+        key: "sports2d",
+        label: "Sports2D",
+        result: analysis,
+        trackedFrames,
+        totalFrames: frames.length,
+        // Sports2D names its output after the clip, so the stem before
+        // _Sports2D is the clip both passes have to agree on.
+        clip: sourceName.replace(/_Sports2D.*$/, ""),
+        // Frames over rate rather than the last timestamp: the TRC's own
+        // header is the only statement of how much footage this pass read.
+        windowS: rate > 0 ? frames.length / rate : Number.NaN,
+      },
+    }));
     setTrcNote(
       `Sports2D · ${width}×${height} · ${rate} fps · 마커 ${markerCount}개 · ` +
         `추적 ${trackedFrames}/${frames.length} · y축 ${verticalAxis} · 내부 평활 반영`,
@@ -532,6 +563,18 @@ export function LandingAnalyzer() {
       setDetectedSlowMotion(usedFactor);
       setSuggestedSlowMotion(suggestedFactor ?? null);
       setResult(analysis);
+      setPasses((kept) => ({
+        ...kept,
+        browser: {
+          key: "browser",
+          label: "브라우저",
+          result: analysis,
+          trackedFrames: frames.filter((frame) => frame.landmarks).length,
+          totalFrames: frames.length,
+          clip: (fileName ?? "clip").replace(/\.[^.]+$/, ""),
+          windowS: duration,
+        },
+      }));
       setSelected(0);
       setStatus("done");
       setProgress(100);
@@ -1283,6 +1326,12 @@ export function LandingAnalyzer() {
                 including a clip that was refused, where the reader most wants
                 to know which boundary refused it. */}
             <ThresholdEvidence />
+            {/* After the evidence table, because it is a statement about the
+                instruments rather than about the run, and only when both
+                estimators have actually read something. */}
+            {OFFER_TRC_IMPORT && passes.browser && passes.sports2d ? (
+              <PipelineCompare browser={passes.browser} sports2d={passes.sports2d} />
+            ) : null}
           </div>
         </div>
         </AnalysisDetails>

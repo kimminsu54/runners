@@ -87,6 +87,12 @@ import {
 } from "./sports2d";
 import { importTrc, isImportCandidate } from "./trc-import";
 import {
+  comparePipelines,
+  pairLandings,
+  strikeCounts,
+  type PipelinePass,
+} from "./pipeline-compare";
+import {
   blurPlan,
   FACE_COVER_LABEL,
   fallbackFaceBox,
@@ -2295,5 +2301,112 @@ console.log("shoe photos ok", {
     smallToes: "footExtras 도달",
     landings: analyzeLandings(original, opts).landings.length,
     preFiltered: "동작",
+  });
+}
+
+// Comparing two pose estimators over one clip. This is the measurement the
+// whole Sports2D detour exists to make, so the ways it could quietly lie are
+// what get pinned: pairing that shifts after a missed footfall, and a
+// comparison across inputs that do not match.
+{
+  const W = 1280;
+  const H = 720;
+  const opts = { statureM: 1.7, massKg: 70, width: W, height: H };
+  const frames = syntheticSideRunFrames({ ahead: 0.066 });
+  const result = analyzeLandings(frames, opts);
+  const tracked = frames.filter((frame) => frame.landmarks).length;
+
+  const pass = (
+    key: "browser" | "sports2d",
+    over: Partial<PipelinePass> = {},
+  ): PipelinePass => ({
+    key,
+    label: key,
+    result,
+    trackedFrames: tracked,
+    totalFrames: frames.length,
+    clip: "same-clip",
+    windowS: 12,
+    ...over,
+  });
+
+  // A pass against itself must come out identical. If it does not, the table
+  // reports estimator error where there is none, and every real reading after
+  // that is unreadable.
+  const self = comparePipelines(pass("browser"), pass("sports2d"));
+  if (!self.comparable.ok) {
+    throw new Error(`identical passes judged incomparable: ${self.comparable.reasons}`);
+  }
+  if (self.disagreements !== 0) {
+    const off = self.rows.filter((row) => !row.agree && !row.note).map((row) => row.label);
+    throw new Error(`a pass compared to itself disagreed on ${off.join(", ")}`);
+  }
+  if (self.paired.length !== result.landings.length) {
+    throw new Error(
+      `self-comparison paired ${self.paired.length} of ${result.landings.length}`,
+    );
+  }
+  if (self.browserOnly.length || self.sports2dOnly.length) {
+    throw new Error("a pass compared to itself left landings unpaired");
+  }
+
+  // The reason pairing is nearest-first. Drop one footfall from the middle:
+  // walking both lists in order would pair every later contact with the wrong
+  // partner and report a disagreement at each one. Only the dropped footfall
+  // may come back unpaired.
+  const all = result.landings;
+  if (all.length < 5) throw new Error("the fixture needs enough landings to drop one");
+  const dropAt = 2;
+  const missing = all.filter((_, i) => i !== dropAt);
+  const gapped = pairLandings(all, missing);
+  if (gapped.paired.length !== missing.length) {
+    throw new Error(
+      `dropping one footfall paired ${gapped.paired.length} of ${missing.length}`,
+    );
+  }
+  if (gapped.browserOnly.length !== 1 || gapped.sports2dOnly.length !== 0) {
+    throw new Error(
+      `a missed footfall left ${gapped.browserOnly.length} and ${gapped.sports2dOnly.length} unpaired`,
+    );
+  }
+  if (gapped.browserOnly[0].tContact !== all[dropAt].tContact) {
+    throw new Error("the unpaired landing is not the one that was dropped");
+  }
+  if (gapped.paired.some((pair) => pair.browser.tContact !== pair.sports2d.tContact)) {
+    throw new Error("pairing drifted past the gap — it is walking in order");
+  }
+
+  // Contacts further apart than the window are different footfalls, not the
+  // same one measured badly.
+  const shifted = all.map((landing) => ({ ...landing, tContact: landing.tContact + 0.2 }));
+  if (pairLandings(all, shifted).paired.length) {
+    throw new Error("contacts 200ms apart were paired");
+  }
+
+  // Two different clips, or two different windows, must be refused as a
+  // comparison even though every row still computes.
+  const otherClip = comparePipelines(pass("browser"), pass("sports2d", { clip: "elsewhere" }));
+  if (otherClip.comparable.ok) throw new Error("two different clips compared as one");
+  const otherWindow = comparePipelines(pass("browser"), pass("sports2d", { windowS: 3 }));
+  if (otherWindow.comparable.ok) throw new Error("3s and 12s windows compared as one");
+  if (!otherWindow.comparable.reasons.length) {
+    throw new Error("an incomparable pair gave no reason");
+  }
+
+  // Every strike the union allows gets counted, `unknown` included: an
+  // estimator that cannot tell would otherwise have those landings disappear
+  // from the table meant to show disagreement.
+  const counts = strikeCounts(all);
+  if (!("unknown" in counts)) throw new Error("strikeCounts drops unknown");
+  const counted = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  if (counted !== all.length) {
+    throw new Error(`strikeCounts totalled ${counted} of ${all.length}`);
+  }
+
+  console.log("pipeline compare ok", {
+    self: `${self.paired.length}쌍 · 차이 0`,
+    gap: "빠진 착지 1개만 미짝",
+    refuses: "다른 클립 · 다른 구간",
+    strikes: `${counted}회 전부 분류`,
   });
 }
