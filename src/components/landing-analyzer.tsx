@@ -311,7 +311,14 @@ export function LandingAnalyzer() {
    */
   useEffect(() => {
     if (!OFFER_TRC_IMPORT) return;
-    const target = window as unknown as { __strideLabPasses?: unknown };
+    const target = window as unknown as {
+      __strideLabPasses?: unknown;
+      __strideLabFrames?: unknown;
+    };
+    // The pose itself, not only what was concluded from it. When the two
+    // pipelines disagree about a stance the answer is in the foot's height
+    // signal, and that never left the browser before.
+    target.__strideLabFrames = poseFrames;
     target.__strideLabPasses = {
       browser: passes.browser
         ? {
@@ -342,8 +349,9 @@ export function LandingAnalyzer() {
     };
     return () => {
       delete target.__strideLabPasses;
+      delete target.__strideLabFrames;
     };
-  }, [passes]);
+  }, [passes, poseFrames]);
 
   // Ask the dev server what offline runs exist, once.
   useEffect(() => {
