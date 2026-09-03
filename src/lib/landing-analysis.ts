@@ -460,6 +460,12 @@ function assessQuality(
   // frontal view, and the alignment measurements only exist there. What the
   // view costs — strike pattern, fore-aft distance, knee flexion — is said by
   // the frontal report itself, next to what it buys.
+  const timed = landings.filter((landing) => Number.isFinite(landing.contactMs)).length;
+  if (landings.length >= 4 && timed < landings.length * 0.5) {
+    reasons.push(
+      `착지 ${landings.length}회 중 ${landings.length - timed}회는 발이 땅에 붙어 있던 시간을 재지 못했습니다. 접지·체공 시간과 반력은 그만큼 거친 추정입니다.`,
+    );
+  }
   if (lopsided) {
     // Said before the missed-contact reason, because it explains it: a foot
     // whose stance was never found contributes neither a contact time nor a
