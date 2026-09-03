@@ -76,35 +76,50 @@ const show = (value: number, unit = "°") =>
  * A synthetic fixture cannot answer this, because the assumption is what the
  * fixture was built on.
  */
-function trajectory(result: AnalysisResult, label: string): void {
-  const offsets = [-3, -2, -1, 0, 1, 2, 3];
-  const columns = offsets.map(() => [] as number[]);
+const OFFSETS = [-3, -2, -1, 0, 1, 2, 3];
 
+/** The series index nearest a landing's reported contact time. */
+function indexOf(result: AnalysisResult, tContact: number): number {
+  let at = 0;
+  for (let i = 1; i < result.series.length; i++) {
+    if (
+      Math.abs(result.series[i].t - tContact) < Math.abs(result.series[at].t - tContact)
+    ) {
+      at = i;
+    }
+  }
+  return at;
+}
+
+/**
+ * A per-frame quantity around each contact, pooled across contacts.
+ *
+ * Anchored on the contact time the report gives, which is the detector's
+ * answer — so a shape that peaks or bottoms out beside the anchor rather than
+ * on it says the anchor is off by that much.
+ */
+function trajectory(
+  result: AnalysisResult,
+  label: string,
+  pick: (point: AnalysisResult["series"][number], side: "left" | "right") => number,
+  unit: string,
+): void {
+  const columns = OFFSETS.map(() => [] as number[]);
   for (const landing of result.landings) {
     if (landing.side === "unknown") continue;
-    let at = 0;
-    for (let i = 1; i < result.series.length; i++) {
-      if (
-        Math.abs(result.series[i].t - landing.tContact) <
-        Math.abs(result.series[at].t - landing.tContact)
-      ) {
-        at = i;
-      }
-    }
-    offsets.forEach((offset, column) => {
+    const at = indexOf(result, landing.tContact);
+    OFFSETS.forEach((offset, column) => {
       const point = result.series[at + offset];
       if (!point) return;
-      const angle =
-        landing.side === "left" ? point.leftFootStrikeAngle : point.rightFootStrikeAngle;
-      if (Number.isFinite(angle)) columns[column].push(angle);
+      const value = pick(point, landing.side as "left" | "right");
+      if (Number.isFinite(value)) columns[column].push(value);
     });
   }
-
   const cells = columns.map((values, i) => {
-    const label = offsets[i] === 0 ? "접지" : `${offsets[i] > 0 ? "+" : ""}${offsets[i]}`;
-    return `${label} ${show(median(values)).padStart(7)}`;
+    const name = OFFSETS[i] === 0 ? "접지" : `${OFFSETS[i] > 0 ? "+" : ""}${OFFSETS[i]}`;
+    return `${name} ${show(median(values), unit).padStart(8)}`;
   });
-  console.log(`  ${label.padEnd(12)} ${cells.join("  ")}`);
+  console.log(`  ${label.padEnd(20)} ${cells.join("  ")}`);
 }
 
 function main(argv: string[]): number {
@@ -133,7 +148,10 @@ function main(argv: string[]): number {
   );
 
   for (const sampling of WINDOWS) {
-    const browser = analyzeLandings(dump.frames, { ...base, strikeAngleSampling: sampling });
+    const browser = analyzeLandings(dump.frames, {
+      ...base,
+      strikeAngleSampling: sampling,
+    });
     const reference = analyzeLandings(run.frames, {
       ...base,
       preFiltered: true,
@@ -149,7 +167,7 @@ function main(argv: string[]): number {
     const agreed = paired.filter((pair) => pair.sameStrike).length;
 
     console.log(
-      sampling.padEnd(12) +
+      sampling.padEnd(14) +
         `${show(mean(angles(browser))).padStart(7)} ${mix(browser).padEnd(22)}` +
         `${show(mean(angles(reference))).padStart(7)} ${mix(reference).padEnd(22)}` +
         `중앙 ${show(median(gaps)).padStart(7)} · 절대 평균 ${show(mean(gaps.map(Math.abs))).padStart(7)}` +
@@ -157,15 +175,27 @@ function main(argv: string[]): number {
     );
   }
 
-  console.log("\n접지 주변 각도 궤적 (프레임 오프셋, 중앙값)");
-  trajectory(
-    analyzeLandings(dump.frames, { ...base, strikeAngleSampling: "around" }),
-    "브라우저",
-  );
-  trajectory(
-    analyzeLandings(run.frames, { ...base, preFiltered: true, strikeAngleSampling: "around" }),
-    "Sports2D",
-  );
+  const browserPass = analyzeLandings(dump.frames, base);
+  const referencePass = analyzeLandings(run.frames, { ...base, preFiltered: true });
+
+  console.log("\n접지 주변 궤적 (프레임 오프셋, 중앙값)");
+  const angle = (point: AnalysisResult["series"][number], side: "left" | "right") =>
+    side === "left" ? point.leftFootStrikeAngle : point.rightFootStrikeAngle;
+  // Hip-relative foot drop: larger means the foot is further below the hip,
+  // which is what rises to a maximum and holds while the foot is planted. The
+  // frame it stops rising on is the touchdown, so where that sits relative to
+  // the anchor is the detector's own offset.
+  const drop = (point: AnalysisResult["series"][number], side: "left" | "right") =>
+    side === "left" ? point.leftFootM : point.rightFootM;
+  const speed = (point: AnalysisResult["series"][number], side: "left" | "right") =>
+    side === "left" ? point.leftFootSpeed : point.rightFootSpeed;
+
+  trajectory(browserPass, "브라우저 각도", angle, "°");
+  trajectory(referencePass, "Sports2D 각도", angle, "°");
+  trajectory(browserPass, "브라우저 발 낙차", drop, "m");
+  trajectory(referencePass, "Sports2D 발 낙차", drop, "m");
+  trajectory(browserPass, "브라우저 발 속도", speed, "");
+  trajectory(referencePass, "Sports2D 발 속도", speed, "");
   return 0;
 }
 
