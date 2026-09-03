@@ -85,7 +85,7 @@ import {
   markerKey,
   parseTrc,
 } from "./sports2d";
-import { importTrc } from "./trc-import";
+import { importTrc, isImportCandidate } from "./trc-import";
 import {
   blurPlan,
   FACE_COVER_LABEL,
@@ -2260,11 +2260,32 @@ console.log("shoe photos ok", {
     throw new Error("an imported TRC produced no landings");
   }
 
+  // Handed a whole Sports2D output folder — the easiest thing for a person to
+  // do — only the two files that matter may be read. The folder also holds a
+  // rendered video and a frame image per frame, and reading those as text
+  // would stall the page for megabytes of nothing.
+  const folder = [
+    "clip_Sports2D_px_person00.trc",
+    "clip_Sports2D_calib.toml",
+    "clip_Sports2D_m_person00.trc",
+    "clip_Sports2D.mp4",
+    "clip_Sports2D_angles_person00.mot",
+    "clip_Sports2D_img/clip_Sports2D_00042.png",
+  ];
+  const candidates = folder.filter(isImportCandidate);
+  if (candidates.length !== 3) {
+    throw new Error(`folder filter kept ${candidates.join(", ")}`);
+  }
+  if (candidates.some((name) => /\.(mp4|png|mot)$/i.test(name))) {
+    throw new Error("a video, image or mot file would have been read as text");
+  }
+
   console.log("trc import ok", {
     size: `${good.value.width}x${good.value.height}`,
     tracked: `${good.value.trackedFrames}/${good.value.frames.length}`,
     landings: imported.landings.length,
     refusals: "calib 없음 · 미터 TRC · 추적 0",
+    folder: `${folder.length}개 중 ${candidates.length}개만 읽음`,
   });
 
   console.log("sports2d adapter ok", {

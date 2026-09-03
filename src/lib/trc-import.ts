@@ -58,6 +58,19 @@ const isPixelTrc = (name: string) => /_px_.*\.trc$/i.test(name);
 const isMetreTrc = (name: string) => /_m_.*\.trc$/i.test(name);
 const isCalib = (name: string) => /_calib\.toml$/i.test(name);
 
+/**
+ * Whether a file is worth reading at all.
+ *
+ * A Sports2D output folder holds a rendered video, a frame image per frame and
+ * a graph per marker. Handed the whole folder — which is the easiest thing for
+ * a person to do — the caller must not read those as text; it filters with
+ * this first. The metre TRC is included so that picking it gets the refusal
+ * that says which file to use, rather than silently nothing.
+ */
+export function isImportCandidate(name: string): boolean {
+  return isPixelTrc(name) || isMetreTrc(name) || isCalib(name);
+}
+
 /** Frame size out of the calibration file Sports2D writes beside the TRC. */
 function frameSize(text: string): { width: number; height: number } | null {
   const match = text.match(/size\s*=\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]/);

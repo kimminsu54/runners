@@ -38,7 +38,7 @@ import {
   syntheticFrontRunFrames,
   syntheticRunningFrames,
 } from "@/lib/synthetic-jump";
-import { importTrc } from "@/lib/trc-import";
+import { importTrc, isImportCandidate } from "@/lib/trc-import";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, ImageDown, UploadCloud } from "lucide-react";
 import {
@@ -239,13 +239,36 @@ export function LandingAnalyzer() {
     setVideoUrl(URL.createObjectURL(file));
   }, []);
 
+  /**
+   * Take whatever was dropped or picked and send it down the right path.
+   *
+   * Sorting by what the files are, rather than by which control was used,
+   * means the drop zone that already accepts a clip also accepts a Sports2D
+   * result — select the TRC and the calib.toml in the output folder and drag
+   * them in. That is one gesture instead of navigating a dialog four levels
+   * deep, which is where this was easy to get stuck.
+   */
   const onFile = (list: FileList | null) => {
-    const file = list?.[0];
-    if (!file) return;
+    const files = list ? Array.from(list) : [];
+    if (!files.length) return;
+
+    const forImport = files.filter((file) => isImportCandidate(file.name));
+    if (forImport.length) {
+      void importSports2d(forImport);
+      return;
+    }
+
+    const file = files[0];
     const looksLikeVideo =
       file.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(file.name);
     if (!looksLikeVideo) {
-      setError("영상 파일만 올릴 수 있습니다.");
+      // Naming the TRC pair here because a stray .trc is otherwise rejected as
+      // "not a video", which is true and useless.
+      setError(
+        OFFER_TRC_IMPORT
+          ? "영상 파일, 또는 Sports2D의 픽셀 TRC와 _calib.toml 을 함께 올려 주세요."
+          : "영상 파일만 올릴 수 있습니다.",
+      );
       setStatus("error");
       return;
     }
@@ -318,15 +341,15 @@ export function LandingAnalyzer() {
    * the point, because a comparison is only worth anything if the analysis on
    * both sides is literally the same code.
    */
-  const importSports2d = async (list: FileList | null) => {
-    if (!list?.length) return;
+  const importSports2d = async (files: File[]) => {
+    if (!files.length) return;
     setError(null);
     setTrcNote(null);
+    // Only the two files that matter get read. A Sports2D folder also holds a
+    // rendered video and a few dozen images, and dragging the whole folder in
+    // is the obvious thing to do.
     const named = await Promise.all(
-      Array.from(list).map(async (file) => ({
-        name: file.name,
-        text: await file.text(),
-      })),
+      files.map(async (file) => ({ name: file.name, text: await file.text() })),
     );
     const parsed = importTrc(named);
     if (!parsed.ok) {
@@ -914,6 +937,11 @@ export function LandingAnalyzer() {
                   <span aria-hidden className="text-border">·</span>
                   <span>업로드 없음</span>
                 </span>
+                {OFFER_TRC_IMPORT ? (
+                  <span className="text-meta text-muted-foreground">
+                    Sports2D 결과를 볼 때는 `_px_….trc` 와 `_calib.toml` 을 함께 놓으세요
+                  </span>
+                ) : null}
               </label>
             ) : null}
             {recording ? (
@@ -985,16 +1013,23 @@ export function LandingAnalyzer() {
               {OFFER_TRC_IMPORT && !cameraOn ? (
                 <label
                   className={buttonVariants({ variant: "ghost", size: "sm" })}
-                  title="Sports2D가 만든 픽셀 TRC와 _calib.toml 을 함께 고르세요"
+                  title={
+                    "Sports2D 출력 폴더에서 ..._px_....trc 와 ..._calib.toml 을 " +
+                    "같이 고르세요. 두 파일을 끌어다 놓아도 됩니다."
+                  }
                 >
-                  TRC 불러오기
+                  TRC + calib 고르기
                   <input
                     type="file"
                     multiple
                     accept=".trc,.toml"
                     className="sr-only"
                     onChange={(e) => {
-                      void importSports2d(e.target.files);
+                      void importSports2d(
+                        Array.from(e.target.files ?? []).filter((file) =>
+                          isImportCandidate(file.name),
+                        ),
+                      );
                       e.target.value = "";
                     }}
                   />
