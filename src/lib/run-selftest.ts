@@ -28,6 +28,8 @@ import {
   analyzeLandings,
   analyzeLandingsAuto,
   type PoseFrame,
+  type FootStrike,
+  type StrikeAngleSampling,
   cadenceSpm,
   classifyFootStrike,
   clampedPeakGrfBw,
@@ -2480,5 +2482,133 @@ console.log("shoe photos ok", {
     gap: "빠진 착지 1개만 미짝",
     refuses: "다른 클립 · 다른 구간 · 다른 배속",
     strikes: `${counted}회 전부 분류`,
+  });
+}
+
+// What the frame rate takes out of the strike verdict, and which sampling
+// window gets it back. The whole finding lives in tools/sports2d/strike-bias.ts,
+// which nobody runs on a schedule, so the part that must not regress is here.
+//
+// The setting this pins down is not a preference. Ordinary phone video is
+// 30 fps, one frame is 33 ms, and a rearfoot foot rotates to flat in about
+// 40 ms — so a window that includes the sample after touchdown has already
+// lost most of the angle it exists to measure, and it loses it toward zero,
+// which is toward midfoot.
+{
+  const W = 1280;
+  const H = 720;
+  const opts = { statureM: 1.7, massKg: 70, width: W, height: H };
+
+  /** The hardest honest condition: the foot still settling, and noisy points. */
+  const hard = { swingDriftDeg: -6, jitterPx: 3, flattenS: 0.04, ahead: 0.066 };
+
+  const read = (strikeDeg: number, fps: number, sampling: StrikeAngleSampling) => {
+    const frames = syntheticSideRunFrames({
+      ...hard,
+      fps,
+      strikeDeg,
+      aspect: W / H,
+    });
+    const result = analyzeLandings(frames, { ...opts, strikeAngleSampling: sampling });
+    const angles = result.landings
+      .map((landing) => landing.footStrikeAngleDeg)
+      .filter(Number.isFinite);
+    return {
+      mean: angles.length ? angles.reduce((a, b) => a + b, 0) / angles.length : Number.NaN,
+      correct: result.landings.filter((landing) => landing.footStrike === want(strikeDeg))
+        .length,
+      judged: result.landings.filter((landing) => landing.footStrike !== "unknown").length,
+    };
+  };
+
+  function want(strikeDeg: number): FootStrike {
+    if (strikeDeg <= threshold("foot_strike_rearfoot_max_deg")) return "rearfoot";
+    if (strikeDeg >= threshold("foot_strike_forefoot_min_deg")) return "forefoot";
+    return "midfoot";
+  }
+
+  // The fixture has to be capable of the thing being measured, or every
+  // assertion below passes for the wrong reason. At 240 fps the grid is not the
+  // limiting factor and the angle should come back close to what went in.
+  const truth = read(-18, 240, "around");
+  if (!(Math.abs(truth.mean + 18) < 4)) {
+    throw new Error(`the fixture does not reproduce -18° at 240 fps: ${truth.mean}`);
+  }
+
+  // The defect, stated as a measurement. A ten-degree rearfoot contact — an
+  // ordinary one — is reported as midfoot at 30 fps by the window that reads
+  // either side of contact.
+  const around10 = read(-10, 30, "around");
+  if (around10.correct !== 0) {
+    throw new Error(
+      `around now judges -10° at 30fps correctly ${around10.correct} times; if that is` +
+        " a real improvement, this test and the default it guards should change together",
+    );
+  }
+
+  // And the fix, stated the same way. Reading the largest inclination in the
+  // 50 ms before contact recovers every verdict in this sweep.
+  for (const strikeDeg of [-18, -10, 0, 12]) {
+    const peak = read(strikeDeg, 30, "peak");
+    if (peak.correct !== peak.judged || peak.judged === 0) {
+      throw new Error(
+        `peak got ${peak.correct}/${peak.judged} right at ${strikeDeg}° (mean ${peak.mean.toFixed(1)}°)`,
+      );
+    }
+  }
+
+  // Peak's own failure mode, bounded rather than denied. It takes an extreme,
+  // so a foot still rotating during late swing lends it a couple of degrees in
+  // the direction of that rotation — visible here as a midfoot contact reading
+  // slightly rearfoot. It has to stay well inside the band, or the fix would
+  // invent a strike pattern where there is none.
+  const flat = read(0, 30, "peak");
+  const band = threshold("foot_strike_forefoot_min_deg");
+  if (!(Math.abs(flat.mean) < band / 2)) {
+    throw new Error(
+      `peak reads a flat foot as ${flat.mean.toFixed(1)}°, over half the ${band}° band`,
+    );
+  }
+
+  // Sampling has to matter at 30 fps and stop mattering once the grid is fine
+  // enough, which is the claim that the frame rate is at fault rather than the
+  // window being a lucky guess.
+  //
+  // Asked on a still foot, and that qualification is the point. With the foot
+  // still rotating in late swing the two windows disagree at every frame rate,
+  // because `peak` deliberately looks back 50 ms and the foot really was at a
+  // different angle there — at 240 fps that is twelve samples of drift, not
+  // one. That is the design working, so measuring convergence against it would
+  // be measuring the drift instead.
+  const still = (fps: number, sampling: StrikeAngleSampling) => {
+    const frames = syntheticSideRunFrames({
+      flattenS: 0.04,
+      ahead: 0.066,
+      fps,
+      strikeDeg: -18,
+      aspect: W / H,
+    });
+    const angles = analyzeLandings(frames, { ...opts, strikeAngleSampling: sampling })
+      .landings.map((landing) => landing.footStrikeAngleDeg)
+      .filter(Number.isFinite);
+    return angles.reduce((a, b) => a + b, 0) / (angles.length || 1);
+  };
+  const fine = Math.abs(still(240, "around") - still(240, "peak"));
+  const coarse = Math.abs(still(30, "around") - still(30, "peak"));
+  if (fine > 3) {
+    throw new Error(`at 240 fps on a still foot the windows disagree by ${fine.toFixed(1)}°`);
+  }
+  if (coarse < fine + 3) {
+    throw new Error(
+      `sampling barely matters at 30 fps (${coarse.toFixed(1)}° vs ${fine.toFixed(1)}°)` +
+        " — the frame grid is no longer the thing this guards against",
+    );
+  }
+
+  console.log("strike sampling ok", {
+    truth: `240fps ${truth.mean.toFixed(1)}°`,
+    around: `30fps -10° → ${around10.mean.toFixed(1)}° · 정답 0`,
+    peak: `30fps 전 구간 정답 · 평평한 발 ${flat.mean.toFixed(1)}°`,
+    grid: `표본창 차이 30fps ${coarse.toFixed(1)}° · 240fps ${fine.toFixed(1)}°`,
   });
 }

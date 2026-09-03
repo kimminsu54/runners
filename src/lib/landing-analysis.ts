@@ -227,6 +227,12 @@ export type AnalyzeOptions = {
    * measuring our smoothing and reporting it as pose estimation.
    */
   preFiltered?: boolean;
+  /**
+   * Where to read the foot's inclination for each contact. Defaults to the
+   * window this analysis has always used; see StrikeAngleSampling for why the
+   * other one exists and what decides between them.
+   */
+  strikeAngleSampling?: StrikeAngleSampling;
 };
 
 function riskFromScore(score: number): Risk {
@@ -751,6 +757,7 @@ export function analyzeLandings(
     options.massKg,
     options.statureM,
     cameraView,
+    options.strikeAngleSampling,
   );
   const quality = assessQuality(
     subjectHeightRatio,
@@ -1202,6 +1209,7 @@ function detectLandings(
   massKg: number,
   statureM: number,
   view: CameraView = "side",
+  strikeAngleSampling: StrikeAngleSampling = "around",
 ): Landing[] {
   if (series.length < 8) return [];
   const acc = series.map((s) => s.acc);
@@ -1335,7 +1343,13 @@ function detectLandings(
       kneeMeasured,
     });
     const side = raw.side;
-    const footStrikeAngle = strikeAngleAt(series, raw.strikeIdx, side);
+    const footStrikeAngle = strikeAngleAt(
+      series,
+      raw.strikeIdx,
+      side,
+      strikeAngleSampling,
+      dt,
+    );
     const strike = classifyFootStrike(footStrikeAngle, view);
     // Fore-aft position needs the runner seen from the side for the same reason
     // the strike angle does: from in front, the distance is along the camera
@@ -1405,27 +1419,89 @@ function dedupe(
   return out;
 }
 
+/**
+ * Where in time to read the foot's inclination for a contact.
+ *
+ * `around` reads a frame either side of the detected contact, which is what
+ * this analysis has always done. `before` reads the two samples up to and
+ * including it, and never the one after.
+ *
+ * The difference is not a matter of taste at 30 fps, which is the frame rate
+ * ordinary phone video gives and therefore the rate this has to work at. A
+ * rearfoot foot rotates from heel-down to flat in roughly 30 to 50 ms, and one
+ * frame at 30 fps is 33 ms: the sample *after* touchdown has already lost most
+ * of the angle it is supposed to measure, and including it pulls every strike
+ * toward midfoot. The sample *before* touchdown has the opposite property —
+ * the foot is set during late swing and its orientation barely changes over
+ * the last frame of flight.
+ *
+ * `peak` goes further and takes the largest inclination over the few samples
+ * up to contact. Its justification is the same physics from the other end: the
+ * foot is set during late swing and holds that orientation until it lands, so
+ * the biggest angle in that window is the landing angle, while everything
+ * after touchdown is smaller. Its risk is the mirror image — landmark noise
+ * only ever inflates a maximum, so a jittery heel or toe reads as a more
+ * extreme strike than it was.
+ *
+ * Left as options rather than simply changed, because the detected contact
+ * index can itself lead or trail the true first contact by a sample, and which
+ * window wins is a question for measurement (tools/sports2d/strike-bias.ts)
+ * and not for an argument.
+ */
+export type StrikeAngleSampling = "around" | "before" | "peak";
+
+/**
+ * How far back `peak` looks, in seconds.
+ *
+ * Seconds and not frames. A fixed number of samples means a different physical
+ * window at every frame rate — three frames is 100 ms at 30 fps and 12 ms at
+ * 240 — and the thing being avoided is a rotation that takes a fixed number of
+ * milliseconds. Written in frames, the setting measured well at one rate and
+ * quietly meant something else at another.
+ *
+ * 50 ms is long enough to clear the sample after touchdown at 30 fps and short
+ * enough to miss most of the foot still settling into position during late
+ * swing, which is what a longer window picks up instead of the landing angle.
+ */
+const PEAK_LOOKBACK_S = 0.05;
+
 function strikeAngleAt(
   series: SeriesPoint[],
   index: number,
   side: FootSide,
+  sampling: StrikeAngleSampling = "around",
+  dt = 1 / 30,
 ): number {
   let resolved = side;
   if (resolved === "unknown") resolved = inferFootSide(series[index]);
   if (resolved === "unknown") return Number.NaN;
 
+  // At least one sample back whatever the rate, or at 10 fps the window would
+  // be the contact frame alone and `peak` would collapse into reading it.
+  const lookback =
+    sampling === "peak" ? Math.max(1, Math.round(PEAK_LOOKBACK_S / dt)) : 1;
+  const first = Math.max(0, index - lookback);
+  const last = Math.min(series.length - 1, sampling === "around" ? index + 1 : index);
+
   const values: number[] = [];
-  // The detected contact can lead or trail the visible first-contact frame by
-  // one sample. Use a very small window so the flat foot later in stance does
-  // not wash out heel-first or forefoot-first contact.
-  for (let i = Math.max(0, index - 1); i <= Math.min(series.length - 1, index + 1); i++) {
+  for (let i = first; i <= last; i++) {
     const angle =
       resolved === "left"
         ? series[i].leftFootStrikeAngle
         : series[i].rightFootStrikeAngle;
     if (Number.isFinite(angle)) values.push(angle);
   }
-  return median(values);
+  if (!values.length) return Number.NaN;
+  if (sampling !== "peak") return median(values);
+
+  // The largest inclination in the window, keeping its sign. Not the largest
+  // of each direction separately: a window that saw both would be describing a
+  // foot that rotated through flat, and the answer for it is the bigger
+  // excursion, not a mixture of the two.
+  return values.reduce(
+    (best, angle) => (Math.abs(angle) > Math.abs(best) ? angle : best),
+    values[0],
+  );
 }
 
 /**

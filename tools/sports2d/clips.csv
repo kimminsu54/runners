@@ -1,19 +1,7 @@
 id,file,height_m,pace,strike,visible_side,note
-01,clips/easy-rear-side.mp4,1.70,easy,rearfoot,auto,정확한 옆모습
-02,clips/easy-mid-side.mp4,1.70,easy,midfoot,auto,정확한 옆모습
-03,clips/easy-fore-side.mp4,1.70,easy,forefoot,auto,정확한 옆모습
-04,clips/steady-rear-side.mp4,1.70,steady,rearfoot,auto,정확한 옆모습
-05,clips/steady-mid-side.mp4,1.70,steady,midfoot,auto,정확한 옆모습
-06,clips/steady-fore-side.mp4,1.70,steady,forefoot,auto,정확한 옆모습
-07,clips/fast-rear-side.mp4,1.70,fast,rearfoot,auto,정확한 옆모습
-08,clips/fast-mid-side.mp4,1.70,fast,midfoot,auto,정확한 옆모습
-09,clips/fast-fore-side.mp4,1.70,fast,forefoot,auto,정확한 옆모습
-10,clips/easy-rear-oblique.mp4,1.70,easy,rearfoot,auto,15~30° 사선
-11,clips/easy-mid-oblique.mp4,1.70,easy,midfoot,auto,15~30° 사선
-12,clips/easy-fore-oblique.mp4,1.70,easy,forefoot,auto,15~30° 사선
-13,clips/steady-rear-oblique.mp4,1.70,steady,rearfoot,auto,15~30° 사선
-14,clips/steady-mid-oblique.mp4,1.70,steady,midfoot,auto,15~30° 사선
-15,clips/steady-fore-oblique.mp4,1.70,steady,forefoot,auto,15~30° 사선
-16,clips/fast-rear-oblique.mp4,1.70,fast,rearfoot,auto,15~30° 사선
-17,clips/fast-mid-oblique.mp4,1.70,fast,midfoot,auto,15~30° 사선
-18,clips/fast-fore-oblique.mp4,1.70,fast,forefoot,auto,15~30° 사선
+01,clips/advice-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 9.7초 · 세로 720x1280 · 30fps 720x1280 9.7s · 신장 미상(자리표시자 1.70)
+02,clips/pace-ladder-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 26초 · 페이스가 구간마다 바뀝니다 · 30fps 720x1280 26.0s · 신장 미상(자리표시자 1.70)
+03,clips/heel-strike-480p.mp4,1.70,unknown,unknown,auto,외부 클립 · 24.3초 · 480x854 로 해상도가 낮은 유일한 클립 · 30fps 480x854 24.3s · 신장 미상(자리표시자 1.70)
+04,clips/chelimo-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 15.1초 · 엘리트 주행 · 30fps 720x1280 15.1s · 신장 미상(자리표시자 1.70)
+05,clips/jog-to-sprint-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 10.8초 · 조깅에서 질주로 바뀝니다 · 30fps 720x1280 10.8s · 신장 미상(자리표시자 1.70)
+06,clips/treadmill-720p.mp4,1.70,unknown,unknown,auto,"외부 클립 · 52.5초 · 트레드밀, 전신 옆모습 · 30fps 720x1280 52.5s · 신장 미상(자리표시자 1.70)"

@@ -296,6 +296,53 @@ export function LandingAnalyzer() {
    * them in. That is one gesture instead of navigating a dialog four levels
    * deep, which is where this was easy to get stuck.
    */
+  /**
+   * Publish both passes for the offline comparison harness to read.
+   *
+   * The browser's landings exist only in this browser, and the comparison the
+   * project needs is per landing, not per average: an average hides whether
+   * the two estimators disagree a little about every contact or completely
+   * about a few. tools/sports2d/compare-all.py reads this over the DevTools
+   * protocol and writes the CSV.
+   *
+   * A measurement hook, behind the same development-only condition as the
+   * import that feeds it, and write-only — nothing in the app reads it back,
+   * so it cannot become a second source of truth for the report.
+   */
+  useEffect(() => {
+    if (!OFFER_TRC_IMPORT) return;
+    const target = window as unknown as { __strideLabPasses?: unknown };
+    target.__strideLabPasses = {
+      browser: passes.browser
+        ? {
+            label: passes.browser.label,
+            clip: passes.browser.clip,
+            windowS: passes.browser.windowS,
+            clockFactor: passes.browser.clockFactor,
+            trackedFrames: passes.browser.trackedFrames,
+            totalFrames: passes.browser.totalFrames,
+            quality: passes.browser.result.quality,
+            landings: passes.browser.result.landings,
+          }
+        : null,
+      sports2d: passes.sports2d
+        ? {
+            label: passes.sports2d.label,
+            clip: passes.sports2d.clip,
+            windowS: passes.sports2d.windowS,
+            clockFactor: passes.sports2d.clockFactor,
+            trackedFrames: passes.sports2d.trackedFrames,
+            totalFrames: passes.sports2d.totalFrames,
+            quality: passes.sports2d.result.quality,
+            landings: passes.sports2d.result.landings,
+          }
+        : null,
+    };
+    return () => {
+      delete target.__strideLabPasses;
+    };
+  }, [passes]);
+
   // Ask the dev server what offline runs exist, once.
   useEffect(() => {
     if (!OFFER_TRC_IMPORT) return;

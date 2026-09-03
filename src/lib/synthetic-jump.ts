@@ -22,6 +22,12 @@ type PoseShape = {
   /** Toe offset from its own ankle. The sign is the direction the foot points. */
   leftToeDx?: number;
   rightToeDx?: number;
+  /** Toe height offset from its own ankle, which is the foot's inclination. */
+  leftToeDy?: number;
+  rightToeDy?: number;
+  /** Heel height offset, which exists so the heel can be given its own noise. */
+  leftHeelDy?: number;
+  rightHeelDy?: number;
   /** Half-widths of the shoulder and hip pairs, which set the profile ratio. */
   shoulderHalf?: number;
   hipHalf?: number;
@@ -44,6 +50,10 @@ function poseAt(
     rightFootX = 0.53,
     leftToeDx = -0.08,
     rightToeDx = 0.08,
+    leftToeDy = 0,
+    rightToeDy = 0,
+    leftHeelDy = 0,
+    rightHeelDy = 0,
     shoulderHalf = 0.01,
     hipHalf = 0.005,
     leftKneeX = 0.47,
@@ -61,10 +71,16 @@ function poseAt(
   arr[26] = lm(rightKneeX, hipY + 0.12);
   arr[27] = lm(leftFootX, leftFootY);
   arr[28] = lm(rightFootX, rightFootY);
-  arr[29] = arr[27];
-  arr[30] = arr[28];
-  arr[31] = lm(leftFootX + leftToeDx, leftFootY);
-  arr[32] = lm(rightFootX + rightToeDx, rightFootY);
+  // The heel sits at the ankle, but not identically: it carries its own
+  // offset so a fixture can give the heel and the toe independent noise, which
+  // is what a real estimator does.
+  arr[29] = lm(leftFootX, leftFootY + leftHeelDy);
+  arr[30] = lm(rightFootX, rightFootY + rightHeelDy);
+  // The toe carries a height offset of its own, which is what gives the foot
+  // an inclination at all. Without it every foot in these fixtures is exactly
+  // horizontal, and a horizontal foot cannot test a strike verdict.
+  arr[31] = lm(leftFootX + leftToeDx, leftFootY + leftToeDy);
+  arr[32] = lm(rightFootX + rightToeDx, rightFootY + rightToeDy);
   return arr;
 }
 
@@ -207,6 +223,45 @@ export function analyzeSyntheticRun(gait: Partial<RunningGait> = {}) {
 
 export type SideRunGait = RunningGait & {
   /**
+   * Foot inclination at touchdown, in degrees, positive for a forefoot contact
+   * (toe below heel) and negative for a rearfoot one.
+   */
+  strikeDeg: number;
+  /**
+   * How long the foot takes to rotate from that angle to flat, in seconds.
+   *
+   * Roughly 40 ms for a rearfoot contact, which is the number that makes 30 fps
+   * footage hard: one frame at 30 fps is 33 ms, so the sample after touchdown
+   * has already lost most of the angle. The fixture reproduces that rather than
+   * planting the foot instantly, because otherwise it cannot test the problem.
+   */
+  flattenS: number;
+  /**
+   * Frame aspect ratio, needed only to turn an angle into the normalised
+   * coordinates a landmark carries. Must match the width and height the
+   * analysis is given, or the injected angle is not the angle it reads.
+   */
+  aspect: number;
+  /**
+   * How much the foot's angle differs a tenth of a second before touchdown,
+   * in degrees, ramping to `strikeDeg` by the moment it lands.
+   *
+   * Without this the fixture holds one angle through the whole flight, which
+   * flatters any estimator that takes an extreme over a pre-contact window:
+   * such a window is then reading a constant. A real foot is still moving into
+   * position, and this is the knob that says how much.
+   */
+  swingDriftDeg: number;
+  /**
+   * Landmark jitter, in pixels, applied independently to the heel and toe.
+   *
+   * Pose estimators do not place a keypoint in the same spot twice, and an
+   * estimator of the strike angle that takes a maximum is exposed to that in
+   * one direction only: noise can only ever inflate an extreme. Nothing else
+   * in this fixture is noisy, so this is where that gets tested.
+   */
+  jitterPx: number;
+  /**
    * How far ahead of the hip the ankle sits at touchdown, in normalised frame
    * width. 0 lands the foot under the body.
    */
@@ -236,7 +291,52 @@ export function syntheticSideRunFrames(
     fps = 60,
     ahead = 0.066,
     facing = 1,
+    strikeDeg = 0,
+    flattenS = 0.04,
+    aspect = 1280 / 720,
+    swingDriftDeg = 0,
+    jitterPx = 0,
   } = gait;
+  const toeSpanX = 0.06;
+  /** How long before touchdown the drift starts, in seconds. */
+  const DRIFT_S = 0.1;
+
+  // A small deterministic generator, so a run with jitter is reproducible and a
+  // test that fails can be looked at. Math.random would make every run a
+  // different experiment.
+  let seed = 0x2f6e2b1;
+  const noise = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed / 0x7fffffff) * 2 - 1;
+  };
+
+  /**
+   * The toe's height offset for one foot at one instant.
+   *
+   * The foot is set to its landing angle through the flight before touchdown —
+   * which is why reading the angle a frame early costs so little — and rotates
+   * to flat over flattenS once it is down.
+   */
+  const toeDy = (t: number, starts: number[]): number => {
+    if (!strikeDeg && !swingDriftDeg) return 0;
+    // In flight, drifting into position over the last DRIFT_S before the next
+    // touchdown; on the ground, rotating to flat over flattenS.
+    const next = Math.min(...starts.filter((start) => start > t), Number.POSITIVE_INFINITY);
+    let angle =
+      Number.isFinite(next) && next - t < DRIFT_S
+        ? strikeDeg + swingDriftDeg * ((next - t) / DRIFT_S)
+        : strikeDeg + swingDriftDeg;
+    for (const start of starts) {
+      if (t < start) continue;
+      const since = t - start;
+      if (since > contactS) continue;
+      angle = since >= flattenS ? 0 : strikeDeg * (1 - since / flattenS);
+      break;
+    }
+    // dy = |dx| * tan(angle) in pixels gives asin(dy / hypot) === angle, which
+    // is what footStrikeAngleDeg computes. Converted back to normalised units.
+    return toeSpanX * aspect * Math.tan((angle * Math.PI) / 180);
+  };
   const stepPeriod = contactS + flightS;
   const starts = Array.from({ length: steps }, (_, i) => 0.25 + i * stepPeriod);
   const leftStarts = starts.filter((_, i) => i % 2 === 0);
@@ -248,6 +348,17 @@ export function syntheticSideRunFrames(
     const t = i / fps;
     const leftX = 0.5 + facing * footX(t, leftStarts, contactS, stepPeriod, ahead);
     const rightX = 0.5 + facing * footX(t, rightStarts, contactS, stepPeriod, ahead);
+    // The toe points the way the runner is going, so a mirrored runner has its
+    // toe on the other side and the sign of the height offset is unchanged.
+    // Jitter is in pixels, so it converts to normalised units by the frame
+    // size the aspect ratio stands for; 720 tall is what these fixtures are
+    // analysed at.
+    const jitterY = () => (jitterPx ? (noise() * jitterPx) / 720 : 0);
+    const jitterX = () => (jitterPx ? (noise() * jitterPx) / (720 * aspect) : 0);
+    const leftToeDy = toeDy(t, leftStarts) + jitterY();
+    const rightToeDy = toeDy(t, rightStarts) + jitterY();
+    const leftHeelJitter = jitterY();
+    const rightHeelJitter = jitterY();
     frames.push({
       t,
       landmarks: poseAt(
@@ -257,8 +368,12 @@ export function syntheticSideRunFrames(
         {
           leftFootX: leftX,
           rightFootX: rightX,
-          leftToeDx: facing * 0.06,
-          rightToeDx: facing * 0.06,
+          leftToeDx: facing * toeSpanX + jitterX(),
+          rightToeDx: facing * toeSpanX + jitterX(),
+          leftToeDy,
+          rightToeDy,
+          leftHeelDy: leftHeelJitter,
+          rightHeelDy: rightHeelJitter,
           leftKneeX: 0.5 + (leftX - 0.5) * 0.4,
           rightKneeX: 0.5 + (rightX - 0.5) * 0.4,
         },
