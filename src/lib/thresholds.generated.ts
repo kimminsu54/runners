@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 6)
+// Source: shared/thresholds.yaml (version 7)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 6;
+export const THRESHOLDS_VERSION = 7;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -29,6 +29,7 @@ export type ThresholdKey =
   | "min_cadence_consistency_publish"
   | "min_contact_s"
   | "max_contact_s"
+  | "max_cadence_spm"
   | "min_step_s"
   | "max_step_s"
   | "cadence_step_agreement"
@@ -201,6 +202,16 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "보고된 러닝 접지 시간의 상한 근처입니다. 느린 조깅이 약 0.3 s 이고, 이보다 길면 달리기가 아니라 걷기이거나 추적이 멈춘 구간입니다.",
     validationStatus: "literature",
     note: "특정 논문 한 편을 인용하지는 않았습니다.",
+  },
+  max_cadence_spm: {
+    key: "max_cadence_spm",
+    label: "케이던스 상한",
+    value: 270,
+    unit: "score",
+    appliesTo: "running",
+    source: "엘리트 단거리 주행의 최고 케이던스가 분당 260보 안팎입니다. 이보다 높은 값은 사람의 걸음이 아니라 촬영 배속을 잘못 잡은 것입니다.",
+    validationStatus: "convention",
+    note: "촬영 배속 후보를 걸러내는 관문으로만 쓰고, 사용자에게 케이던스를 판정하는 데는 쓰지 않습니다. min_step_s(400 spm)는 케이던스 계산에서 간격을 거르는 값이라 이보다 관대합니다.",
   },
   min_step_s: {
     key: "min_step_s",

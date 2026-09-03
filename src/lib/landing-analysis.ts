@@ -908,15 +908,62 @@ export function analyzeLandingsAuto(
   };
 }
 
+/**
+ * How many of the contacts the best candidate found a candidate must also
+ * find, to be considered at all.
+ *
+ * A time scaling cannot remove a footfall from the footage. But the contact
+ * detector keeps its minimum separation in seconds, so dividing the clock
+ * widens that separation in frames and it merges neighbouring contacts: on a
+ * real-time clip, reading it as twice slow found four contacts where reading
+ * it straight found eight, and measured a stride while calling it a step. The
+ * halved cadence then looked human — 171 spm against 180 — and the plausibility
+ * score preferred it.
+ *
+ * Three quarters sits clear of that halving and leaves room for a contact or
+ * two lost at an edge. Kept here rather than in shared/thresholds.yaml because
+ * it decides between candidate capture rates and never judges a runner.
+ */
+const MIN_CANDIDATE_LANDING_SHARE = 0.75;
+
 function bestSlowMotion(
   frames: PoseFrame[],
   options: AnalyzeOptions,
 ): { result: AnalysisResult; factor: number; score: number } | null {
-  let best: { result: AnalysisResult; factor: number; score: number } | null = null;
-  for (const factor of SLOW_MOTION_CANDIDATES) {
+  const candidates = SLOW_MOTION_CANDIDATES.map((factor) => {
     const result = analyzeLandings(frames, { ...options, slowMotionFactor: factor });
-    const score = gaitPlausibility(result) - (factor === 1 ? 0 : 0.12);
-    if (!best || score > best.score) best = { result, factor, score };
+    return {
+      result,
+      factor,
+      // The small penalty on anything but real time keeps a tie from moving a
+      // clip off the rate it was shot at.
+      score: gaitPlausibility(result) - (factor === 1 ? 0 : 0.12),
+    };
+  });
+
+  // Order matters here, and getting it wrong swaps one failure for another.
+  //
+  // The two ways a capture rate can be wrong are not symmetric. A rate too
+  // fast shortens the clock, widens the detector's minimum separation in
+  // frames and merges neighbouring contacts, so it finds too few. A rate too
+  // slow lengthens the clock and merges nothing, so it finds as many or more —
+  // and if the count were compared across every candidate, the too-slow one
+  // would set the bar and disqualify the right answer. Genuine slow motion
+  // read as real time is exactly that case.
+  //
+  // So plausibility decides first: a step outside what a person can take
+  // scores zero and drops out. Only among the survivors does the count of
+  // contacts break the tie, which is the comparison that catches merging.
+  const plausible = candidates.filter((c) => c.score > 0);
+  const considered = plausible.length ? plausible : candidates;
+  const mostFound = Math.max(...considered.map((c) => c.result.landings.length));
+  const eligible = considered.filter(
+    (c) => c.result.landings.length >= mostFound * MIN_CANDIDATE_LANDING_SHARE,
+  );
+
+  let best: { result: AnalysisResult; factor: number; score: number } | null = null;
+  for (const candidate of eligible) {
+    if (!best || candidate.score > best.score) best = candidate;
   }
   return best;
 }
@@ -930,6 +977,30 @@ function gaitPlausibility(result: AnalysisResult): number {
     .map((l, i) => l.tContact - landings[i].tContact);
   const stepPeriod = median(gaps);
   if (!Number.isFinite(stepPeriod) || stepPeriod <= 0) return 0;
+  // Step spacing is a gate here, not one term among several.
+  //
+  // Everything else this function weighs — contact duration, duty factor, the
+  // share of contacts with a measured stance — depends on finding the start
+  // and end of stance, and those are the first things to fail when the feet
+  // are poorly tracked. Their combined weight can outvote the cadence term,
+  // and then a capture rate that is plainly wrong wins because the broken
+  // contact numbers happen to land inside a plausible window once divided by
+  // it. That produced advice to reanalyse real-time footage at four times
+  // slow, on a clip whose cadence at real time was 181 spm.
+  //
+  // Contact spacing survives what contact duration does not: a missed toe-off
+  // costs a stance, not a step. So a factor that puts the step outside what a
+  // person can take is disqualified however well the fragile terms score at
+  // it, in both directions — genuine slow motion read as real time lands
+  // outside the band the same way.
+  //
+  // The ceiling is tighter than MIN_STEP_S, and it has to be. That constant
+  // filters gaps when computing cadence, where being permissive is right; at
+  // 400 spm it also admits a factor twice too high, which is the mistake this
+  // gate exists to refuse. An elite sprinter is near 260 spm, so a reading
+  // past 270 is a capture rate rather than a runner.
+  if (stepPeriod > MAX_STEP_S) return 0;
+  if (60 / stepPeriod > threshold("max_cadence_spm")) return 0;
   const cadence = 60 / stepPeriod;
   const contactS = median(landings.map((l) => l.contactMs)) / 1000;
   const duty = median(landings.map((l) => l.dutyFactor));

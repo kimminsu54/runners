@@ -24,7 +24,7 @@
 #
 # unit — deg(부호 있는 각도) · deg_abs(크기 한계) · s · BW · score · ratio · px
 
-version: 6
+version: 7
 
 thresholds:
   foot_strike_rearfoot_max_deg:
@@ -170,6 +170,15 @@ thresholds:
     source: "보고된 러닝 접지 시간의 상한 근처입니다. 느린 조깅이 약 0.3 s 이고, 이보다 길면 달리기가 아니라 걷기이거나 추적이 멈춘 구간입니다."
     validation_status: "literature"
     note: "특정 논문 한 편을 인용하지는 않았습니다."
+
+  max_cadence_spm:
+    label: "케이던스 상한"
+    value: 270
+    unit: "score"
+    applies_to: "running"
+    source: "엘리트 단거리 주행의 최고 케이던스가 분당 260보 안팎입니다. 이보다 높은 값은 사람의 걸음이 아니라 촬영 배속을 잘못 잡은 것입니다."
+    validation_status: "convention"
+    note: "촬영 배속 후보를 걸러내는 관문으로만 쓰고, 사용자에게 케이던스를 판정하는 데는 쓰지 않습니다. min_step_s(400 spm)는 케이던스 계산에서 간격을 거르는 값이라 이보다 관대합니다."
 
   min_step_s:
     label: "착지 간격 하한"

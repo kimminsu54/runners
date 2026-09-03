@@ -245,6 +245,7 @@ def main() -> int:
                         "id": run_id,
                         "clip": clip.name,
                         "pipeline": source,
+                        "camera": pass_data.get("cameraView", ""),
                         "quality": (pass_data.get("quality") or {}).get("level", ""),
                         "t_contact": round(landing.get("tContact", 0), 4),
                         "side": landing.get("side", ""),

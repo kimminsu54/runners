@@ -321,6 +321,7 @@ export function LandingAnalyzer() {
             clockFactor: passes.browser.clockFactor,
             trackedFrames: passes.browser.trackedFrames,
             totalFrames: passes.browser.totalFrames,
+            cameraView: passes.browser.result.cameraView,
             quality: passes.browser.result.quality,
             landings: passes.browser.result.landings,
           }
@@ -333,6 +334,7 @@ export function LandingAnalyzer() {
             clockFactor: passes.sports2d.clockFactor,
             trackedFrames: passes.sports2d.trackedFrames,
             totalFrames: passes.sports2d.totalFrames,
+            cameraView: passes.sports2d.result.cameraView,
             quality: passes.sports2d.result.quality,
             landings: passes.sports2d.result.landings,
           }

@@ -2726,3 +2726,73 @@ console.log("shoe photos ok", {
     short: `${short.landings.length}회 · 판단 보류`,
   });
 }
+
+// Telling a wrong capture rate from a failed detection.
+//
+// Real-time footage came back advised to reanalyse at four times slow, on a
+// clip whose cadence at real time was 181 spm — a perfectly human number.
+// Following it would have divided every timing by four and made the report
+// worse. Three of six test clips had their strike verdicts withheld through
+// this one path, because the advice also grades the clip `poor`.
+//
+// The cause was a scoring function in which the terms that depend on finding
+// the start and end of stance outweigh the term that does not. Those are the
+// first to fail when the feet are poorly tracked, and once they have failed a
+// wrong factor can win by dividing the broken numbers into a plausible-looking
+// window. Contact spacing does not fail the same way: a missed toe-off costs a
+// stance, not a step. So it gates rather than scores.
+{
+  const W = 1280;
+  const H = 720;
+  const opts = { statureM: 1.7, massKg: 70, width: W, height: H };
+
+  // Real-time running, with the feet made unreliable enough that stance cannot
+  // be timed — which is the state the misdiagnosis needs.
+  const realTime = syntheticSideRunFrames({ ahead: 0.066, fps: 30, aspect: W / H });
+  const shaky = realTime.map((frame, i) => ({
+    ...frame,
+    landmarks: frame.landmarks
+      ? frame.landmarks.map((point, index) =>
+          index === LM.leftHeel ||
+          index === LM.rightHeel ||
+          index === LM.leftFootIndex ||
+          index === LM.rightFootIndex
+            ? { ...point, y: point.y + (i % 2 ? 0.012 : -0.012) }
+            : point,
+        )
+      : null,
+  }));
+
+  const asShot = analyzeLandingsAuto(shaky, { ...opts, slowMotionFactor: 1 });
+  const cadence = cadenceSpm(asShot.result.landings);
+  // The fixture has to put cadence in the human band, or the guard being tested
+  // is not the thing deciding the outcome.
+  if (!(cadence >= 140 && cadence <= 220)) {
+    throw new Error(`the fixture's cadence is ${cadence.toFixed(0)} spm, outside the band`);
+  }
+  if (asShot.suggestedFactor) {
+    throw new Error(
+      `real-time footage at ${cadence.toFixed(0)} spm was told to try` +
+        ` ${asShot.suggestedFactor}x slow motion`,
+    );
+  }
+
+  // And the other direction has to keep working, or the guard has simply
+  // switched the capture-rate detection off. Footage shot at 240 and played
+  // back at 30 is genuinely eight times slow, and reading it as real time puts
+  // the step outside what a person can take.
+  const slow = syntheticSideRunFrames({ ahead: 0.066, fps: 30, aspect: W / H }).map(
+    (frame, i) => ({ ...frame, t: i / 30 * 8 }),
+  );
+  const misread = analyzeLandingsAuto(slow, { ...opts, slowMotionFactor: 1 });
+  if (!misread.suggestedFactor || misread.suggestedFactor <= 1) {
+    throw new Error(
+      "eight-times slow motion read as real time produced no suggestion to change",
+    );
+  }
+
+  console.log("capture rate ok", {
+    realTime: `${cadence.toFixed(0)} spm · 제안 없음`,
+    slowMotion: `제안 ${misread.suggestedFactor}배`,
+  });
+}
