@@ -38,11 +38,10 @@ import {
   syntheticFrontRunFrames,
   syntheticRunningFrames,
 } from "@/lib/synthetic-jump";
-import { importTrc, isImportCandidate } from "@/lib/trc-import";
+import { importTrc, isImportCandidate, type NamedText } from "@/lib/trc-import";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, ImageDown, UploadCloud } from "lucide-react";
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -84,6 +83,9 @@ const MAX_FPS = 60;
  * tool lives in tools/ rather than src/.
  */
 const OFFER_TRC_IMPORT = process.env.NODE_ENV === "development";
+
+/** A Sports2D result the dev server found on disk. */
+type Sports2dRun = { id: string; name: string; frames: number; rate: number };
 
 export function LandingAnalyzer() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -165,6 +167,9 @@ export function LandingAnalyzer() {
   const [demoSeeded, setDemoSeeded] = useState(false);
   /** What an imported Sports2D file was, so the report says where it came from. */
   const [trcNote, setTrcNote] = useState<string | null>(null);
+  /** The offline runs sitting in tools/sports2d/out, as the dev server sees them. */
+  const [runs, setRuns] = useState<Sports2dRun[] | null>(null);
+  const [loadingRun, setLoadingRun] = useState<string | null>(null);
   if (demoRequested && !demoSeeded) {
     const frames =
       demoRequested === "front"
@@ -225,7 +230,11 @@ export function LandingAnalyzer() {
     };
   }, [needsPreviewFace]);
 
-  const attachFile = useCallback((file: File) => {
+  // Not memoized: it appears in no dependency array, so a useCallback here
+  // bought nothing and stopped the React Compiler optimising this component at
+  // all — it could not prove the empty dependency list matched what the body
+  // reads, and reported that against an unrelated line.
+  const attachFile = (file: File) => {
     setTrcNote(null);
     setPoseFrames([]);
     setResult(null);
@@ -237,7 +246,7 @@ export function LandingAnalyzer() {
     setDemoPlaying(false);
     setFileName(file.name);
     setVideoUrl(URL.createObjectURL(file));
-  }, []);
+  };
 
   /**
    * Take whatever was dropped or picked and send it down the right path.
@@ -248,6 +257,23 @@ export function LandingAnalyzer() {
    * them in. That is one gesture instead of navigating a dialog four levels
    * deep, which is where this was easy to get stuck.
    */
+  // Ask the dev server what offline runs exist, once.
+  useEffect(() => {
+    if (!OFFER_TRC_IMPORT) return;
+    let live = true;
+    void fetch("/api/sports2d")
+      .then((response) => (response.ok ? response.json() : { runs: [] }))
+      .then((body) => {
+        if (live) setRuns(Array.isArray(body?.runs) ? body.runs : []);
+      })
+      .catch(() => {
+        if (live) setRuns([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   const onFile = (list: FileList | null) => {
     const files = list ? Array.from(list) : [];
     if (!files.length) return;
@@ -341,16 +367,9 @@ export function LandingAnalyzer() {
    * the point, because a comparison is only worth anything if the analysis on
    * both sides is literally the same code.
    */
-  const importSports2d = async (files: File[]) => {
-    if (!files.length) return;
+  const importNamed = (named: NamedText[]) => {
     setError(null);
     setTrcNote(null);
-    // Only the two files that matter get read. A Sports2D folder also holds a
-    // rendered video and a few dozen images, and dragging the whole folder in
-    // is the obvious thing to do.
-    const named = await Promise.all(
-      files.map(async (file) => ({ name: file.name, text: await file.text() })),
-    );
     const parsed = importTrc(named);
     if (!parsed.ok) {
       setError(parsed.reason);
@@ -408,6 +427,53 @@ export function LandingAnalyzer() {
     setPlayheadT(analysis.landings[0]?.tContact ?? 0);
     setStatus("done");
     setProgress(100);
+  };
+
+  const importSports2d = async (files: File[]) => {
+    if (!files.length) return;
+    // Only the two files that matter get read. A Sports2D folder also holds a
+    // rendered video and a few dozen images, and dragging the whole folder in
+    // is the obvious thing to do.
+    const named = await Promise.all(
+      files.map(async (file) => ({ name: file.name, text: await file.text() })),
+    );
+    importNamed(named);
+  };
+
+  /**
+   * Load one of the offline runs without a file dialog.
+   *
+   * The results live in this repository, so asking the dev server for them is
+   * one click where picking two files four directories down was several steps
+   * and a guess about which two. It goes through the same importTrc as a
+   * picked file — including every refusal — so there is one way this data can
+   * enter the report, not two.
+   */
+  const loadRun = async (id: string) => {
+    setLoadingRun(id);
+    // No try/finally: the React Compiler cannot preserve this component's
+    // manual memoization across one, and it bails out of optimising the whole
+    // component with an error that points at an unrelated useCallback.
+    const failed = (message: string) => {
+      setError(message);
+      setStatus("error");
+    };
+    const body = await fetch(`/api/sports2d?id=${encodeURIComponent(id)}`)
+      .then((response) => response.json().catch(() => null))
+      .catch(() => null);
+    setLoadingRun(null);
+    if (!body) {
+      failed("개발 서버에서 Sports2D 결과를 받지 못했습니다.");
+      return;
+    }
+    if (!body.trc || !body.calib) {
+      failed(body.error ?? `${id} 를 읽지 못했습니다.`);
+      return;
+    }
+    importNamed([
+      { name: body.name, text: body.trc },
+      { name: "run_calib.toml", text: body.calib },
+    ]);
   };
 
   const analyze = async () => {
@@ -1010,6 +1076,24 @@ export function LandingAnalyzer() {
                   }}
                 />
               </label>
+              {OFFER_TRC_IMPORT && runs && runs.length > 0 && !cameraOn
+                ? runs.map((run) => (
+                    <Button
+                      key={run.id}
+                      size="sm"
+                      variant="secondary"
+                      disabled={loadingRun !== null}
+                      title={`${run.name} · ${run.frames}프레임 · ${run.rate} fps`}
+                      onClick={() => {
+                        void loadRun(run.id);
+                      }}
+                    >
+                      {loadingRun === run.id
+                        ? "읽는 중"
+                        : `Sports2D ${run.id} · ${run.frames}f`}
+                    </Button>
+                  ))
+                : null}
               {OFFER_TRC_IMPORT && !cameraOn ? (
                 <label
                   className={buttonVariants({ variant: "ghost", size: "sm" })}
