@@ -9,27 +9,18 @@
  *     npx tsx tools/sports2d/report.ts tools/sports2d/out/02
  *     npx tsx tools/sports2d/report.ts <dir-or-trc> --stature 1.72 --mass 68
  *
- * A directory is searched for the pixel TRC; the metre one is deliberately not
- * used (see README, "왜 픽셀 TRC인가"). Frame size comes from the calib.toml
- * Sports2D writes beside it rather than from a guess, because normalising by
- * the wrong height would tilt every foot angle.
+ * Finding the right file is `load.ts`'s job and deliberately not repeated here.
+ * It had been repeated, and the two copies disagreed: one picked the person
+ * Sports2D tracked longest and the other took whichever file the walk found
+ * last, so the same run printed two different reports depending on which tool
+ * asked.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
-
-import { analyzeLandings, cadenceSpm } from "../../src/lib/landing-analysis";
-import { detectVerticalAxis, halpe26ToPoseFrames, parseTrc } from "../../src/lib/sports2d";
-
-/** Deepest match first, so `out/02` finds the file Sports2D nested two down. */
-function find(root: string, pick: (name: string) => boolean): string | null {
-  if (statSync(root).isFile()) return pick(root) ? root : null;
-  for (const entry of readdirSync(root)) {
-    const found = find(join(root, entry), pick);
-    if (found) return found;
-  }
-  return null;
-}
+import {
+  analyzeLandings,
+  cadenceSpm,
+} from "../../src/lib/landing-analysis";
+import { loadRun } from "./load";
 
 function main(argv: string[]): number {
   const positional = argv.filter((arg) => !arg.startsWith("--"));
@@ -43,37 +34,20 @@ function main(argv: string[]): number {
     return 2;
   }
 
-  const trcPath = find(target, (name) => name.endsWith(".trc") && name.includes("_px_"));
-  if (!trcPath) {
-    console.error(`픽셀 TRC를 찾지 못했습니다: ${target}`);
-    return 1;
-  }
-
   // The declared height is what Sports2D scales metres by; we read pixels, so
   // the stature the analysis uses is ours to pass and is stated in the output
   // rather than left implicit.
   const statureM = Number(flag("stature") ?? 1.7);
   const massKg = Number(flag("mass") ?? 70);
 
-  const calib = find(target, (name) => name.endsWith("_calib.toml"));
-  const dims = calib
-    ? readFileSync(calib, "utf8").match(/size\s*=\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]/)
-    : null;
-  if (!dims) {
-    console.error("calib.toml 에서 프레임 크기를 읽지 못했습니다 — 정규화를 추측하지 않습니다");
+  let run;
+  try {
+    run = loadRun(target);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
     return 1;
   }
-  const width = Number(dims[1]);
-  const height = Number(dims[2]);
-
-  const table = parseTrc(readFileSync(trcPath, "utf8"));
-  const axis = detectVerticalAxis(table);
-  if (!axis) {
-    console.error("y축 규약을 데이터에서 판별하지 못했습니다 — 추측하면 주법이 뒤집힙니다");
-    return 1;
-  }
-
-  const frames = halpe26ToPoseFrames(table, { width, height, verticalAxis: axis });
+  const { trcPath, table, frames, width, height, verticalAxis: axis, people } = run;
   const tracked = frames.filter((frame) => frame.landmarks).length;
 
   // preFiltered because Sports2D already ran Hampel + Butterworth 6 Hz. Without
@@ -87,6 +61,10 @@ function main(argv: string[]): number {
   });
 
   console.log(`TRC        ${trcPath}`);
+  console.log(
+    `사람       ${people}명 추적 · 가장 오래 잡힌 사람 선택` +
+      (people > 1 ? " (person_ordering_method 는 on_click 이라 순서를 믿을 수 없습니다)" : ""),
+  );
   console.log(`프레임     ${width}x${height} · ${table.rate} fps · ${table.frames.length}개 (추적 ${tracked}개)`);
   console.log(`마커       ${table.markers.length}개 · Units 필드 "${table.units}" (참고하지 않음)`);
   console.log(`y축        ${axis}`);

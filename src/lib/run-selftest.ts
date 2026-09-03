@@ -86,6 +86,7 @@ import {
   SMALL_TOE_MARKERS,
   markerKey,
   parseTrc,
+  trackedFrameCount,
 } from "./sports2d";
 import {
   analysisTimeFromVideo,
@@ -2272,6 +2273,26 @@ console.log("shoe photos ok", {
     throw new Error("an imported TRC produced no landings");
   }
 
+  // Choosing between people. Sports2D writes a file per person it tracked and
+  // its default ordering is `on_click`, which decides nothing in a run nobody
+  // watched — on a race clip it wrote thirteen files and the walk's last match
+  // was a spectator, which made a perfectly usable clip look like 4% tracked
+  // and one landing. The count of frames a person appears in is what separates
+  // the runner from somebody crossing the shot.
+  const blanks = trcText
+    .split("\n")
+    .map((line, i) =>
+      i >= 5 && line.trim() && i % 2 === 0
+        ? [line.split("\t")[0], line.split("\t")[1], ...Array(TRC_MARKERS.length * 3).fill("")].join("\t")
+        : line,
+    )
+    .join("\n");
+  const whole = trackedFrameCount(parseTrc(trcText));
+  const half = trackedFrameCount(parseTrc(blanks));
+  if (!(whole > half && half > 0)) {
+    throw new Error(`tracked frames counted ${whole} and ${half}; blanking half changed nothing`);
+  }
+
   // Handed a whole Sports2D output folder — the easiest thing for a person to
   // do — only the two files that matter may be read. The folder also holds a
   // rendered video and a frame image per frame, and reading those as text
@@ -2346,6 +2367,7 @@ console.log("shoe photos ok", {
     refusals: "calib 없음 · 미터 TRC · 추적 0",
     folder: `${folder.length}개 중 ${candidates.length}개만 읽음`,
     manifest: "클립·구간 시작 읽음 · 없거나 깨지면 주장하지 않음",
+    people: `추적 프레임 ${whole} vs ${half} 로 사람 구분`,
   });
 
   console.log("sports2d adapter ok", {

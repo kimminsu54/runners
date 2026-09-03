@@ -23,6 +23,8 @@ import { join } from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { parseTrc, trackedFrameCount } from "@/lib/sports2d";
+
 const DEVELOPMENT = process.env.NODE_ENV === "development";
 
 /** Where run.py writes. Resolved from the server's cwd, which is the repo. */
@@ -38,12 +40,19 @@ const notFound = () => new NextResponse("Not found", { status: 404 });
  */
 const isRunId = (id: string) => /^[A-Za-z0-9_-]{1,32}$/.test(id);
 
-type Found = { trc: string; calib: string; name: string; manifest: string | null };
+type Found = {
+  trc: string;
+  calib: string;
+  name: string;
+  manifest: string | null;
+  /** How many people Sports2D tracked, so choosing among them is visible. */
+  people: number;
+};
 
 /** The two files worth reading, from anywhere under a run's directory. */
 async function findFiles(dir: string): Promise<Found | null> {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
-  let trcAt: string | null = null;
+  const trcPaths: string[] = [];
   let calibAt: string | null = null;
   let manifestAt: string | null = null;
   for (const entry of entries) {
@@ -51,19 +60,44 @@ async function findFiles(dir: string): Promise<Found | null> {
     // parentPath is where the entry actually lives, which for a recursive read
     // is not the directory the walk started from.
     const path = join(entry.parentPath ?? dir, entry.name);
-    if (/_px_.*\.trc$/i.test(entry.name)) trcAt = path;
+    if (/_px_.*\.trc$/i.test(entry.name)) trcPaths.push(path);
     else if (/_calib\.toml$/i.test(entry.name)) calibAt = path;
     else if (entry.name.toLowerCase() === "stride-lab.json") manifestAt = path;
   }
-  if (!trcAt || !calibAt) return null;
-  const [trc, calib] = await Promise.all([
-    readFile(trcAt, "utf8"),
-    readFile(calibAt, "utf8"),
-  ]);
+  if (!trcPaths.length || !calibAt) return null;
+
+  // Sports2D writes one file per person it tracked, and its default ordering is
+  // `on_click` — which decides nothing in a run nobody watched. So person00 is
+  // not the runner by construction: on a clip filmed at a race there were
+  // thirteen people and the first file found was a spectator. The subject of a
+  // running clip is on screen throughout while a bystander crosses it, so the
+  // one tracked in the most frames is the one to read.
+  const people = await Promise.all(
+    trcPaths.map(async (path) => {
+      const text = await readFile(path, "utf8");
+      try {
+        return { path, text, tracked: trackedFrameCount(parseTrc(text)) };
+      } catch {
+        // A half-written file during a Sports2D pass is not a candidate.
+        return { path, text, tracked: -1 };
+      }
+    }),
+  );
+  people.sort((a, b) => b.tracked - a.tracked);
+  const chosen = people[0];
+  if (chosen.tracked < 0) return null;
+  const trcAt = chosen.path;
+  const [trc, calib] = [chosen.text, await readFile(calibAt, "utf8")];
   // A run from before the manifest existed is still worth serving; the client
   // then does not claim to know which clip it belongs to.
   const manifest = manifestAt ? await readFile(manifestAt, "utf8").catch(() => null) : null;
-  return { trc, calib, manifest, name: trcAt.split(/[\\/]/).pop() ?? "result.trc" };
+  return {
+    trc,
+    calib,
+    manifest,
+    people: trcPaths.length,
+    name: trcAt.split(/[\\/]/).pop() ?? "result.trc",
+  };
 }
 
 /** Frame count and rate straight from the TRC header, for the run list. */
@@ -123,7 +157,13 @@ export async function GET(request: Request) {
       } catch {
         // A malformed manifest costs the label, not the run.
       }
-      runs.push({ id: runId, name: found.name, clip, ...summarise(found.trc) });
+      runs.push({
+        id: runId,
+        name: found.name,
+        clip,
+        people: found.people,
+        ...summarise(found.trc),
+      });
     } catch {
       // A half-written run during a Sports2D pass is not an error here.
     }

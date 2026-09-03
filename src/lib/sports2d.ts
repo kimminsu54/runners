@@ -117,6 +117,22 @@ export function parseTrc(text: string): TrcTable {
 }
 
 /**
+ * Frames in which any marker was found.
+ *
+ * The measure used to choose between people. Sports2D writes one file per
+ * person it tracked and its default ordering is `on_click`, which decides
+ * nothing in a run nobody is watching — so `person00` is not the runner by
+ * construction, and on a clip filmed at a race it can be anybody. The subject
+ * of a running clip is on screen throughout and a bystander crosses it, so the
+ * count of frames a person appears in separates them on a property of the
+ * footage rather than on a convention.
+ */
+export function trackedFrameCount(table: TrcTable): number {
+  return table.frames.filter((frame) => frame.points.some((point) => point !== null))
+    .length;
+}
+
+/**
  * Sports2D's marker names for the `body_with_feet` skeleton, mapped onto the
  * MediaPipe indices this app's analysis reads.
  *
