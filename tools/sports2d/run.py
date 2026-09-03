@@ -59,6 +59,28 @@ POSE_MODEL = "Body_with_feet"
 MODE = "performance"
 DET_FREQUENCY = "1"
 
+# Everything Sports2D produces that we do not read.
+#
+# Measured on three seconds of one clip: the whole pass took 1799 s, and the
+# pixel TRC — the only file this project reads — was written 419 s before the
+# run ended. The rest went on an overlay video, a PNG per frame and a graph per
+# marker, none of which the comparison uses. Timing the pose estimator on its
+# own gives 0.59 s per frame, so the extra outputs cost more than the
+# estimation they illustrate.
+#
+# They are still worth having when a person wants to check that the skeleton is
+# on the runner rather than on someone in the background, which is what --full
+# is for. Off by default, because eighteen clips is the plan and each one paying
+# for a video nobody opens is not.
+LEAN = [
+    "--save_vid", "false",
+    "--save_img", "false",
+    "--save_graphs", "false",
+    "--show_graphs", "false",
+    "--show_realtime_results", "false",
+    "--make_c3d", "false",
+]
+
 
 def rows() -> list[dict[str, str]]:
     if not CLIPS.exists():
@@ -83,6 +105,10 @@ def main() -> int:
     # enough to check the plumbing and to time a backend.
     parser.add_argument("--time-range", nargs=2, metavar=("START", "END"),
                         help="초 단위 구간만 처리 (설치 확인·시간 측정용)")
+    # A switch rather than a deletion: looking at the overlay is the only way to
+    # catch the skeleton tracking the wrong person.
+    parser.add_argument("--full", action="store_true",
+                        help="오버레이 영상·프레임 이미지·그래프까지 만들기 (느림)")
     args = parser.parse_args()
 
     selected = [row for row in rows() if not args.only or row["id"] == args.only]
@@ -112,6 +138,8 @@ def main() -> int:
             "--device", args.device,
             "--result_dir", str(target),
         ]
+        if not args.full:
+            command += LEAN
         # visible_side changes how the sagittal angles are signed, so it is read
         # from the manifest rather than assumed. 'auto' is Sports2D's own guess.
         if row.get("visible_side"):
@@ -119,7 +147,8 @@ def main() -> int:
         if args.time_range:
             command += ["--time_range", *args.time_range]
 
-        print(f"[{row['id']}] {clip.name} · 신장 {row['height_m']}m · {args.mode}/{args.backend}")
+        print(f"[{row['id']}] {clip.name} · 신장 {row['height_m']}m · {args.mode}/{args.backend}"
+              f"{' · 전체 출력' if args.full else ''}")
         started = time.monotonic()
         result = subprocess.run(command, cwd=target)
         took = time.monotonic() - started

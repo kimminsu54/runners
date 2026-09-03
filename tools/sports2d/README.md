@@ -21,20 +21,63 @@ Sports2D 밑단인 [rtmlib](https://github.com/Tau-J/rtmlib)이 받는 device는
 않습니다.
 
 남는 선택은 **CPU 실행 프로바이더 사이의 선택**입니다. Sports2D는
-`--backend auto|openvino|onnxruntime|opencv` 를 받고, 인텔 CPU에서는 보통 OpenVINO가
-onnxruntime보다 빠릅니다. `run.py` 가 백엔드를 인자로 받는 이유이고, 어느 쪽이 실제로
-빠른지는 0단계에서 재서 아래 표에 적습니다.
+`--backend auto|openvino|onnxruntime|opencv` 를 받고, `auto` 는 이 PC에서 OpenVINO를
+고릅니다.
 
 18클립을 한 번 처리하는 것이 목적이면 CPU로 충분합니다. 임계값을 바꿔가며 반복
 실험할 단계(4~5단계)에서 시간이 문제가 되면, 그때는 이 PC의 설정을 바꾸는 것보다
 **NVIDIA GPU가 있는 기계에서 돌리는 것**이 답입니다. `clips.csv` 와 `run.py` 를
 그대로 옮기면 됩니다.
 
-### 측정 (0단계에서 채움)
+### 측정 — 포즈 추정만, 프레임당
 
-| 백엔드 | 모드 | 클립 | 프레임 | 소요 |
-|---|---|---|---|---|
-| | | | | |
+`bench.py` 가 Sports2D의 필터·그래프·영상 저장을 걷어내고 검출+포즈만 잰 값입니다
+(720×1280, `Body_with_feet`, balanced, 같은 프레임).
+
+| 백엔드 | 로드 | 첫 호출 | 이후 중앙값 |
+|---|---|---|---|
+| opencv | 0.6s | 437 ms | **430 ms** |
+| openvino | 4.5s | 891 ms | 586 ms |
+| onnxruntime | 0.8s | 2218 ms | 2547 ms |
+
+```powershell
+tools\sports2d\.venv\Scripts\python.exe tools\sports2d\bench.py
+```
+
+**앞서 이 문서에 "인텔 CPU에서는 보통 OpenVINO가 onnxruntime보다 빠르다"고
+적었는데, 방향은 맞았지만 결론이 틀렸습니다 — opencv가 둘 다보다 빠릅니다.**
+onnxruntime은 6배 느리므로 고를 이유가 없습니다. `auto` 가 고르는 openvino는 opencv
+대비 36% 느린 정도라 그대로 두었지만, 18클립을 돌릴 때는 `--backend opencv` 를 재 볼
+값이 있습니다.
+
+### 측정 — 전체 파이프라인
+
+첫 실행은 3초(90프레임)에 **1799초**가 걸렸습니다. 포즈 추정이 프레임당 0.59초이니
+53초여야 하는데 34배입니다. 원인은 산출 파일의 수정 시각에서 나왔습니다.
+
+```
+픽셀 TRC        ← 종료 419초 전에 이미 완성
+그래프 PNG 22장  +409.6s
+angles.mot      +415.3s
+오버레이 영상     +418.9s   (프레임 이미지 133장 포함)
+```
+
+**우리가 읽는 유일한 파일은 종료 419초 전에 이미 나와 있었습니다.** 남은 시간은
+비교에 쓰지 않는 영상·이미지·그래프를 만드는 데 갔습니다. 그래서 `run.py` 는 그것들을
+**기본적으로 끕니다**(`--save_vid false` 등). 스켈레톤이 엉뚱한 사람을 따라가는지
+눈으로 확인해야 할 때만 `--full` 을 붙이세요.
+
+| 설정 | 3초(90프레임) 소요 |
+|---|---|
+| 전체 출력 (`--full`) | 1799 s |
+| 기본 (곁다리 끔) | **24.4 s** |
+
+**픽셀 TRC는 두 경우가 바이트 단위로 동일합니다** — 96행, 다른 행 0개, 81088바이트.
+껐다고 데이터가 달라지지 않는다는 것을 확인하지 않고 끄면, 속도를 얻는 대신 무엇을
+잃었는지 모르게 됩니다.
+
+이 속도면 18클립 계획이 성립합니다. 영상 길이의 약 8배이므로 12초 클립 하나가 100초
+남짓, 18개를 다 돌려도 30분 정도입니다. 처음 재 본 속도로는 10시간이었습니다.
 
 ---
 
@@ -63,7 +106,8 @@ RTMPose 가중치는 **첫 실행 때 내려받습니다.** 첫 클립이 유독
 ```powershell
 tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py
 tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py --only 03
-tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py --backend openvino
+tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py --backend opencv
+tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py --only 03 --full
 ```
 
 클립은 `tools/sports2d/clips/` 에 `clips.csv` 의 이름으로 넣습니다. `height_m` 은
@@ -71,6 +115,23 @@ tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py --backend openvino
 지금 표는 전부 1.70으로 채워져 있으니 촬영한 사람에 맞게 고쳐야 합니다.
 
 산출물은 `out/<id>/` 에 들어가고, 우리가 읽는 것은 **픽셀 TRC** 입니다.
+
+---
+
+## 브라우저에서 보기 — 버튼 한 번
+
+`report.ts` 는 터미널에 찍고, 같은 결과를 **앱 화면에서** 보려면 개발 서버를 띄운 뒤
+**01 / SOURCE CLIP** 카드의 `Sports2D <id> · <프레임>f` 버튼을 누르면 됩니다. 파일을
+고를 필요가 없습니다 — `/api/sports2d` 가 `out/` 을 훑어 목록을 주고, 누르면 그 실행의
+픽셀 TRC와 `_calib.toml` 을 읽어 리포트를 채웁니다.
+
+파일로 넣고 싶으면 `TRC + calib 고르기` 버튼이나, 두 파일을 영상 칸에 끌어다 놓는
+방법도 있습니다. 세 경로 모두 `src/lib/trc-import.ts` 의 같은 `importTrc` 를 지나므로
+거절 조건도 같습니다.
+
+**`/api/sports2d` 는 배포되지 않습니다.** 로컬 파일을 읽는 라우트라서 개발 모드가
+아니면 404이고, 버튼도 같은 조건에 걸려 있습니다. 히어로의 "업로드되지 않는다"는
+약속을 지키려면 이 라우트가 프로덕션에 존재해선 안 됩니다.
 
 ---
 
