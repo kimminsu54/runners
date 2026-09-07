@@ -15,10 +15,13 @@ random id, so nothing tells the labeller what either pipeline said or which
 clip they are looking at. An overlay would anchor the judgement to the answer
 it is meant to check.
 
-It shows a sequence, not a frame. A single frame at 30 fps can catch a foot
-already flattened, and judging from it would repeat the algorithm's own
-handicap. Five frames spanning touchdown let a person see which part of the
-foot arrived first, which is information the single frame has lost.
+It shows a sequence and does not say where touchdown is. A single frame at
+30 fps can catch a foot already flattened, and judging from it would repeat the
+algorithm's own handicap. Worse, the contact time the report gives runs one to
+two frames late — measured against the start of the foot's height plateau on
+every clip here — so marking a tile as touchdown would point the labeller at
+the wrong one. Seven consecutive frames, unlabelled, let a person find the
+arrival themselves.
 
     python tools/sports2d/label-sheet.py
 
@@ -49,17 +52,37 @@ OUT = HERE / "out" / "labels"
 # at 30 fps, well inside the shortest step a runner takes.
 PAIR_WINDOW_S = 0.08
 
-# Frames either side of touchdown in each strip. Two before and two after
-# covers the roll-in at 30 fps without turning the strip into a filmstrip
-# nobody will scroll.
-BEFORE = 2
+# Frames either side of the reported contact.
+#
+# Wider on the early side, and not centred, because the reported contact is not
+# the touchdown. Measured against the start of the foot's height plateau it
+# runs one to two frames late on every clip in this sample — 33 to 67 ms, which
+# is a tenth to a quarter of the way into stance. A strip centred on it puts
+# the moment being judged in the second or third tile, and a sheet that tells
+# the labeller the middle one is contact asks them about a foot that landed
+# before the strip began.
+#
+# So the strip reaches four frames back and the page does not claim which tile
+# is touchdown: the labeller finds the first frame the foot meets the ground
+# and judges that one. Locating the event is part of the task rather than
+# something the tool asserts, which is the right division here — the tool is
+# what got it wrong.
+BEFORE = 4
 AFTER = 2
 
-# The band of the frame each tile keeps, measured from the top. The feet live
-# in the bottom of a running shot and the ground line has to be in view — it is
-# what tells a foot's angle apart from a foot's shape.
-CROP_FROM = 0.55
-STRIP_HEIGHT = 220
+# The band of the frame each tile keeps, measured from the top, and how tall
+# each tile is rendered. The feet live in the bottom of a running shot and the
+# ground line has to be in view — it is what tells a foot's angle apart from a
+# foot's shape.
+#
+# These two numbers decide whether the sheet can be answered at all, and the
+# first attempt got them wrong. A 45% band scaled to 220 pixels left the shoe
+# about 40 pixels long, where ten degrees of foot angle is seven pixels of
+# height — under motion blur that is below what anyone can see, and the strips
+# were unjudgeable for a reason that was mine rather than the footage's. A
+# tighter band rendered taller keeps the shoe near four times the pixels.
+CROP_FROM = 0.62
+STRIP_HEIGHT = 430
 
 
 def landings_by_clip() -> dict[str, dict[str, list[dict]]]:
@@ -153,7 +176,7 @@ def strip_for(video: Path, t_contact: float, fps: float) -> "cv2.typing.MatLike 
     return strip
 
 
-def write_sheet(ids: list[str]) -> None:
+def write_sheet(items: list[dict]) -> None:
     """A local page for judging the strips.
 
     Typing verdicts into a CSV while flipping between image files is the kind
@@ -165,8 +188,12 @@ def write_sheet(ids: list[str]) -> None:
     fourteen judgements is long enough that closing the tab by accident should
     not cost them.
 
-    Deliberately does not know the key. The page is handed nothing but ids and
-    image names, so it cannot leak what either pipeline said even by mistake.
+    Handed the id, the image name and which foot to look at — nothing else. The
+    side has to be there or the sheet is unanswerable: a strip often shows both
+    feet near the ground and without knowing which contact is being asked about
+    a person judges the wrong one. It is safe to show because it is not one of
+    the answers under adjudication, and where the two pipelines disagree about
+    it the page says so instead of picking one.
     """
     options = [
         ("rearfoot", "리어풋", "발꿈치가 먼저 닿음 · 발끝은 아직 들려 있음"),
@@ -179,7 +206,14 @@ def write_sheet(ids: list[str]) -> None:
         f'<kbd>{i + 1}</kbd> {label}<small>{hint}</small></button>'
         for i, (value, label, hint) in enumerate(options)
     )
-    ids_json = "[" + ",".join(f'"{one}"' for one in ids) + "]"
+    SIDE = {"left": "왼발", "right": "오른발"}
+    ids_json = "[" + ",".join(
+        '{{"id":"{id}","side":"{side}"}}'.format(
+            id=item["id"],
+            side=SIDE.get(item["agreed_side"], "좌우 불일치"),
+        )
+        for item in items
+    ) + "]"
 
     html = f"""<!doctype html>
 <html lang="ko">
@@ -220,8 +254,10 @@ def write_sheet(ids: list[str]) -> None:
 </style>
 <header>
   <h1>착지 판정 시트</h1>
-  <p>가로 다섯 칸은 <b>접지 전 2 · 접지 · 접지 후 2</b> 프레임입니다.
-     발이 지면에 처음 닿는 칸에서 <b>어느 부위가 먼저 닿았는지</b> 고르세요.
+  <p>가로 일곱 칸은 연속된 프레임입니다(30fps, 칸당 33ms).
+     <b>발이 지면에 처음 닿는 칸을 직접 찾아</b>, 그 순간 <b>어느 부위가 먼저 닿았는지</b> 고르세요.
+     어느 칸이 접지인지는 표시하지 않습니다 — 분석기가 잡은 접지 시각이 실제보다
+     1~2프레임 늦어서, 표시하면 틀린 칸을 보게 됩니다.
      두 분석기가 서로 다르게 본 착지만 모았고, 각각 무엇이라고 했는지는 보여주지 않습니다.</p>
 </header>
 <main>
@@ -229,7 +265,7 @@ def write_sheet(ids: list[str]) -> None:
     <p id="where"></p>
     <figure><img id="strip" alt=""></figure>
     <div class="marks">
-      <span>접지 −2</span><span>−1</span><span class="now">접지</span><span>+1</span><span>+2</span>
+      <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span>
     </div>
     <div id="choices">{buttons}</div>
   </div>
@@ -247,7 +283,8 @@ def write_sheet(ids: list[str]) -> None:
   <button class="ghost" id="reset">처음부터</button>
 </footer>
 <script>
-  const ids = {ids_json};
+  const items = {ids_json};
+  const ids = items.map((item) => item.id);
   const KEY = "stride-lab-labels";
   let answers = {{}};
   try {{ answers = JSON.parse(localStorage.getItem(KEY) || "{{}}"); }} catch {{}}
@@ -276,7 +313,7 @@ def write_sheet(ids: list[str]) -> None:
     }}
     el("stage").hidden = false;
     el("finish").hidden = true;
-    el("where").textContent = `${{at + 1}} / ${{total}}`;
+    el("where").textContent = `${{at + 1}} / ${{total}} · ${{items[at].side}} 접지`;
     el("strip").src = ids[at] + ".png";
   }}
 
@@ -361,6 +398,12 @@ def main() -> int:
                     "clip_id": run_id,
                     "t_contact": round(t, 3),
                     "side": pair["browser"]["side"],
+                    "sports2d_side": pair["sports2d"]["side"],
+                    "agreed_side": (
+                        pair["browser"]["side"]
+                        if pair["browser"]["side"] == pair["sports2d"]["side"]
+                        else ""
+                    ),
                     "browser": pair["browser"]["strike"],
                     "sports2d": pair["sports2d"]["strike"],
                     "browser_deg": pair["browser"]["strike_angle_deg"],
@@ -399,11 +442,11 @@ def main() -> int:
         for item in sorted(items, key=lambda i: i["id"]):
             writer.writerow(item)
 
-    write_sheet([item["id"] for item in sorted(items, key=lambda i: i["id"])])
+    write_sheet(sorted(items, key=lambda i: i["id"]))
 
     print(f"\n{OUT.relative_to(HERE.parent.parent)} · 스트립 {len(items)}개")
     print(f"  판정: {OUT / 'sheet.html'} 를 브라우저로 열기")
-    print("  각 스트립은 접지 전 2프레임 · 접지 · 접지 후 2프레임 입니다")
+    print("  각 스트립은 연속 7프레임이고, 접지 칸은 표시하지 않습니다 — 직접 찾으세요")
     print("  key.csv 는 판정 전에 열지 마세요 — 두 파이프라인의 답이 들어 있습니다")
     return 0
 
