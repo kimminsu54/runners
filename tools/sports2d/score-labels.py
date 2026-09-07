@@ -24,12 +24,18 @@ import csv
 import io
 import sys
 from collections import Counter
+from math import comb
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 HERE = Path(__file__).resolve().parent / "out" / "labels"
 STRIKES = {"rearfoot", "midfoot", "forefoot"}
+
+# Width of the midfoot category, the same +-8 the app classifies with. It is
+# the yardstick for how large a disagreement is: a gap wider than the whole
+# middle category is not a borderline call about where a line sits.
+MIDFOOT_BAND_DEG = 16.0
 
 
 def main() -> int:
@@ -104,6 +110,56 @@ def main() -> int:
         print("\n둘 다 틀린 착지")
         for line in neither[:8]:
             print(f"  {line}")
+
+    # Whether the split means anything at all.
+    #
+    # Reporting a share and stopping invites reading the larger number as the
+    # better pipeline, and on a sample this size it usually is not. Each
+    # contact is one coin flip between the two, so the question is whether the
+    # count sits further from even than chance would put it.
+    contested = winner["browser"] + winner["sports2d"]
+    if contested:
+        lead = max(winner["browser"], winner["sports2d"])
+        tail = sum(comb(contested, k) for k in range(contested - lead + 1))
+        p_value = min(1.0, tail * 2 / 2 ** contested)
+        print(f"\n앞선 정도 {lead}/{contested} · 양측 이항검정 p={p_value:.2f}")
+        if p_value > 0.05:
+            print("  우연히 갈릴 수 있는 차이입니다. 이 표본으로는 어느 쪽이 더 정확한지"
+                  " 말할 수 없습니다.")
+        else:
+            print("  우연으로 보기 어려운 차이입니다.")
+
+    # How far apart the two were, not just which side the person took.
+    #
+    # A one-category disagreement near a boundary and a thirty-degree
+    # disagreement are the same row in the count above and completely
+    # different findings. If the gap routinely exceeds the width of the middle
+    # category then the two are not arguing about where a line falls, they are
+    # measuring different things.
+    gaps = sorted(
+        abs(float(row["browser_deg"]) - float(row["sports2d_deg"]))
+        for item_id, row in key.items()
+        if (labels.get(item_id, {}).get("verdict") or "").strip().lower() in STRIKES
+    )
+    if gaps:
+        over = sum(1 for gap in gaps if gap > MIDFOOT_BAND_DEG)
+        print(f"\n같은 착지에 대한 두 파이프라인의 각도 차이: 최소 {gaps[0]:.0f}°"
+              f" · 중앙값 {gaps[len(gaps) // 2]:.0f}° · 최대 {gaps[-1]:.0f}°")
+        print(f"  미드풋 구간 폭({MIDFOOT_BAND_DEG:.0f}°)보다 큰 경우 {over}/{len(gaps)}")
+
+    # The count treats every row as an independent case. It is worth printing
+    # what the rows actually are, because a sheet that is one runner's same
+    # foot seven times over is one case with seven votes.
+    print("\n표본 구성")
+    for clip in sorted(per_clip):
+        ids = [i for i in key if key[i]["clip_id"] == clip]
+        sides = Counter(key[i]["side"] for i in ids)
+        said = Counter(
+            (labels.get(i, {}).get("verdict") or "").strip().lower() for i in ids
+        )
+        side_text = " · ".join(f"{name} {n}" for name, n in sorted(sides.items()))
+        said_text = " · ".join(f"{name} {n}" for name, n in sorted(said.items()) if name)
+        print(f"  clip {clip}: {len(ids)}개 ({side_text})  사람 판정: {said_text}")
 
     # A sheet answered mostly `unsure` is not a weak result, it is a statement
     # about the footage — and saying so beats reporting a score from the few

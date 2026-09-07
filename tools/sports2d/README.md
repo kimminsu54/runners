@@ -27,7 +27,7 @@
 | `report.ts` | TRC를 앱과 같은 `analyzeLandings` 에 넣어 리포트를 찍음 |
 | `load.ts` | 실행을 디스크에서 읽는 공용 코드. **여러 사람이 추적됐으면 가장 오래 잡힌 사람**을 고름 |
 | `compare-all.py` | 클립마다 브라우저 분석 → Sports2D 불러오기 → 비교 표 수집. `comparison.csv` 와 `landings.csv` 를 씀 |
-| `score-labels.py` | 채워진 판정 시트를 숫자로 바꿈 |
+| `score-labels.py` | 채워진 판정 시트를 숫자로 바꿈 — 유의성·각도 차이 크기·표본 구성까지 함께 내보내므로 점수만 보고 승자를 읽을 수 없음 |
 
 ### 재는 것
 
