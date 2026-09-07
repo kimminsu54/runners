@@ -159,6 +159,21 @@ export type Landing = {
   footStrike: FootStrike;
   footStrikeAngleDeg: number;
   /**
+   * How much the strike angle moves for one frame of doubt about when the foot
+   * landed, in degrees.
+   *
+   * Not a confidence interval and not a guess. The frame the foot arrives on
+   * is uncertain by about one frame at 30 fps — measured against the start of
+   * the foot's height plateau, the detected contact runs one to two frames
+   * late — and near touchdown the angle is changing fast. This is that change,
+   * per landing, read from the angle's own trajectory rather than assumed.
+   *
+   * It is often larger than the 16° the midfoot category spans, and when it is,
+   * the category is not determined by the footage. `strikeAngleSettles` says
+   * whether it is.
+   */
+  footStrikeAngleUncertaintyDeg: number;
+  /**
    * Overstriding: how far ahead of the hip the foot was at first contact.
    * Metres, and the same distance as a fraction of the runner's height so two
    * people can be compared. NaN when the clip cannot support it — a frontal
@@ -1071,6 +1086,7 @@ function withoutFootStrike(landing: Landing): Landing {
     ...landing,
     footStrike: "unknown",
     footStrikeAngleDeg: Number.NaN,
+    footStrikeAngleUncertaintyDeg: Number.NaN,
     // A frontal clip loses the fore-aft distance along with the strike angle:
     // both are measured in the plane the camera has collapsed.
     footAheadM: Number.NaN,
@@ -1104,6 +1120,7 @@ function withoutGaitTiming(landing: Landing): Landing {
     gaitBased: false,
     footStrike: "unknown",
     footStrikeAngleDeg: Number.NaN,
+    footStrikeAngleUncertaintyDeg: Number.NaN,
     // Too small in frame or too intermittently tracked to publish timing is
     // also too coarse to publish centimetres of fore-aft distance, or degrees
     // of frontal alignment.
@@ -1494,6 +1511,7 @@ function detectLandings(
       strikeAngleSampling,
       dt,
     );
+    const footStrikeAngleUncertainty = strikeAngleSlopeAt(series, raw.strikeIdx, side);
     const strike = classifyFootStrike(footStrikeAngle, view);
     // Fore-aft position needs the runner seen from the side for the same reason
     // the strike angle does: from in front, the distance is along the camera
@@ -1529,6 +1547,7 @@ function detectLandings(
       gaitBased,
       footStrike: strike.type,
       footStrikeAngleDeg: footStrikeAngle,
+      footStrikeAngleUncertaintyDeg: footStrikeAngleUncertainty,
       footAheadM,
       footAheadRatio:
         Number.isFinite(footAheadM) && statureM > 0
@@ -1651,6 +1670,35 @@ export type FootAxis = "big-toe" | "long-axis";
  * swing, which is what a longer window picks up instead of the landing angle.
  */
 const PEAK_LOOKBACK_S = 0.05;
+
+/**
+ * How fast the strike angle is moving where it was read.
+ *
+ * One frame either side, taking the larger of the two changes: the anchor can
+ * be wrong in either direction and the honest figure is the worse one. NaN
+ * where the neighbours are missing, which leaves the display saying nothing
+ * rather than saying zero.
+ */
+function strikeAngleSlopeAt(
+  series: SeriesPoint[],
+  index: number,
+  side: FootSide,
+): number {
+  let resolved = side;
+  if (resolved === "unknown") resolved = inferFootSide(series[index]);
+  if (resolved === "unknown") return Number.NaN;
+  const angleAt = (i: number) => {
+    const point = series[i];
+    if (!point) return Number.NaN;
+    return resolved === "left" ? point.leftFootStrikeAngle : point.rightFootStrikeAngle;
+  };
+  const here = angleAt(index);
+  if (!Number.isFinite(here)) return Number.NaN;
+  const steps = [angleAt(index - 1), angleAt(index + 1)]
+    .filter(Number.isFinite)
+    .map((angle) => Math.abs(angle - here));
+  return steps.length ? Math.max(...steps) : Number.NaN;
+}
 
 function strikeAngleAt(
   series: SeriesPoint[],
@@ -2044,6 +2092,52 @@ export function formatKneeFlexDeg(deg: number): string {
  * the pose noise the "약" already admits to — and the bounds come from the
  * classifier's own constants so the two cannot drift apart.
  */
+/**
+ * Which strike categories an angle could belong to, given how far it moves for
+ * one frame of doubt about touchdown.
+ *
+ * Returns one name when the doubt stays inside a category and the reading
+ * settles it, and two or three when it does not. That happens often: the angle
+ * changes fifteen to twenty-nine degrees across the frames around touchdown on
+ * the reference clips, and the midfoot category is sixteen degrees wide, so a
+ * single frame of doubt can span it entirely.
+ */
+export function strikeAngleSpan(deg: number, uncertaintyDeg: number): FootStrike[] {
+  if (!Number.isFinite(deg)) return [];
+  const doubt = Number.isFinite(uncertaintyDeg) ? Math.abs(uncertaintyDeg) : 0;
+  const low = deg - doubt;
+  const high = deg + doubt;
+  const span: FootStrike[] = [];
+  if (low <= REARFOOT_MAX_ANGLE_DEG) span.push("rearfoot");
+  if (high > REARFOOT_MAX_ANGLE_DEG && low < FOREFOOT_MIN_ANGLE_DEG) span.push("midfoot");
+  if (high >= FOREFOOT_MIN_ANGLE_DEG) span.push("forefoot");
+  return span;
+}
+
+/** Whether one frame of doubt leaves the category unchanged. */
+export function strikeAngleSettles(deg: number, uncertaintyDeg: number): boolean {
+  return strikeAngleSpan(deg, uncertaintyDeg).length === 1;
+}
+
+/**
+ * The angle with the doubt attached, which is the honest form of it.
+ *
+ * The plain figure implies the frame it was read on was the frame the foot
+ * landed, and that is the one thing measurement says it is not. Printed
+ * without the ± a reader has no way to know that a nine-degree forefoot
+ * reading and a nine-degree reading that could as easily be rearfoot look
+ * identical.
+ */
+export function formatStrikeAngleWithDoubt(
+  deg: number,
+  strike: FootStrike,
+  uncertaintyDeg: number,
+): string {
+  const base = formatStrikeAngleDeg(deg, strike);
+  if (base === "측정 불가" || !Number.isFinite(uncertaintyDeg)) return base;
+  return `${base} ±${Math.round(Math.abs(uncertaintyDeg))}°`;
+}
+
 export function formatStrikeAngleDeg(deg: number, strike: FootStrike): string {
   if (!Number.isFinite(deg) || strike === "unknown") return "측정 불가";
   let shown = Math.round(deg);

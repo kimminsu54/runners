@@ -28,6 +28,9 @@ import {
   analyzeLandings,
   analyzeLandingsAuto,
   type PoseFrame,
+  formatStrikeAngleWithDoubt,
+  strikeAngleSettles,
+  strikeAngleSpan,
   type FootStrike,
   type StrikeAngleSampling,
   cadenceSpm,
@@ -2741,6 +2744,91 @@ console.log("shoe photos ok", {
     clean: `${before.landings.length}회 · 소수쪽 ${(share(before) * 100).toFixed(0)}% · ${before.quality.level}`,
     oneFooted: `${after.landings.length}회 · 소수쪽 ${(share(after) * 100).toFixed(0)}% · ${after.quality.level}`,
     short: `${short.landings.length}회 · 판단 보류`,
+  });
+}
+
+// Saying the strike angle with the doubt that belongs to it.
+//
+// The reading is anchored on a frame, and measurement says that frame is not
+// reliably the one the foot landed on: the detected contact runs one to two
+// frames late against the start of the foot's height plateau, and the angle
+// moves fifteen to twenty-nine degrees across the frames around touchdown. The
+// midfoot category is sixteen degrees wide, so one frame of doubt can span it
+// whole. Printing a bare angle claims a precision the frame rate does not
+// support, and printing a bare category claims more than that.
+{
+  const band = threshold("foot_strike_forefoot_min_deg");
+
+  // Inside a category with room to spare: one name, and the doubt shown.
+  if (!strikeAngleSettles(20, 3)) throw new Error("+20° ±3° should settle on forefoot");
+  if (strikeAngleSpan(20, 3).join() !== "forefoot") {
+    throw new Error(`+20° ±3° spans ${strikeAngleSpan(20, 3).join("/")}`);
+  }
+
+  // Straddling a boundary: two names, because a frame either way would have
+  // been reported as a different strike.
+  const straddling = strikeAngleSpan(band - 1, 4);
+  if (straddling.length !== 2 || !straddling.includes("forefoot")) {
+    throw new Error(`just under the forefoot line spans ${straddling.join("/")}`);
+  }
+  if (strikeAngleSettles(band - 1, 4)) {
+    throw new Error("an angle a frame away from another category was called settled");
+  }
+
+  // The case the reference clips actually produce: doubt wider than the whole
+  // midfoot band, which cannot name a category at all.
+  const wide = strikeAngleSpan(0, band * 2);
+  if (wide.length !== 3) {
+    throw new Error(`doubt of ±${band * 2}° spans only ${wide.join("/")}`);
+  }
+
+  // No doubt figure is not the same as no doubt. A missing uncertainty must
+  // not silently widen or narrow the span.
+  if (strikeAngleSpan(20, Number.NaN).join() !== "forefoot") {
+    throw new Error("a missing uncertainty changed the span");
+  }
+  if (formatStrikeAngleWithDoubt(20, "forefoot", Number.NaN).includes("±")) {
+    throw new Error("a missing uncertainty printed a ±");
+  }
+  if (!formatStrikeAngleWithDoubt(20, "forefoot", 4.4).includes("±4°")) {
+    throw new Error(
+      `the doubt is not shown: ${formatStrikeAngleWithDoubt(20, "forefoot", 4.4)}`,
+    );
+  }
+  // A refused strike says so rather than saying so with a tolerance.
+  if (formatStrikeAngleWithDoubt(Number.NaN, "unknown", 4) !== "측정 불가") {
+    throw new Error("an unmeasured angle was given a tolerance");
+  }
+
+  // And the analysis has to produce the figure at all, on a fixture whose
+  // angle is deliberately moving through touchdown.
+  const moving = analyzeLandings(
+    syntheticSideRunFrames({
+      ahead: 0.066,
+      fps: 30,
+      strikeDeg: -14,
+      flattenS: 0.04,
+      aspect: 1280 / 720,
+    }),
+    { statureM: 1.7, massKg: 70, width: 1280, height: 720 },
+  );
+  const withDoubt = moving.landings.filter((landing) =>
+    Number.isFinite(landing.footStrikeAngleUncertaintyDeg),
+  );
+  if (withDoubt.length < moving.landings.length / 2) {
+    throw new Error(
+      `only ${withDoubt.length} of ${moving.landings.length} landings carry a doubt figure`,
+    );
+  }
+  if (!withDoubt.some((landing) => landing.footStrikeAngleUncertaintyDeg > 1)) {
+    throw new Error("a foot rotating through touchdown reported no doubt at all");
+  }
+
+  console.log("strike doubt ok", {
+    settles: "+20° ±3° → 포어풋",
+    straddles: `±4° at ${band - 1}° → ${straddling.length}개 카테고리`,
+    wide: `±${band * 2}° → ${wide.length}개`,
+    fixture: `${withDoubt.length}/${moving.landings.length} 착지에 ±값`,
   });
 }
 

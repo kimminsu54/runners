@@ -6,6 +6,7 @@ import {
   formatTimingMs,
   formatTimingPair,
   riskLabel,
+  strikeAngleSettles,
   type AnalysisResult,
   type FootStrike,
   type Landing,
@@ -413,12 +414,30 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   const strikeDistribution = strikeCounts
     .map((row) => `${row.label} ${row.percent}%`)
     .join(" · ");
+  // How many of the strike verdicts one frame of doubt about touchdown would
+  // change. Measured, not assumed: the angle's own trajectory says how fast it
+  // is moving where it was read, and the detected contact is a frame or two
+  // from the arrival. On the reference clips this comes to three quarters and
+  // more of the contacts, which is why it belongs in the summary rather than
+  // only on the landing a reader happens to click.
+  const unsettledStrikes = knownStrikes.filter(
+    (landing) =>
+      !strikeAngleSettles(
+        landing.footStrikeAngleDeg,
+        landing.footStrikeAngleUncertaintyDeg,
+      ),
+  ).length;
+  const strikeDoubt =
+    knownStrikes.length && unsettledStrikes
+      ? ` 다만 ${knownStrikes.length}회 중 ${unsettledStrikes}회는 접지 프레임이 한 칸 달랐다면 다른 주법으로 나옵니다 — 30fps에서는 이 구분이 촬영 프레임에 크게 좌우됩니다.`
+      : "";
+
   const strikeText =
     dominantStrike === "unknown"
       ? "발뒤꿈치와 발가락이 접지 순간에 충분히 보이지 않아 착지 주법은 판정하지 않았습니다."
       : dominantStrike === "mixed"
-        ? `착지 주법은 혼합형입니다(${strikeDistribution}). 어느 한 주법이 보편적으로 더 안전한 것은 아닙니다.`
-        : `착지 주법은 주로 ${footStrikeLabel[dominantStrike]}입니다(${strikeDistribution}). 어느 한 주법이 보편적으로 더 안전한 것은 아닙니다.`;
+        ? `착지 주법은 혼합형입니다(${strikeDistribution}). 어느 한 주법이 보편적으로 더 안전한 것은 아닙니다.${strikeDoubt}`
+        : `착지 주법은 주로 ${footStrikeLabel[dominantStrike]}입니다(${strikeDistribution}). 어느 한 주법이 보편적으로 더 안전한 것은 아닙니다.${strikeDoubt}`;
 
   const paragraphs = [
     `${durationS.toFixed(1)}초 · ${frameCount}프레임을 추적해 착지 ${landings.length}회를 모았습니다. 자세는 구간의 ${pct(detectedRatio, 1)}%에서 잡혔고, ${cadenceText}입니다.`,
@@ -481,7 +500,13 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
           ? "혼합형"
           : footStrikeLabel[dominantStrike],
       primary: true,
-      hint: strikeDistribution || "옆모습에서 발 전체 필요",
+      // The tile is the headline, so the count of verdicts a single frame
+      // would change sits in it rather than only in the paragraph below.
+      hint:
+        (strikeDistribution || "옆모습에서 발 전체 필요") +
+        (unsettledStrikes
+          ? ` · ${unsettledStrikes}/${knownStrikes.length}회는 한 프레임 차이로 바뀜`
+          : ""),
     },
     {
       label: "착지 충격",

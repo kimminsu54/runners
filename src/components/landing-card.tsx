@@ -8,12 +8,30 @@ import {
   formatKneeFlexDeg,
   formatLoadingRateBwS,
   formatSeconds,
-  formatStrikeAngleDeg,
+  formatStrikeAngleWithDoubt,
+  strikeAngleSpan,
   formatTimingMs,
   riskLabel,
   type Landing,
 } from "@/lib/landing-analysis";
 import { cn } from "@/lib/utils";
+
+/**
+ * The strike, named as narrowly as the reading supports.
+ *
+ * One name when a frame of doubt about touchdown leaves the category alone, and
+ * the range when it does not — "미드풋~포어풋" rather than a bare "포어풋" that a
+ * single frame would have called something else. The angle beside it carries
+ * the same doubt as a ±, so the two say the same thing.
+ */
+function strikeLabelWithDoubt(landing: Landing): string {
+  const span = strikeAngleSpan(
+    landing.footStrikeAngleDeg,
+    landing.footStrikeAngleUncertaintyDeg,
+  );
+  if (span.length < 2) return footStrikeLabel[landing.footStrike];
+  return `${footStrikeLabel[span[0]]}~${footStrikeLabel[span[span.length - 1]]}`;
+}
 
 const riskClass: Record<Landing["risk"], string> = {
   low: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -82,7 +100,7 @@ export function LandingCard({
             label="착지 주법"
             value={
               trusted && landing.footStrike !== "unknown"
-                ? `${footStrikeLabel[landing.footStrike]} · ${formatStrikeAngleDeg(landing.footStrikeAngleDeg, landing.footStrike)}`
+                ? `${strikeLabelWithDoubt(landing)} · ${formatStrikeAngleWithDoubt(landing.footStrikeAngleDeg, landing.footStrike, landing.footStrikeAngleUncertaintyDeg)}`
                 : "판정 불가"
             }
           />

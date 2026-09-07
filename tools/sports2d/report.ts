@@ -19,6 +19,7 @@
 import {
   analyzeLandings,
   cadenceSpm,
+  strikeAngleSettles,
 } from "../../src/lib/landing-analysis";
 import { loadRun } from "./load";
 
@@ -81,14 +82,30 @@ function main(argv: string[]): number {
   console.log(
     `케이던스   ${Number.isFinite(cadence) ? Math.round(cadence) : "-"} spm`,
   );
+  // How many of the strike verdicts a single frame of doubt would change. This
+  // is the number that decides whether the categories mean anything on a clip.
+  const judged = result.landings.filter(
+    (landing) => landing.footStrike !== "unknown",
+  );
+  const unsettled = judged.filter(
+    (landing) =>
+      !strikeAngleSettles(
+        landing.footStrikeAngleDeg,
+        landing.footStrikeAngleUncertaintyDeg,
+      ),
+  ).length;
   console.log(
     `착지       ${result.landings.length}개` +
-      (noContact ? ` · 접지 시간 없음 ${noContact}개` : ""),
+      (noContact ? ` · 접지 시간 없음 ${noContact}개` : "") +
+      (judged.length
+        ? ` · 주법 판정 ${judged.length}개 중 ${unsettled}개는 한 프레임 차이로 바뀜`
+        : ""),
   );
   for (const landing of result.landings) {
     console.log(
       `  ${landing.tContact.toFixed(3)}s ${landing.side.padEnd(5)} ${landing.footStrike.padEnd(9)}` +
         ` 각 ${landing.footStrikeAngleDeg.toFixed(1).padStart(6)}°` +
+        ` ±${(Number.isFinite(landing.footStrikeAngleUncertaintyDeg) ? landing.footStrikeAngleUncertaintyDeg.toFixed(0) : "?").padStart(2)}°` +
         ` 반력 ${landing.peakGrfBw.toFixed(2)}BW` +
         ` 접지 ${(landing.contactMs / 1000).toFixed(3)}s` +
         ` 오버스트라이드 ${(landing.footAheadRatio * 100).toFixed(1)}%`,
