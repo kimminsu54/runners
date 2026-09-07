@@ -49,6 +49,29 @@ export function findAll(root: string, pick: (name: string) => boolean): string[]
 
 const isPixelTrc = (name: string) => name.endsWith(".trc") && name.includes("_px_");
 
+/**
+ * The runs under a path, which is either one run or a directory of them.
+ *
+ * Asking only whether a TRC exists somewhere beneath is not enough, because it
+ * is true of `out` as well as of `out/06`, and treating the whole output tree
+ * as one run made `loadRun` pick the best-tracked person across every clip and
+ * report it as though it were one. So the test is whether an immediate
+ * subdirectory has a TRC of its own: that makes the path a collection, and
+ * anything else with a TRC beneath it a single run.
+ *
+ * Naming conventions would have been the wrong test either way — Sports2D
+ * names its output folder after the clip, and the ids come from clips.csv.
+ */
+export function runsUnder(target: string): string[] {
+  if (statSync(target).isFile()) return isPixelTrc(target) ? [target] : [];
+  const children = readdirSync(target)
+    .map((entry) => join(target, entry))
+    .filter((path) => statSync(path).isDirectory());
+  const collection = children.filter((path) => findAll(path, isPixelTrc).length);
+  if (collection.length) return collection;
+  return findAll(target, isPixelTrc).length ? [target] : [];
+}
+
 /** Throws with a reason rather than returning something plausible. */
 export function loadRun(target: string): LoadedRun {
   const candidates = findAll(target, isPixelTrc);

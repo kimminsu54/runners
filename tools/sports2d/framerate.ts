@@ -20,9 +20,6 @@
  *     npx tsx tools/sports2d/framerate.ts tools/sports2d/out   # every run
  */
 
-import { readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
-
 import {
   analyzeLandings,
   cadenceSpm,
@@ -31,7 +28,7 @@ import {
   type PoseFrame,
 } from "../../src/lib/landing-analysis";
 import { pairLandings } from "../../src/lib/pipeline-compare";
-import { find, loadRun } from "./load";
+import { loadRun, runsUnder } from "./load";
 
 /**
  * Keep every nth frame.
@@ -158,9 +155,6 @@ function report(target: string): void {
   }
 }
 
-const hasTrc = (root: string) =>
-  Boolean(find(root, (name) => name.endsWith(".trc") && name.includes("_px_")));
-
 function main(argv: string[]): number {
   const target = argv[0];
   if (!target) {
@@ -168,16 +162,7 @@ function main(argv: string[]): number {
     return 2;
   }
 
-  // One run, or a directory of them. Decided by whether a pixel TRC exists
-  // anywhere underneath: `out/06` holds one nested a level down, `out` holds
-  // several. Naming conventions would have been the wrong test — Sports2D names
-  // its output folder after the clip.
-  const isRun = statSync(target).isFile() || hasTrc(target);
-  const targets = isRun
-    ? [target]
-    : readdirSync(target)
-        .map((entry) => join(target, entry))
-        .filter((path) => statSync(path).isDirectory() && hasTrc(path));
+  const targets = runsUnder(target);
   if (!targets.length) {
     console.error(`처리된 실행이 없습니다: ${target} (run.py 를 먼저 돌리세요)`);
     return 1;

@@ -233,6 +233,12 @@ export type AnalyzeOptions = {
    * and what measurement decided between them.
    */
   strikeAngleSampling?: StrikeAngleSampling;
+  /**
+   * Which line through the foot to measure the inclination along. Falls back
+   * to the big toe wherever the small toe is missing, so a mixed clip is
+   * measured consistently rather than partly one way.
+   */
+  footAxis?: FootAxis;
 };
 
 function riskFromScore(score: number): Risk {
@@ -560,6 +566,31 @@ export function analyzeLandings(
   const pelvicTiltRaw: number[] = [];
   const t: number[] = [];
 
+  /**
+   * The far end of the foot, as the chosen axis defines it.
+   *
+   * The midpoint carries the lower of the two visibilities, so a confident
+   * point cannot lend its confidence to an uncertain one — the pair is only as
+   * trustworthy as its weaker half.
+   */
+  const farEnd = (
+    frame: PoseFrame,
+    lm: Landmark[],
+    side: "left" | "right",
+  ): Landmark | undefined => {
+    const bigToe = lm[side === "left" ? LM.leftFootIndex : LM.rightFootIndex];
+    if ((options.footAxis ?? "big-toe") === "big-toe") return bigToe;
+    const smallToe =
+      side === "left" ? frame.footExtras?.leftSmallToe : frame.footExtras?.rightSmallToe;
+    if (!bigToe || !smallToe) return bigToe;
+    return {
+      x: (bigToe.x + smallToe.x) / 2,
+      y: (bigToe.y + smallToe.y) / 2,
+      z: ((bigToe.z ?? 0) + (smallToe.z ?? 0)) / 2,
+      visibility: Math.min(bigToe.visibility ?? 1, smallToe.visibility ?? 1),
+    };
+  };
+
   for (const frame of frames) {
     t.push(frame.t * timeScale);
     const lm = frame.landmarks;
@@ -612,7 +643,7 @@ export function analyzeLandings(
     leftStrikeAngleRaw.push(
       footStrikeAngleDeg(
         lm[LM.leftHeel],
-        lm[LM.leftFootIndex],
+        farEnd(frame, lm, "left"),
         options.width,
         options.height,
       ),
@@ -620,7 +651,7 @@ export function analyzeLandings(
     rightStrikeAngleRaw.push(
       footStrikeAngleDeg(
         lm[LM.rightHeel],
-        lm[LM.rightFootIndex],
+        farEnd(frame, lm, "right"),
         options.width,
         options.height,
       ),
@@ -1589,6 +1620,22 @@ function dedupe(
  * attached is worth more than a deletion.
  */
 export type StrikeAngleSampling = "around" | "before" | "before-wide" | "peak";
+
+/**
+ * Which line through the foot the inclination is measured along.
+ *
+ * `big-toe` runs from the heel to the single point MediaPipe puts at the end of
+ * the foot. `long-axis` runs to the midpoint of the big and small toes, which
+ * needs an estimator that gives both — HALPE_26 does, MediaPipe does not, and
+ * those six dedicated foot keypoints were the reason for adopting a reference
+ * pipeline at all.
+ *
+ * The argument for the midpoint is that a foot pointed slightly away from the
+ * camera puts its big toe nearer than its small toe, so a line to the big toe
+ * alone swings with toe-out while the midpoint does not. Whether that is worth
+ * anything on real footage is a measurement, which is what this option is for.
+ */
+export type FootAxis = "big-toe" | "long-axis";
 
 /**
  * How far back the wide windows look, in seconds.
