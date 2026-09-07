@@ -66,6 +66,39 @@ function arrivedAt(
   return at;
 }
 
+/**
+ * Recovers the index the angle was read at.
+ *
+ * `strikeIdx` is not exported and is not the contact index — it comes from the
+ * matched stance interval — so the offset measured for the contact time says
+ * nothing about the angle on its own. It can be found rather than exported:
+ * the default window takes the median of the two samples up to strikeIdx, so
+ * the index whose window reproduces the published angle is that index.
+ *
+ * Searched outward from the contact index and returns the nearest match, so a
+ * clip where two windows happen to give the same angle resolves to the one
+ * the analysis would have used.
+ */
+function angleReadAt(
+  result: AnalysisResult,
+  side: "left" | "right",
+  from: number,
+  published: number,
+): number {
+  const angleOf = (i: number) => {
+    const point = result.series[i];
+    if (!point) return Number.NaN;
+    return side === "left" ? point.leftFootStrikeAngle : point.rightFootStrikeAngle;
+  };
+  for (let step = 0; step <= 8; step++) {
+    for (const at of step === 0 ? [from] : [from - step, from + step]) {
+      const window = [at - 1, at].map(angleOf).filter(Number.isFinite);
+      if (window.length && Math.abs(median(window) - published) < 0.05) return at;
+    }
+  }
+  return Number.NaN;
+}
+
 function report(target: string, frames: PoseFrame[], result: AnalysisResult, label: string) {
   const travel = (() => {
     const all: number[] = [];
@@ -90,6 +123,50 @@ function report(target: string, frames: PoseFrame[], result: AnalysisResult, lab
     }
     const arrived = arrivedAt(frames, landing.side as "left" | "right", reported, travel);
     if (Number.isFinite(arrived)) offsets.push(reported - arrived);
+  }
+
+  // The same question for the index the angle is read at, which is the one
+  // that decides whether the sampling window is anchored correctly.
+  const angleOffsets: number[] = [];
+  const trajectory = new Map<number, number[]>();
+  for (const landing of result.landings) {
+    if (landing.side === "unknown" || !Number.isFinite(landing.footStrikeAngleDeg)) continue;
+    const side = landing.side as "left" | "right";
+    let reported = 0;
+    for (let i = 1; i < frames.length; i++) {
+      if (Math.abs(frames[i].t - landing.tContact) < Math.abs(frames[reported].t - landing.tContact)) {
+        reported = i;
+      }
+    }
+    const readAt = angleReadAt(result, side, reported, landing.footStrikeAngleDeg);
+    if (!Number.isFinite(readAt)) continue;
+    const arrived = arrivedAt(frames, side, reported, travel);
+    if (Number.isFinite(arrived)) angleOffsets.push(readAt - arrived);
+    // The angle through the frames around the arrival, which is the anchor
+    // that matters and the one the earlier trajectory table did not use.
+    for (const offset of [-2, -1, 0, 1, 2]) {
+      const point = result.series[arrived + offset];
+      if (!point) continue;
+      const angle = side === "left" ? point.leftFootStrikeAngle : point.rightFootStrikeAngle;
+      if (!Number.isFinite(angle)) continue;
+      const bucket = trajectory.get(offset) ?? [];
+      bucket.push(angle);
+      trajectory.set(offset, bucket);
+    }
+  }
+  if (angleOffsets.length) {
+    const counts = new Map<number, number>();
+    for (const offset of angleOffsets) counts.set(offset, (counts.get(offset) ?? 0) + 1);
+    console.log(
+      `  ${"".padEnd(9)} 각도 인덱스가 도착보다 ${median(angleOffsets)}프레임 늦음` +
+        ` (n=${angleOffsets.length} · ${[...counts.entries()].sort((a, b) => a[0] - b[0]).map(([o, n]) => `${o >= 0 ? "+" : ""}${o}:${n}`).join(" ")})`,
+    );
+    const cells = [-2, -1, 0, 1, 2].map((offset) => {
+      const values = trajectory.get(offset) ?? [];
+      const name = offset === 0 ? "도착" : `${offset > 0 ? "+" : ""}${offset}`;
+      return `${name} ${values.length ? `${median(values).toFixed(1)}°` : "없음"}`;
+    });
+    console.log(`  ${"".padEnd(9)} 도착 기준 각도 궤적: ${cells.join("  ")}`);
   }
 
   if (!offsets.length) {
