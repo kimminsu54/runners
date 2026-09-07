@@ -468,10 +468,18 @@ function stubSummary(
   override: Partial<SessionSummary>,
 ): Pick<
   SessionSummary,
-  "dominantStrike" | "strikeCounts" | "pace" | "meanPeakGrfBw" | "patterns"
+  | "dominantStrike"
+  | "dominantStrikeSettled"
+  | "strikeCounts"
+  | "pace"
+  | "meanPeakGrfBw"
+  | "patterns"
 > {
   return {
     dominantStrike: "midfoot",
+    // Settled by default, so the existing cases keep asking what they
+    // asked; the unsettled case is a test of its own.
+    dominantStrikeSettled: true,
     strikeCounts: [],
     pace: "steady",
     meanPeakGrfBw: 2.3,
@@ -553,6 +561,42 @@ if (
 }
 
 const mixedRec = matchedRec(recommendShoes(stubSummary({ dominantStrike: "mixed" })));
+
+// A majority one frame of doubt would overturn must not pick shoes for it.
+//
+// Averaging does not save this. The anchor error is common mode, so every
+// contact shifts the same way and the counts move together: on one reference
+// clip a single frame turned forefoot 21 · midfoot 12 into rearfoot 23 ·
+// midfoot 10. Recommending a forefoot structure there would be recommending it
+// to someone the same footage calls a heel striker on the other reading.
+{
+  const settled = matchedRec(
+    recommendShoes(stubSummary({ dominantStrike: "forefoot", dominantStrikeSettled: true })),
+  );
+  const unsettled = matchedRec(
+    recommendShoes(stubSummary({ dominantStrike: "forefoot", dominantStrikeSettled: false })),
+  );
+  if (settled.targetStrike !== "forefoot") {
+    throw new Error(`a settled forefoot session targeted ${settled.targetStrike}`);
+  }
+  if (unsettled.targetStrike !== "mixed") {
+    throw new Error(
+      `an unsettled forefoot session still targeted ${unsettled.targetStrike}`,
+    );
+  }
+  // And it has to say why, rather than looking like a genuinely mixed runner.
+  if (!unsettled.headline.includes("한 프레임")) {
+    throw new Error(`the reason is not given: ${unsettled.headline}`);
+  }
+  if (mixedRec.headline === unsettled.headline) {
+    throw new Error("an unsettled session reads as a mixed runner");
+  }
+  console.log("shoe strike doubt ok", {
+    settled: settled.targetStrike,
+    unsettled: unsettled.targetStrike,
+    reason: unsettled.headline.slice(0, 24),
+  });
+}
 if (mixedRec.picks[0]?.shoe.recommendedStrike !== "any") {
   throw new Error("mixed strike should lead with a shoe that accepts any landing");
 }
@@ -618,6 +662,7 @@ const photoGaps = (
         (() => {
           const rec = recommendShoes({
             dominantStrike,
+            dominantStrikeSettled: true,
             strikeCounts: [],
             pace,
             meanPeakGrfBw: preferStability ? 3.1 : 2.2,

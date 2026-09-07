@@ -163,11 +163,28 @@ export function shoeImageSrc(shoe: Pick<Shoe, "brand" | "model">): string | null
 export function recommendShoes(
   summary: Pick<
     SessionSummary,
-    "dominantStrike" | "strikeCounts" | "pace" | "meanPeakGrfBw" | "patterns"
+    | "dominantStrike"
+    | "dominantStrikeSettled"
+    | "strikeCounts"
+    | "pace"
+    | "meanPeakGrfBw"
+    | "patterns"
   >,
   limit = 3,
 ): ShoeRecommendation {
-  const target = summary.dominantStrike;
+  // A majority that one frame of doubt would overturn is not a strike to buy
+  // shoes for. It is treated as mixed, which is the branch that already means
+  // "not keyed to one strike" and prefers shoes that do not care — rather than
+  // recommending a forefoot structure to someone the same footage would call a
+  // heel striker had touchdown been read a frame earlier.
+  //
+  // Averaging is no defence here: the anchor error is common mode, so the
+  // counts shift together. On one reference clip a single frame turned
+  // forefoot 21 · midfoot 12 into rearfoot 23 · midfoot 10.
+  const target =
+    summary.dominantStrike !== "unknown" && !summary.dominantStrikeSettled
+      ? "mixed"
+      : summary.dominantStrike;
   if (target === "unknown") return { kind: "general" };
 
   // Two different findings ask for a stability shoe, and they do not mean the
@@ -201,9 +218,11 @@ export function recommendShoes(
     kind: "matched",
     targetStrike: target,
     headline:
-      target === "mixed"
-        ? "혼합 주법에는 착지를 가리지 않는 신발을 먼저 봅니다."
-        : `${STRIKE_LABEL[target]} 착지에 구조가 맞는 신발을 골랐습니다.`,
+      target !== "mixed"
+        ? `${STRIKE_LABEL[target]} 착지에 구조가 맞는 신발을 골랐습니다.`
+        : summary.dominantStrike === "mixed"
+          ? "혼합 주법에는 착지를 가리지 않는 신발을 먼저 봅니다."
+          : "주법이 한 프레임 차이로 갈려서, 착지를 가리지 않는 신발을 먼저 봅니다.",
     note: "나이키·아식스·아디다스를 우선하고, 그다음 다른 브랜드를 둡니다. 주법에 맞는 드롭과 롤링일 뿐 피팅을 대신하지 않습니다.",
     primary: ranked.primary,
     others: ranked.others,

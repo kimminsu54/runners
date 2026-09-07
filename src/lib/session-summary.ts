@@ -5,6 +5,7 @@ import {
   formatSeconds,
   formatTimingMs,
   formatTimingPair,
+  classifyFootStrike,
   riskLabel,
   strikeAngleSettles,
   type AnalysisResult,
@@ -109,6 +110,16 @@ export type SessionSummary = {
   paceSource: "reported" | "gait" | "unknown";
   strikeCounts: Array<{ type: FootStrike; label: string; count: number; percent: number }>;
   dominantStrike: FootStrike | "mixed";
+  /**
+   * Whether that majority survives a frame of doubt about touchdown.
+   *
+   * False on most side-on clips at 30 fps. The anchor error is common
+   * mode, so the counts move together instead of cancelling: a one-frame
+   * shift turned forefoot 21 · midfoot 12 into rearfoot 23 · midfoot 10 on
+   * one reference clip. Anything that keys off the majority — the shoe
+   * recommendation does — has to know.
+   */
+  dominantStrikeSettled: boolean;
 };
 
 /** The precision BW values are printed at. */
@@ -220,6 +231,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       paceSource: "unknown",
       strikeCounts: [],
       dominantStrike: "unknown",
+    dominantStrikeSettled: true,
     };
   }
 
@@ -427,6 +439,40 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         landing.footStrikeAngleUncertaintyDeg,
       ),
   ).length;
+  // Whether the majority strike survives a frame of doubt.
+  //
+  // Averaging does not rescue it, and that is the whole point. The anchor error
+  // is common mode — if touchdown is taken a frame late it is taken a frame
+  // late for every contact — so the counts move together rather than cancelling
+  // out. Moving the anchor by one frame on one reference clip turned forefoot
+  // 21 · midfoot 12 into rearfoot 23 · midfoot 10: not a shaved majority, a
+  // different answer.
+  //
+  // Simulated by shifting every angle by its own measured doubt, both ways, and
+  // asking whether the majority is the same all three times.
+  const majorityUnder = (shift: number): FootStrike => {
+    const counts = new Map<FootStrike, number>();
+    for (const landing of knownStrikes) {
+      const doubt = Number.isFinite(landing.footStrikeAngleUncertaintyDeg)
+        ? landing.footStrikeAngleUncertaintyDeg
+        : 0;
+      const strike = classifyFootStrike(landing.footStrikeAngleDeg + shift * doubt).type;
+      counts.set(strike, (counts.get(strike) ?? 0) + 1);
+    }
+    let best: FootStrike = "unknown";
+    let most = 0;
+    for (const [strike, count] of counts) {
+      if (count > most) {
+        most = count;
+        best = strike;
+      }
+    }
+    return best;
+  };
+  const dominantStrikeSettled =
+    knownStrikes.length === 0 ||
+    (majorityUnder(-1) === majorityUnder(0) && majorityUnder(0) === majorityUnder(1));
+
   const strikeDoubt =
     knownStrikes.length && unsettledStrikes
       ? ` 다만 ${knownStrikes.length}회 중 ${unsettledStrikes}회는 접지 프레임이 한 칸 달랐다면 다른 주법으로 나옵니다 — 30fps에서는 이 구분이 촬영 프레임에 크게 좌우됩니다.`
@@ -587,6 +633,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     paceSource,
     strikeCounts,
     dominantStrike,
+    dominantStrikeSettled,
   };
 }
 
