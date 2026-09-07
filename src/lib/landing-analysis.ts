@@ -371,7 +371,7 @@ function measureSubject(
     if (!isVisible(nose, 0.3) || !heel) continue;
     const px = distPx(nose, heel, width, height);
     if (px > 20) {
-      const staturePx = px / 0.92;
+      const staturePx = px / threshold("stature_from_nose_heel");
       lengths.push(staturePx);
       const shoulderWidth = Math.abs(lm[LM.leftShoulder].x - lm[LM.rightShoulder].x) * width;
       const hipWidth = Math.abs(lm[LM.leftHip].x - lm[LM.rightHip].x) * width;

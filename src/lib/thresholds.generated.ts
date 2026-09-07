@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 7)
+// Source: shared/thresholds.yaml (version 8)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 7;
+export const THRESHOLDS_VERSION = 8;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -22,6 +22,7 @@ export type ThresholdKey =
   | "frontal_knee_valgus_notable_deg"
   | "frontal_pelvic_drop_notable_deg"
   | "frontal_pelvis_min_width_px"
+  | "stature_from_nose_heel"
   | "min_subject_height_ratio"
   | "min_detected_ratio_fair"
   | "min_detected_ratio_publish"
@@ -132,6 +133,16 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "두 엉덩이 랜드마크의 화면상 좌우 간격입니다. 옆에서 찍으면 거의 겹쳐서 이 간격이 잡음이 되고, 잡음으로 계산한 정렬 각도는 작은 오차가 아니라 난수입니다.",
     validationStatus: "internal",
     note: "미달이면 정면 지표를 아예 내지 않습니다. 화면 폭 1280 기준으로 잡은 값입니다.",
+  },
+  stature_from_nose_heel: {
+    key: "stature_from_nose_heel",
+    label: "코→발꿈치가 신장에서 차지하는 비율",
+    value: 0.92,
+    unit: "ratio",
+    appliesTo: "camera",
+    source: "코의 높이가 신장의 약 92%라는 인체 계측 관행입니다. 화면의 픽셀을 실제 거리로 바꾸는 배율이 전부 이 값에서 나오므로, 몸 앞 착지 거리·충격 속도·등가 낙하 높이가 모두 여기에 걸려 있습니다.",
+    validationStatus: "convention",
+    note: "달리는 자세에서는 이 비율이 일정하지 않습니다. Sports2D의 독립 재구성과 대조하면 같은 구간을 여섯 클립에서 신장의 71%~98%로 보고, 그만큼 배율이 9~36% 어긋납니다(docs/2단계-비교결과.md). 화면 안에 길이가 알려진 것이 없으면 어느 쪽이 맞는지 가릴 수 없어 관행값을 유지합니다. 주법 각도는 두 픽셀 오프셋의 비율이라 이 오차에 면역입니다.",
   },
   min_subject_height_ratio: {
     key: "min_subject_height_ratio",
