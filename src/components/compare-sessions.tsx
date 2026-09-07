@@ -60,10 +60,28 @@ function DirectionIcon({ change }: { change: MetricChange }) {
   );
 }
 
+/**
+ * The session's strike, marked when a frame of doubt would have overturned it.
+ *
+ * Two sessions whose strikes differ is the kind of change a reader reads as
+ * progress, and at 30 fps it is as likely to be which frame each clip happened
+ * to land on. The marker is what keeps that difference from being read as one.
+ *
+ * A session saved before this was measured carries no flag, and gets no marker
+ * — absent is not the same as settled, and inventing either answer for old
+ * data would be worse than saying nothing.
+ */
 function strikeLabel(snapshot: SessionSnapshot): string {
-  if (snapshot.dominantStrike === "mixed") return "혼합";
-  if (snapshot.dominantStrike === "unknown") return "판정 불가";
-  return footStrikeLabel[snapshot.dominantStrike];
+  const base =
+    snapshot.dominantStrike === "mixed"
+      ? "혼합"
+      : snapshot.dominantStrike === "unknown"
+        ? "판정 불가"
+        : footStrikeLabel[snapshot.dominantStrike];
+  // Spelled out rather than marked with a symbol. This sits in a one-line
+  // row among the date and the landing count, where a bare "?" is a puzzle
+  // and there is nowhere to put a legend.
+  return snapshot.dominantStrikeSettled === false ? `${base}(불확실)` : base;
 }
 
 function savedAtLabel(savedAt: number): string {

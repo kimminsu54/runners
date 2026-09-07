@@ -1724,6 +1724,28 @@ console.log("shoe photos ok", {
   }
 
   const frontResult = analyzeSyntheticFrontRun({ valgus: 0.018, pelvicDrop: 0.009 });
+  // The still travels, so it is the last place a bare category could survive.
+  // Its strike row has to carry the same doubt the card shows.
+  const sideStrike = sideHud.rows.find((row) => row.label === "착지 주법")?.value ?? "";
+  if (!sideStrike.includes("±")) {
+    throw new Error(`the exported still shows a strike with no doubt: ${sideStrike}`);
+  }
+  const doubtful = sideResult.landings.find(
+    (landing) =>
+      landing.footStrike !== "unknown" &&
+      !strikeAngleSettles(landing.footStrikeAngleDeg, landing.footStrikeAngleUncertaintyDeg),
+  );
+  if (doubtful) {
+    const row =
+      buildHudFrame(sideResult, doubtful, 1).rows.find((r) => r.label === "착지 주법")
+        ?.value ?? "";
+    if (!row.includes("~")) {
+      throw new Error(
+        `a strike a frame from another category was named outright on the still: ${row}`,
+      );
+    }
+  }
+
   const frontHud = buildHudFrame(frontResult, frontResult.landings[1], 2);
   for (const label of ["무릎 정렬", "골반 기울기"]) {
     if (!labels(frontHud).includes(label)) {

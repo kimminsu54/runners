@@ -35,6 +35,18 @@ export type SessionSnapshot = {
   cadenceSpm: number;
   pace: PaceBand;
   dominantStrike: FootStrike | "mixed";
+  /**
+   * Whether that majority survived a frame of doubt about touchdown, when the
+   * session was saved.
+   *
+   * Optional, and the version is deliberately not bumped for it. The version
+   * gate rejects any snapshot that does not match, so raising it would discard
+   * every session anyone has already saved — and an added optional field is
+   * compatible with the old shape by construction. Absent means the session
+   * predates the measurement, which is not the same as settled, so the
+   * comparison says nothing rather than claiming either way.
+   */
+  dominantStrikeSettled?: boolean;
   strikePercents: Record<Exclude<FootStrike, "unknown">, number>;
   meanDutyFactor: number;
   meanContactMs: number;
@@ -74,6 +86,7 @@ export function buildSnapshot(input: {
     cadenceSpm: cadenceSpm(result.landings),
     pace: summary.pace,
     dominantStrike: summary.dominantStrike,
+    dominantStrikeSettled: summary.dominantStrikeSettled,
     strikePercents: percents,
     meanDutyFactor: summary.meanDutyFactor,
     meanContactMs: summary.meanContactMs,
@@ -302,6 +315,12 @@ function isSnapshot(value: unknown): value is SessionSnapshot {
   // NaN is expected (a gated field), so only the type is checked here.
   for (const key of NUMBER_FIELDS) {
     if (typeof s[key] !== "number") return false;
+  }
+  if (
+    s.dominantStrikeSettled !== undefined &&
+    typeof s.dominantStrikeSettled !== "boolean"
+  ) {
+    return false;
   }
   const p = s.strikePercents as Record<string, unknown> | undefined;
   if (!p || typeof p !== "object") return false;

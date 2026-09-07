@@ -18,7 +18,8 @@ import {
   formatLoadingRateBwS,
   formatPelvicDropDeg,
   formatSeconds,
-  formatStrikeAngleDeg,
+  formatStrikeAngleWithDoubt,
+  strikeAngleSpan,
   formatTimingMs,
   riskLabel,
   type AnalysisResult,
@@ -50,13 +51,25 @@ export function buildHudFrame(
 
   const rows: HudRow[] = [];
   if (!front) {
+    // The exported still is the piece of this report that travels, so it is
+    // the last place a bare category should survive. Named as narrowly as the
+    // reading supports and with the doubt on the angle, the same as the card.
+    const span = strikeAngleSpan(
+      landing.footStrikeAngleDeg,
+      landing.footStrikeAngleUncertaintyDeg,
+    );
+    const strikeName =
+      span.length > 1
+        ? `${footStrikeLabel[span[0]]}~${footStrikeLabel[span[span.length - 1]]}`
+        : footStrikeLabel[landing.footStrike];
     rows.push({
       label: "착지 주법",
       value:
         trusted && landing.footStrike !== "unknown"
-          ? `${footStrikeLabel[landing.footStrike]} · ${formatStrikeAngleDeg(
+          ? `${strikeName} · ${formatStrikeAngleWithDoubt(
               landing.footStrikeAngleDeg,
               landing.footStrike,
+              landing.footStrikeAngleUncertaintyDeg,
             )}`
           : "판정 불가",
     });
