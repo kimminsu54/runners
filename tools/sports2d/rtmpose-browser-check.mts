@@ -6,6 +6,18 @@
  * preprocessing, the model under the WASM backend a browser would use, and my
  * own SimCC decoding — compared against rtmlib's keypoints for the same frame,
  * box and model. If the two agree the plan has no unverified code path left.
+ *
+ * Needs onnxruntime-web, which is deliberately not a dependency: the browser
+ * plan is a proposal and shipping a 137 MB package for a measurement would
+ * prejudge it. Install it for a run and remove it after:
+ *
+ *     npm install --no-save onnxruntime-web
+ *     npx tsx tools/sports2d/rtmpose-browser-check.mts
+ *     npm uninstall --no-save onnxruntime-web
+ *
+ * Excluded from tsconfig for the same reason — with the package absent the
+ * import does not resolve, and a red typecheck on every unrelated run is a
+ * worse trade than an unchecked diagnostic.
  */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
