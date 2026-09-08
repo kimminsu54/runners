@@ -35,6 +35,9 @@
 |---|---|
 | `bench.py` | 백엔드별 포즈 추정 속도. **opencv 430ms · openvino 586ms · onnxruntime 2547ms** |
 | `strike-bias.ts` | **30 fps가 주법 각도에서 가져가는 것.** 합성 러너라 참값을 알고, 프레임 레이트를 고를 수 있음 |
+| `rtmpose-box-source.py` | MediaPipe 박스와 검출기 박스로 각각 RTMPose를 돌려 키포인트 차이를 비교 |
+| `rtmpose-window.py` | 창 전체를 MediaPipe 박스 + RTMPose로 돌려 어댑터가 읽는 형태로 저장 |
+| `rtmpose-window-compare.ts` | 그 결과를 분석에 통과시켜 Sports2D·현재 앱과 비교 |
 | `rtmpose-reference.py` | 한 프레임의 참조 전처리·키포인트를 내보냄 (브라우저 구현 대조용) |
 | `rtmpose-browser-check.mts` | 브라우저용 RTMPose 사슬(어파인·정규화·SimCC 디코딩)을 rtmlib과 대조 — `npm install --no-save onnxruntime-web` 필요 |
 | `foot-side.ts` | 좌우 라벨을 교대 위반으로 채점 — 참값 없이 어느 파이프라인이 틀리는지 가림 |

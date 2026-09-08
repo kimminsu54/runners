@@ -18,7 +18,11 @@ import numpy as np
 import cv2
 from rtmlib.tools.pose_estimation.rtmpose import RTMPose
 
-FRAME = 100
+import sys as _sys
+
+# Which frame, so the clamp path can be exercised on a frame whose box leaves
+# the image rather than only on a comfortable one.
+FRAME = int(_sys.argv[1]) if len(_sys.argv) > 1 else 100
 CLIP = "clips/treadmill-720p.mp4"
 OUT = "C:/Users/Owner/AppData/Local/Temp/claude/c--Users-Owner-ai-service/0bb35f78-1216-45b2-bc11-750a98790972/scratchpad/ref_preproc"
 

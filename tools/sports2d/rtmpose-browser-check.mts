@@ -49,13 +49,20 @@ if (bw > bh * (IN_W / IN_H)) bh = bw / (IN_W / IN_H);
 else bw = bh * (IN_W / IN_H);
 const scale = [bw, bh];
 
-const pixel = (x: number, y: number, c: number) =>
-  frame[
-    (Math.min(meta.height - 1, Math.max(0, y)) * meta.width +
-      Math.min(meta.width - 1, Math.max(0, x))) *
-      3 +
-      c
-  ];
+// Outside the frame is black, not the nearest edge.
+//
+// cv2.warpAffine defaults to BORDER_CONSTANT with a value of zero, so the part
+// of the box hanging off the image is filled with black — and after
+// normalisation that is (0 - 123.675) / 58.395 = -2.118, which is exactly the
+// minimum of every reference tensor. Clamping the coordinates instead
+// replicates the edge, which looks more sensible and is not what produced the
+// reference: on the frame whose box overhangs by 34px it was 0.18 out on
+// average and 4.3 at worst. 16 of 355 frames on this clip overhang, so the
+// path is not rare.
+const pixel = (x: number, y: number, c: number) => {
+  if (x < 0 || y < 0 || x >= meta.width || y >= meta.height) return 0;
+  return frame[(y * meta.width + x) * 3 + c];
+};
 const sample = (fx: number, fy: number, c: number) => {
   const x0 = Math.floor(fx);
   const y0 = Math.floor(fy);
