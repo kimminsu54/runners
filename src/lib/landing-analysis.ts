@@ -1372,7 +1372,7 @@ function fillShortGaps(values: number[], maxRun: number): number[] {
   return out;
 }
 
-type ContactInterval = {
+export type ContactInterval = {
   side: FootSide;
   startIdx: number;
   endIdx: number;
@@ -1895,7 +1895,17 @@ function matchInterval(
   return best;
 }
 
-function groundContactIntervals(
+/**
+ * Exported for the diagnostics, which must not rebuild it.
+ *
+ * `foot-signal.ts` had its own copy of the planted-frame test — the height
+ * band and the speed gate but not the hysteresis growth, the gap merging or
+ * the length filter that follow. Its interval counts were therefore the raw
+ * core runs and not the stances the analysis works from, and reading them as
+ * though they were led me to a mechanism the app does not have. The file's own
+ * header warns against exactly that.
+ */
+export function groundContactIntervals(
   series: SeriesPoint[],
   dt: number,
 ): ContactInterval[] {

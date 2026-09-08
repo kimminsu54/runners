@@ -22,7 +22,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { LM } from "../../src/lib/pose";
-import type { PoseFrame } from "../../src/lib/landing-analysis";
+import {
+  analyzeLandings,
+  groundContactIntervals,
+  type PoseFrame,
+} from "../../src/lib/landing-analysis";
 // The real helpers, not copies of them. A diagnostic that reimplements the
 // thing it is diagnosing measures the reimplementation: the first version of
 // this took the ground line as one percentile over the whole clip, where the
@@ -208,6 +212,61 @@ function runSpacing(mask: boolean[], rate: number): number[] {
   return starts.slice(1).map((start, i) => (start - starts[i]) / rate);
 }
 
+/**
+ * The stances the analysis actually works from, and the stance it publishes.
+ *
+ * The rows above describe the signal. This one describes the outcome, by
+ * calling the same interval finder the analysis calls and reading the contact
+ * time off the landings it produced. Without it the tool can only show that
+ * one signal is noisier than another, which does not say whether the noise
+ * survived the hysteresis and the merging into the number a user sees.
+ */
+function outcome(label: string, frames: PoseFrame[], preFiltered: boolean): void {
+  const result = analyzeLandings(frames, {
+    statureM: 1.7,
+    massKg: 70,
+    width: 720,
+    height: 1280,
+    preFiltered,
+  });
+  const times = result.series.map((point) => point.t);
+  const steps = times.slice(1).map((t, i) => t - times[i]).filter((d) => d > 0);
+  const dt = steps.length ? median(steps) : 1 / 30;
+  const intervals = groundContactIntervals(result.series, dt);
+  console.log(`  ${label} 실제 접지 구간`);
+  for (const side of ["left", "right"] as const) {
+    const mine = intervals.filter((interval) => interval.side === side);
+    const lengths = mine.map((interval) => interval.end - interval.start);
+    const starts = mine.map((interval) => interval.start);
+    const gaps = starts.slice(1).map((t, i) => t - starts[i]);
+    // The gap from one interval's end to the next one's start. If a stance is
+    // being split, these fall into two groups — the short gaps inside a
+    // shattered stance and the long ones between real stances — and a repair
+    // is only safe if the two groups do not overlap.
+    const holes = mine
+      .slice(1)
+      .map((interval, i) => interval.start - mine[i].end)
+      .filter((hole) => hole >= 0)
+      .sort((a, b) => a - b);
+    console.log(
+      `    ${side.padEnd(5)} 구간 ${String(mine.length).padStart(2)}개` +
+        ` · 길이 중앙 ${lengths.length ? median(lengths).toFixed(3) : "—"}s` +
+        ` · 시작 간격 중앙 ${gaps.length ? median(gaps).toFixed(3) : "—"}s`,
+    );
+    if (holes.length) {
+      const show = holes.map((hole) => hole.toFixed(2)).join(" ");
+      console.log(`          구간 사이 빈틈: ${show}`);
+    }
+  }
+  const published = result.landings
+    .map((landing) => landing.contactMs)
+    .filter(Number.isFinite);
+  console.log(
+    `    발표된 접지 중앙 ${published.length ? median(published).toFixed(0) : "—"}ms` +
+      ` · 착지 ${result.landings.length}개`,
+  );
+}
+
 function describe(label: string, frames: PoseFrame[], rate: number): void {
   console.log(`\n${label} · ${frames.length}프레임 · ${rate} fps`);
   // The two feet against each other, before looking at either alone.
@@ -253,13 +312,19 @@ function describe(label: string, frames: PoseFrame[], rate: number): void {
       const { longest, runs } = runsOf(bothMask);
       const mean = runs.length ? runs.reduce((a, b) => a + b, 0) / runs.length : 0;
       const spacing = runSpacing(bothMask, rate);
+      // Labelled as the core, because that is what it is. These runs are the
+      // planted-frame test alone, without the hysteresis growth, the gap
+      // merging or the length filter that `groundContactIntervals` applies
+      // after it — so they are not the stances the analysis works from, and
+      // reading them as though they were points at fragmentation the app may
+      // not have. The real intervals are printed below.
       console.log(
         `        ${name.padEnd(9)} 상하폭 ${swing.toFixed(4)}` +
           ` · 밴드 ${tolerance.toFixed(4)}` +
           ` · 흔들림 ${(jitterShare(filtered, swing) * 100).toFixed(1)}%` +
-          ` · 구간 ${String(runs.length).padStart(2)}개 평균 ${mean.toFixed(1)}f` +
+          ` · 코어런 ${String(runs.length).padStart(2)}개 평균 ${mean.toFixed(1)}f` +
           ` (최장 ${String(longest).padStart(2)}) = ${(mean / rate).toFixed(3)}s` +
-          ` · 구간 간격 중앙 ${median(spacing).toFixed(3)}s`,
+          ` · 코어런 간격 중앙 ${median(spacing).toFixed(3)}s`,
       );
     }
 
@@ -296,6 +361,7 @@ function main(argv: string[]): number {
 
   const run = loadRun(target);
   describe("Sports2D", run.frames, run.table.rate);
+  outcome("Sports2D", run.frames, true);
 
   const dumpPath = join(target, "browser-frames.json");
   let dump: { clip: string; frames: PoseFrame[] };
@@ -312,6 +378,7 @@ function main(argv: string[]): number {
   const span = dump.frames.at(-1)?.t ?? 0;
   const browserRate = span > 0 ? (dump.frames.length - 1) / span : run.table.rate;
   describe("브라우저 (MediaPipe)", dump.frames, browserRate);
+  outcome("브라우저", dump.frames, false);
   return 0;
 }
 
