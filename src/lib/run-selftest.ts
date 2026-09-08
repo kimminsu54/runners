@@ -26,6 +26,7 @@ import { emitShoesJson } from "./shoes-source";
 import { recommendShoes as rankShoes } from "./Shoeranking";
 import {
   analyzeLandings,
+  splitRatio,
   analyzeLandingsAuto,
   type PoseFrame,
   formatStrikeAngleWithDoubt,
@@ -829,6 +830,70 @@ console.log("shoe purpose column ok", {
   marked: superTrainers.length,
   zoomFly: { easy: easyPick.score, fast: fastPick.score, unmarkedEasy: twinPick.score },
 });
+
+// --- a split stance withholds the force, not the whole report ---------------
+// Peak force comes off duty factor, so a stance found in fragments inflates it.
+// On one real clip the browser published 174ms and 2.77 BW where the reference
+// read 307ms and 1.97 — and the angle, cadence and geometry from that same clip
+// were fine, which is why this withholds only what comes off the stance.
+{
+  // Measured on the real pipelines: three clean pipeline-clip pairs landed at
+  // 0.88, 0.93, 1.02 and 1.07, the one that fragmented at 1.27 and 1.44.
+  const cut = threshold("max_stance_split_ratio");
+  const clean = splitRatio([17, 17], 168, 12);
+  const split = splitRatio([26, 23], 181, 12);
+  if (!(clean <= cut)) {
+    throw new Error(`a clean signal must pass: ${clean.toFixed(2)} against ${cut}`);
+  }
+  if (!(split > cut)) {
+    throw new Error(`a split stance must fail: ${split.toFixed(2)} against ${cut}`);
+  }
+  // The worse foot decides, because one shattered foot drags the median stance.
+  if (splitRatio([17, 26], 181, 12) !== splitRatio([26, 17], 181, 12)) {
+    throw new Error("the two feet must be treated the same way round");
+  }
+  if (splitRatio([26, 17], 181, 12) <= splitRatio([17, 17], 181, 12)) {
+    throw new Error("one shattered foot must be enough to fail");
+  }
+  // A clip too short to divide is not accused, and NaN reads as trusted.
+  if (Number.isFinite(splitRatio([3, 3], 180, 1))) {
+    throw new Error("a clip with too few allowed stances must not be judged");
+  }
+
+  // And the flag has to reach the report, withholding force while the strike
+  // angle stays published.
+  const good = analyzeSyntheticRun({ contactS: 0.18, flightS: 0.14 });
+  if (!good.quality.stanceTrusted) {
+    throw new Error("a clean synthetic run must trust its stance");
+  }
+  const forced = {
+    ...good,
+    quality: { ...good.quality, stanceTrusted: false },
+  };
+  const withheld = buildSessionSummary(forced);
+  const kept = buildSessionSummary(good);
+  if (!Number.isFinite(kept.meanPeakGrfBw)) {
+    throw new Error("a trusted stance must publish a force");
+  }
+  if (Number.isFinite(withheld.meanPeakGrfBw)) {
+    throw new Error(
+      `a split stance still published ${withheld.meanPeakGrfBw} bodyweights`,
+    );
+  }
+  if (withheld.dominantStrike !== kept.dominantStrike) {
+    throw new Error(
+      `withholding the force also changed the strike: ${withheld.dominantStrike}` +
+        ` against ${kept.dominantStrike}`,
+    );
+  }
+  console.log("split stance ok", {
+    clean: clean.toFixed(2),
+    split: split.toFixed(2),
+    cut,
+    force: `유지 ${kept.meanPeakGrfBw.toFixed(2)}BW → 보류 ${withheld.meanPeakGrfBw}`,
+    strike: withheld.dominantStrike,
+  });
+}
 
 // --- per-side breakdown -----------------------------------------------------
 // Only from the front. Seen from the side the legs pass over each other and

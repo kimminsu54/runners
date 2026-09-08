@@ -257,6 +257,15 @@ function outcome(label: string, frames: PoseFrame[], preFiltered: boolean): void
       const show = holes.map((hole) => hole.toFixed(2)).join(" ");
       console.log(`          구간 사이 빈틈: ${show}`);
     }
+    // Start to start, which is a different question from the gap above and the
+    // one a stride constraint would act on. Two pieces of a shattered stance
+    // start about a stance apart; two real stances start a stride apart. If
+    // those two groups separate here, a repair is possible even though the
+    // end-to-start gaps overlap.
+    if (gaps.length) {
+      const show = [...gaps].sort((a, b) => a - b).map((g) => g.toFixed(2)).join(" ");
+      console.log(`          시작 간격 전체: ${show}`);
+    }
   }
   const published = result.landings
     .map((landing) => landing.contactMs)

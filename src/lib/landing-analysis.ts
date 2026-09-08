@@ -227,6 +227,22 @@ export type AnalysisQuality = {
   detectedRatio: number;
   cadenceConsistency: number;
   sideViewRatio: number;
+  /**
+   * Whether the stance durations can be published.
+   *
+   * A foot lands once per stride, so the number of ground intervals a foot
+   * signal produces can be checked against the number the cadence allows. Well
+   * above one means single stances are being split into pieces, and the median
+   * stance then describes a fragment rather than a footfall. Peak force comes
+   * off duty factor, so a halved stance inflates it — on one clip in this
+   * sample the browser published 174 ms and 2.77 BW where the reference read
+   * 307 ms and 1.97.
+   *
+   * Separate from `level` on purpose. The strike angle, the cadence and the
+   * geometry are unaffected, so grading the whole clip poor would throw away
+   * measurements that are fine. Only what comes off the stance is withheld.
+   */
+  stanceTrusted: boolean;
   reasons: string[];
 };
 
@@ -483,6 +499,7 @@ function assessQuality(
   detectedRatio: number,
   landings: Landing[],
   sideViewRatio: number,
+  stanceSplitRatio: number,
 ): AnalysisQuality {
   const gaps = landings
     .slice(1)
@@ -495,6 +512,9 @@ function assessQuality(
         gaps.length
       : Number.NaN;
   const missedLandings = estimateMissedLandings(gaps, typical);
+  const stanceTrusted =
+    !Number.isFinite(stanceSplitRatio) ||
+    stanceSplitRatio <= threshold("max_stance_split_ratio");
   const channelShare = footChannelShare(landings);
   const oneFooted =
     Number.isFinite(channelShare) && channelShare < threshold("min_foot_channel_share");
@@ -520,6 +540,11 @@ function assessQuality(
   if (landings.length >= 4 && timed < landings.length * 0.5) {
     reasons.push(
       `착지 ${landings.length}회 중 ${landings.length - timed}회는 발이 땅에 붙어 있던 시간을 재지 못했습니다. 접지·체공 시간과 반력은 그만큼 거친 추정입니다.`,
+    );
+  }
+  if (!stanceTrusted) {
+    reasons.push(
+      `한 발이 한 걸음에 여러 번 닿은 것으로 잡혔습니다. 접지 시간이 실제보다 짧게 나와 충격 힘을 함께 내보내지 않았습니다. 발이 더 선명하게 보이도록 찍으면 나아집니다.`,
     );
   }
   if (oneFooted) {
@@ -570,6 +595,7 @@ function assessQuality(
     detectedRatio,
     cadenceConsistency,
     sideViewRatio,
+    stanceTrusted,
     reasons,
   };
 }
@@ -889,11 +915,23 @@ export function analyzeLandings(
     cameraView,
     options.strikeAngleSampling,
   );
+  // How many ground intervals each foot signal produced, against how many the
+  // cadence allows. Measured per channel and the worse one taken, because one
+  // shattered foot is enough to drag the median stance down.
+  const intervalsForSplit = groundContactIntervals(series, seriesFrameStep(series));
+  const stanceSplitRatio = splitRatio(
+    (["left", "right"] as const).map(
+      (side) => intervalsForSplit.filter((interval) => interval.side === side).length,
+    ),
+    cadenceSpm(detectedLandings),
+    series.length ? series[series.length - 1].t - series[0].t : 0,
+  );
   const quality = assessQuality(
     subjectHeightRatio,
     detectedRatio,
     detectedLandings,
     sideViewRatio,
+    stanceSplitRatio,
   );
 
   // Contact and flight timing is only meaningful when the runner is big enough
@@ -1417,10 +1455,7 @@ function detectLandings(
   if (series.length < 8) return [];
   const acc = series.map((s) => s.acc);
   const vel = series.map((s) => s.vel);
-  const dtMedian = median(
-    series.slice(1).map((s, i) => s.t - series[i].t),
-  );
-  const dt = Number.isFinite(dtMedian) && dtMedian > 0 ? dtMedian : 1 / 30;
+  const dt = seriesFrameStep(series);
   const minSep = Math.max(3, Math.round(0.2 / dt));
   const intervals = groundContactIntervals(series, dt);
 
@@ -1905,6 +1940,45 @@ function matchInterval(
  * though they were led me to a mechanism the app does not have. The file's own
  * header warns against exactly that.
  */
+/**
+ * How many ground intervals a foot produced, against how many it could have.
+ *
+ * A foot lands once per stride and a stride is two steps, so the cadence and
+ * the clip's length say how many stances each foot is allowed. Dividing the
+ * intervals actually found by that gives about one for a clean signal and well
+ * above one where single stances are being split. The worse of the two feet is
+ * taken, because one shattered foot is enough to drag the median stance — and
+ * therefore the force — away from the truth.
+ *
+ * Pure, and separated out so it can be tested on counts directly. Trying to
+ * test it through a fixture did not work: perturbing a synthetic foot signal
+ * destroys stances rather than splitting them, because real fragmentation
+ * comes from a shallow noisy signal meeting the height band and the speed
+ * gate, which an injected artefact does not reproduce.
+ *
+ * NaN when the clip is too short to divide — under a handful of allowed
+ * stances the count is dominated by which foot started and finished — and NaN
+ * reads as trusted, so a short clip is not accused.
+ */
+export function splitRatio(counts: number[], spm: number, spanS: number): number {
+  if (!Number.isFinite(spm) || spm <= 0 || spanS <= 0) return Number.NaN;
+  const allowed = (spm / 60 / 2) * spanS;
+  if (allowed < 4) return Number.NaN;
+  return Math.max(...counts.map((count) => count / allowed));
+}
+
+/**
+ * The series' own frame step, falling back to 30 fps.
+ *
+ * Named for the series rather than `frameStep`, which is already a local in
+ * `analyzeLandings` computing the same thing from the raw times — two names
+ * for one quantity is confusing, but shadowing it silently would be worse.
+ */
+function seriesFrameStep(series: SeriesPoint[]): number {
+  const dtMedian = median(series.slice(1).map((s, i) => s.t - series[i].t));
+  return Number.isFinite(dtMedian) && dtMedian > 0 ? dtMedian : 1 / 30;
+}
+
 export function groundContactIntervals(
   series: SeriesPoint[],
   dt: number,

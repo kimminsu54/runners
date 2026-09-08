@@ -15,6 +15,7 @@ export const THRESHOLDS_VERSION = 8;
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
   | "foot_strike_forefoot_min_deg"
+  | "max_stance_split_ratio"
   | "min_foot_channel_share"
   | "foot_strike_max_plausible_deg"
   | "overstride_ratio_notable"
@@ -63,6 +64,16 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "같은 관행의 반대쪽 경계입니다. 발가락이 뒤꿈치보다 이만큼 낮으면 앞꿈치부터 닿은 것으로 봅니다.",
     validationStatus: "convention",
     note: "경계 포함. 정확히 +8° 는 포어풋. 두 경계 사이는 미드풋입니다.",
+  },
+  max_stance_split_ratio: {
+    key: "max_stance_split_ratio",
+    label: "접지 분절 상한",
+    value: 1.2,
+    unit: "ratio",
+    appliesTo: "running",
+    source: "한 발은 한 스트라이드에 한 번 딛습니다. 그래서 한 발 신호가 만든 접지 구간 수를 케이던스가 허용하는 수로 나눈 값은 1 근처여야 하고, 크게 넘으면 한 접지가 조각나고 있다는 뜻입니다.",
+    validationStatus: "derived",
+    note: "실측 분리: 정상 3개(파이프라인×클립)가 0.88~1.07, 분절이 일어난 1개가 좌 1.44 · 우 1.27. 표본이 4개뿐이므로 여유를 둔 자리입니다. 넘으면 리포트 전체가 아니라 접지에서 나오는 값(접지 시간·체공·힘)만 보류합니다 — 각도와 케이던스는 영향이 없습니다.",
   },
   min_foot_channel_share: {
     key: "min_foot_channel_share",
