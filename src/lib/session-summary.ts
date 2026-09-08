@@ -235,17 +235,45 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     };
   }
 
-  const scores = landings.map((l) => l.damageScore);
-  const grfs = landings.map((l) => l.peakGrfBw);
+  /**
+   * Force is averaged over the landings whose stance was actually measured.
+   *
+   * A landing with no matched stance falls back to reading the body's own
+   * acceleration, and that fallback does not measure force. Against synthetic
+   * runs of known duty it returns 2.25 to 2.35 BW whatever the truth is —
+   * errors of -19% at 2.92 BW growing to -46% at 4.15 — because at 30 fps the
+   * impact peak is spread over frames and the smoothing flattens it. It is not
+   * biased by a factor, it is saturated, so no calibration rescues it.
+   *
+   * Mixing it into the mean also made the published force depend on how many
+   * stances happened to be matched rather than on how the person ran: the same
+   * clip spans 1.41 to 2.02 BW across the two routes at a 35% match rate.
+   *
+   * Dropping it brought the two pipelines together on every clip where both
+   * measure — +15% to +7%, +19% to +8%, -4% to -1% — and tightened the
+   * reference's own estimates to 1.84–2.02 BW across six clips. The card and
+   * the still already withhold such a landing's *timing* for this same reason
+   * and printed its force anyway.
+   */
+  const measured = landings.filter((l) => l.gaitBased);
+  const forceSample = measured.length ? measured : [];
+  const scores = forceSample.map((l) => l.damageScore);
+  const grfs = forceSample.map((l) => l.peakGrfBw);
   const absorbs = landings.map((l) => l.absorptionMs);
   const knees = landings.map((l) => l.kneeFlexContact);
-  const rates = landings.map((l) => l.loadingRateBwS);
+  const rates = forceSample.map((l) => l.loadingRateBwS);
   const avgScore = mean(scores);
   const avgGrf = mean(grfs);
   const avgAbsorb = mean(absorbs);
   const avgKnee = mean(knees);
   const avgRate = mean(rates);
-  const peak = landings.reduce((a, b) => (a.damageScore >= b.damageScore ? a : b));
+  // The worst landing is picked among the measured ones for the same reason.
+  // A landing scored on the saturated fallback can outrank real ones — the
+  // fallback sits at about 2.3 BW while measured values run 1.8 to 2.9 — and
+  // the report would then point the reader at the wrong footfall.
+  const peak = (forceSample.length ? forceSample : landings).reduce((a, b) =>
+    a.damageScore >= b.damageScore ? a : b,
+  );
   const peakLandingIndex = landings.indexOf(peak);
 
   const stiffCount = landings.filter(

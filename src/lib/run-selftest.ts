@@ -831,6 +831,91 @@ console.log("shoe purpose column ok", {
   zoomFly: { easy: easyPick.score, fast: fastPick.score, unmarkedEasy: twinPick.score },
 });
 
+// --- the force fallback is not a force -------------------------------------
+// A landing with no matched stance reads the body's own acceleration instead of
+// duty factor, and that fallback does not measure force. Against synthetic runs
+// of known duty it returns 2.25 to 2.35 BW whatever the truth is: -19% at
+// 2.92 BW, -23% at 3.07, -28% at 3.24, -38% at 3.61, -46% at 4.15. It is
+// saturated rather than biased by a factor, so no calibration rescues it, and
+// mixing it into the mean made the published force depend on how many stances
+// were matched rather than on how the person ran.
+{
+  const FEET: number[] = [
+    LM.leftHeel, LM.leftAnkle, LM.leftFootIndex,
+    LM.rightHeel, LM.rightAnkle, LM.rightFootIndex,
+  ];
+  const average = (values: number[]) => {
+    const finite = values.filter(Number.isFinite);
+    return finite.length
+      ? finite.reduce((a, b) => a + b, 0) / finite.length
+      : Number.NaN;
+  };
+  const opts = { statureM: 1.7, massKg: 70, width: 1280, height: 720 };
+  const readings: number[] = [];
+  for (const [contactS, flightS] of [
+    [0.14, 0.19],
+    [0.16, 0.17],
+    [0.11, 0.24],
+  ] as const) {
+    // Parking both feet clear of the ground removes every stance interval
+    // without touching the body's motion, which is what the fallback reads.
+    const parked = syntheticRunningFrames({ contactS, flightS }).map((frame) => ({
+      ...frame,
+      landmarks: frame.landmarks
+        ? frame.landmarks.map((point, index) =>
+            FEET.includes(index) ? { ...point, y: 0.55 } : point,
+          )
+        : null,
+    }));
+    const result = analyzeLandings(parked, opts);
+    const fallback = result.landings.filter((landing) => !landing.gaitBased);
+    if (!fallback.length) {
+      throw new Error(
+        `parking the feet no longer exercises the fallback at ${contactS}/${flightS}`,
+      );
+    }
+    readings.push(average(fallback.map((landing) => landing.peakGrfBw)));
+    // The published mean must not contain it.
+    const summary = buildSessionSummary(result);
+    if (Number.isFinite(summary.meanPeakGrfBw)) {
+      throw new Error(
+        `a session with no measured stance published ${summary.meanPeakGrfBw} BW`,
+      );
+    }
+  }
+  // Saturation: the true force nearly doubles across these three and the
+  // fallback barely moves. If it ever starts tracking, this can be revisited.
+  const spread = Math.max(...readings) - Math.min(...readings);
+  if (spread > 0.4) {
+    throw new Error(
+      `the fallback now tracks the force (spread ${spread.toFixed(2)} BW) — re-measure it`,
+    );
+  }
+
+  // And a landing without a measured stance says so on the still, where it
+  // used to print a force beside a withheld contact time.
+  const run = analyzeSyntheticSideRun({ ahead: 0.066 });
+  const unmeasured = run.landings.find((landing) => !landing.gaitBased);
+  const withStance = run.landings.find((landing) => landing.gaitBased);
+  if (unmeasured && withStance) {
+    const row = (landing: typeof unmeasured, label: string) =>
+      buildHudFrame(run, landing, 2).rows.find((r) => r.label === label)?.value ?? "";
+    if (row(unmeasured, "추정 최대 반력") !== "측정 불가") {
+      throw new Error(
+        `an unmeasured stance published a force: ${row(unmeasured, "추정 최대 반력")}`,
+      );
+    }
+    if (row(withStance, "추정 최대 반력") === "측정 불가") {
+      throw new Error("a measured stance lost its force");
+    }
+  }
+  console.log("force fallback ok", {
+    readings: readings.map((value) => value.toFixed(2)).join(" / "),
+    spread: spread.toFixed(2),
+    published: "측정된 스탠스만",
+  });
+}
+
 // --- why there is no split-stance gate --------------------------------------
 // A gate on this was built and then removed, and the numbers that removed it
 // are kept here so it cannot come back without meeting them.

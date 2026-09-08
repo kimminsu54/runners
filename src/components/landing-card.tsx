@@ -67,7 +67,9 @@ export function LandingCard({
             <p className="text-xs text-muted-foreground">착지 {order}</p>
             <CardTitle className="text-base">
               {formatSeconds(landing.tContact)} ·{" "}
-              {trusted ? `점수 ${landing.damageScore}` : "측정 참고용"}
+              {trusted && landing.gaitBased
+                ? `점수 ${landing.damageScore}`
+                : "측정 참고용"}
             </CardTitle>
             {/* Rule §UI: a score on screen shows the values that move it. The
                 load score is peakGrfBw + loadingRateBwS + kneeFlexContact, and
@@ -77,7 +79,7 @@ export function LandingCard({
                 Impact velocity is not here: it reads as an input but never
                 enters the score. */}
             <p className="mt-1 truncate font-mono text-xs tabular-nums text-muted-foreground">
-              {trusted
+              {trusted && landing.gaitBased
                 ? `${landing.peakGrfBw.toFixed(1)} BW · ${formatLoadingRateBwS(landing.loadingRateBwS)} · 무릎 ${formatKneeFlexDeg(landing.kneeFlexContact)}`
                 : "촬영 품질이 부족해 평가하지 않았습니다"}
             </p>

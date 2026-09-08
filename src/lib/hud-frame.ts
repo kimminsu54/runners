@@ -74,13 +74,18 @@ export function buildHudFrame(
           : "판정 불가",
     });
   }
+  // Both of these need the stance to have been measured. Without it the force
+  // comes from a fallback that returns about 2.3 BW whatever the truth is, and
+  // the row below already withholds this landing's timing for that reason —
+  // printing its force beside a withheld contact time was the inconsistency.
+  const measured = trusted && landing.gaitBased;
   rows.push({
     label: "추정 최대 반력",
-    value: trusted ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가",
+    value: measured ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가",
   });
   rows.push({
     label: "부하율",
-    value: trusted ? formatLoadingRateBwS(landing.loadingRateBwS) : "측정 불가",
+    value: measured ? formatLoadingRateBwS(landing.loadingRateBwS) : "측정 불가",
   });
   rows.push({
     label: "접지 · 체공",
