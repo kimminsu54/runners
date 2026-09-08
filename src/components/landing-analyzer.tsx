@@ -1442,6 +1442,9 @@ export function LandingAnalyzer() {
                   order={i + 1}
                   selected={i === selected}
                   trusted={result.quality.level !== "poor"}
+                stanceTrusted={
+                  result.quality.level !== "poor" && result.quality.stanceTrusted
+                }
                   onSelect={() => {
                     setSelected(i);
                     void jumpTo(landing.tContact);

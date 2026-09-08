@@ -1825,6 +1825,36 @@ console.log("shoe photos ok", {
     throw new Error("the side-on still offered a frontal measurement");
   }
 
+  // A split stance reaches the still too, and has to be withheld there rather
+  // than only in the summary. Gating the aggregates alone would leave the
+  // exported image showing a per-landing force the report refused to average —
+  // and the image is the part that travels without its caveats.
+  {
+    const value = (hud: ReturnType<typeof buildHudFrame>, label: string) =>
+      hud.rows.find((row) => row.label === label)?.value ?? "";
+    const split = {
+      ...sideResult,
+      quality: { ...sideResult.quality, stanceTrusted: false },
+    };
+    const splitHud = buildHudFrame(split, split.landings[1], 2);
+    for (const label of ["추정 최대 반력", "부하율", "접지 · 체공"]) {
+      if (value(splitHud, label) !== "측정 불가") {
+        throw new Error(
+          `a split stance still published ${label}: ${value(splitHud, label)}`,
+        );
+      }
+      if (value(sideHud, label) === "측정 불가") {
+        throw new Error(`${label} was already withheld, so the check proves nothing`);
+      }
+    }
+    // And the strike survives, because the angle is not made of stance.
+    if (value(splitHud, "착지 주법") !== value(sideHud, "착지 주법")) {
+      throw new Error(
+        `withholding the stance changed the strike row: ${value(splitHud, "착지 주법")}`,
+      );
+    }
+  }
+
   const frontResult = analyzeSyntheticFrontRun({ valgus: 0.018, pelvicDrop: 0.009 });
   // The still travels, so it is the last place a bare category could survive.
   // Its strike row has to carry the same doubt the card shows.

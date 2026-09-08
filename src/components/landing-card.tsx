@@ -46,12 +46,23 @@ export function LandingCard({
   order,
   selected,
   trusted = true,
+  stanceTrusted = true,
   onSelect,
 }: {
   landing: Landing;
   order: number;
   selected: boolean;
   trusted?: boolean;
+  /**
+   * Whether the stance durations hold up, which is narrower than `trusted`.
+   *
+   * A clip whose stances came out in fragments reports a stance shorter than
+   * it was, and the force is computed from duty factor, so the score, the
+   * force, the loading rate and the timing are withheld while the strike angle
+   * from the same clip is published as normal. Defaults to true so a caller
+   * that has not been taught the difference does not silently hide numbers.
+   */
+  stanceTrusted?: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -67,7 +78,7 @@ export function LandingCard({
             <p className="text-xs text-muted-foreground">착지 {order}</p>
             <CardTitle className="text-base">
               {formatSeconds(landing.tContact)} ·{" "}
-              {trusted ? `점수 ${landing.damageScore}` : "측정 참고용"}
+              {stanceTrusted ? `점수 ${landing.damageScore}` : "측정 참고용"}
             </CardTitle>
             {/* Rule §UI: a score on screen shows the values that move it. The
                 load score is peakGrfBw + loadingRateBwS + kneeFlexContact, and
@@ -77,7 +88,7 @@ export function LandingCard({
                 Impact velocity is not here: it reads as an input but never
                 enters the score. */}
             <p className="mt-1 truncate font-mono text-xs tabular-nums text-muted-foreground">
-              {trusted
+              {stanceTrusted
                 ? `${landing.peakGrfBw.toFixed(1)} BW · ${formatLoadingRateBwS(landing.loadingRateBwS)} · 무릎 ${formatKneeFlexDeg(landing.kneeFlexContact)}`
                 : "촬영 품질이 부족해 평가하지 않았습니다"}
             </p>
@@ -107,7 +118,7 @@ export function LandingCard({
           <Metric
             label="접지 시간"
             value={
-              trusted && landing.gaitBased
+              stanceTrusted && landing.gaitBased
                 ? formatTimingMs(landing.contactMs)
                 : "측정 불가"
             }
