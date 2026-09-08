@@ -47,11 +47,6 @@ export function buildHudFrame(
   order: number,
 ): HudFrame {
   const trusted = result.quality.level !== "poor";
-  // Narrower than `trusted`, and only the stance-derived rows use it. A clip
-  // whose stances were found in fragments reports a stance too short, and the
-  // force comes off duty factor, so those rows are withheld — while the strike
-  // angle and the frontal geometry from the same clip are unaffected and stay.
-  const stance = trusted && result.quality.stanceTrusted;
   const front = result.cameraView === "front";
 
   const rows: HudRow[] = [];
@@ -81,16 +76,16 @@ export function buildHudFrame(
   }
   rows.push({
     label: "추정 최대 반력",
-    value: stance ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가",
+    value: trusted ? `${landing.peakGrfBw.toFixed(1)} BW` : "측정 불가",
   });
   rows.push({
     label: "부하율",
-    value: stance ? formatLoadingRateBwS(landing.loadingRateBwS) : "측정 불가",
+    value: trusted ? formatLoadingRateBwS(landing.loadingRateBwS) : "측정 불가",
   });
   rows.push({
     label: "접지 · 체공",
     value:
-      stance && landing.gaitBased
+      trusted && landing.gaitBased
         ? `${formatTimingMs(landing.contactMs)} · ${formatTimingMs(landing.flightMs)}`
         : "측정 불가",
   });

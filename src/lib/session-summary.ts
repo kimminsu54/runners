@@ -191,19 +191,6 @@ function levelRank(level: GuidanceLevel): number {
 export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   const { landings, series, detectedRatio } = result;
   const forceTrusted = result.quality.level !== "poor";
-  /**
-   * Whether the stance durations hold up, which is narrower than
-   * `forceTrusted` and has to stay narrower.
-   *
-   * Peak force comes off duty factor, so a stance found in fragments inflates
-   * it — 2.77 BW against a reference's 1.97 on one clip. But the strike angle,
-   * the cadence and the geometry from that same clip are unaffected, so this
-   * gates only what is computed from how long the foot was down. Folding it
-   * into `forceTrusted` looked equivalent and was not: that flag also gates
-   * the strike, the risk counts and the patterns, and reusing it blanked the
-   * strike on a clip whose angles were fine. The selftest holds that line.
-   */
-  const stanceTrusted = forceTrusted && result.quality.stanceTrusted;
   const durationS = series.length ? series[series.length - 1].t - series[0].t : 0;
   const frameCount = series.length;
 
@@ -623,18 +610,15 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
         ],
     peakLandingIndex,
     pace,
-    // Everything on these three lines is a stance duration or made of one.
-    meanContactMs: stanceTrusted ? meanContactMs : Number.NaN,
-    meanFlightMs: stanceTrusted ? meanFlightMs : Number.NaN,
-    meanDutyFactor: stanceTrusted ? meanDutyFactor : Number.NaN,
-    meanPeakGrfBw: stanceTrusted ? avgGrf : Number.NaN,
+    meanContactMs,
+    meanFlightMs,
+    meanDutyFactor,
+    meanPeakGrfBw: forceTrusted ? avgGrf : Number.NaN,
     // Session comparison reads these. They stay NaN when the clip is not
     // trusted so a saved session cannot smuggle numbers past the quality gate.
-    meanLoadingRateBwS: stanceTrusted ? avgRate : Number.NaN,
+    meanLoadingRateBwS: forceTrusted ? avgRate : Number.NaN,
     meanKneeFlexContact: forceTrusted ? avgKnee : Number.NaN,
-    // A composite of the force, the loading rate and the duty factor, so it
-    // cannot be published while those are withheld.
-    meanScore: stanceTrusted ? avgScore : Number.NaN,
+    meanScore: forceTrusted ? avgScore : Number.NaN,
     meanFootAheadRatio: forceTrusted
       ? mean(landings.map((l) => l.footAheadRatio))
       : Number.NaN,

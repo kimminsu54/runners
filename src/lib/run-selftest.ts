@@ -831,67 +831,50 @@ console.log("shoe purpose column ok", {
   zoomFly: { easy: easyPick.score, fast: fastPick.score, unmarkedEasy: twinPick.score },
 });
 
-// --- a split stance withholds the force, not the whole report ---------------
-// Peak force comes off duty factor, so a stance found in fragments inflates it.
-// On one real clip the browser published 174ms and 2.77 BW where the reference
-// read 307ms and 1.97 — and the angle, cadence and geometry from that same clip
-// were fine, which is why this withholds only what comes off the stance.
+// --- why there is no split-stance gate --------------------------------------
+// A gate on this was built and then removed, and the numbers that removed it
+// are kept here so it cannot come back without meeting them.
+//
+// The idea: a foot lands once per stride, so dividing the ground intervals a
+// foot produced by the intervals cadence allows should sit near one, and well
+// above one should mean single stances are being split — which would shorten
+// the stance and inflate the force, since force comes off duty factor.
+//
+// It held on two clips and fell apart on six. Measured on the browser path:
+//
+//   clip  ratio   force vs reference   stance vs reference
+//   05    1.07     -4%                 252 against 251 ms
+//   01    1.19    +15%                 267 against 219 ms
+//   06    1.44    +54%                 170 against 313 ms
+//   04    1.45    +19%                 306 against 277 ms
+//
+// Clip 04 is the refutation. It has the highest ratio of all and its stance is
+// *longer* than the reference's, not shortened — so a high interval count does
+// not imply a split stance. The ratio counts intervals; the published stance
+// comes from the landings matched to them, and the two need not agree. Firing
+// on 04 withheld a number that was closer to right than several the gate let
+// through, and clip 01 at 1.19 sat one hundredth from the same fate.
+//
+// The wider finding is that the force is high on five of six clips, from +15%
+// to +57%, which is a systematic bias rather than something a per-clip gate
+// can catch. That is recorded in docs and left as a decision.
 {
-  // Measured on the real pipelines: three clean pipeline-clip pairs landed at
-  // 0.88, 0.93, 1.02 and 1.07, the one that fragmented at 1.27 and 1.44.
-  const cut = threshold("max_stance_split_ratio");
-  const clean = splitRatio([17, 17], 168, 12);
-  const split = splitRatio([26, 23], 181, 12);
-  if (!(clean <= cut)) {
-    throw new Error(`a clean signal must pass: ${clean.toFixed(2)} against ${cut}`);
+  const clip04 = splitRatio([19, 29], 178, 12);
+  const clip05 = splitRatio([19, 19], 198, 12);
+  if (!(clip04 > clip05)) {
+    throw new Error("the clip that refuted the gate must score above the clean one");
   }
-  if (!(split > cut)) {
-    throw new Error(`a split stance must fail: ${split.toFixed(2)} against ${cut}`);
-  }
-  // The worse foot decides, because one shattered foot drags the median stance.
-  if (splitRatio([17, 26], 181, 12) !== splitRatio([26, 17], 181, 12)) {
-    throw new Error("the two feet must be treated the same way round");
-  }
-  if (splitRatio([26, 17], 181, 12) <= splitRatio([17, 17], 181, 12)) {
-    throw new Error("one shattered foot must be enough to fail");
-  }
-  // A clip too short to divide is not accused, and NaN reads as trusted.
-  if (Number.isFinite(splitRatio([3, 3], 180, 1))) {
-    throw new Error("a clip with too few allowed stances must not be judged");
-  }
-
-  // And the flag has to reach the report, withholding force while the strike
-  // angle stays published.
-  const good = analyzeSyntheticRun({ contactS: 0.18, flightS: 0.14 });
-  if (!good.quality.stanceTrusted) {
-    throw new Error("a clean synthetic run must trust its stance");
-  }
-  const forced = {
-    ...good,
-    quality: { ...good.quality, stanceTrusted: false },
-  };
-  const withheld = buildSessionSummary(forced);
-  const kept = buildSessionSummary(good);
-  if (!Number.isFinite(kept.meanPeakGrfBw)) {
-    throw new Error("a trusted stance must publish a force");
-  }
-  if (Number.isFinite(withheld.meanPeakGrfBw)) {
+  // Nothing in the analysis may act on this. `splitRatio` stays exported
+  // because it is worth measuring, not because it is worth gating on.
+  const clean = analyzeSyntheticRun({ contactS: 0.18, flightS: 0.14 });
+  if ("stanceTrusted" in clean.quality) {
     throw new Error(
-      `a split stance still published ${withheld.meanPeakGrfBw} bodyweights`,
+      "a stance-trust flag is back on AnalysisQuality — see the numbers above",
     );
   }
-  if (withheld.dominantStrike !== kept.dominantStrike) {
-    throw new Error(
-      `withholding the force also changed the strike: ${withheld.dominantStrike}` +
-        ` against ${kept.dominantStrike}`,
-    );
-  }
-  console.log("split stance ok", {
-    clean: clean.toFixed(2),
-    split: split.toFixed(2),
-    cut,
-    force: `유지 ${kept.meanPeakGrfBw.toFixed(2)}BW → 보류 ${withheld.meanPeakGrfBw}`,
-    strike: withheld.dominantStrike,
+  console.log("split-stance gate stays out", {
+    refuted: `clip04 ${clip04.toFixed(2)} > clip05 ${clip05.toFixed(2)}`,
+    reason: "높은 비율이 짧은 접지를 뜻하지 않음",
   });
 }
 
@@ -1823,36 +1806,6 @@ console.log("shoe photos ok", {
   }
   if (labels(sideHud).some((label) => label === "무릎 정렬")) {
     throw new Error("the side-on still offered a frontal measurement");
-  }
-
-  // A split stance reaches the still too, and has to be withheld there rather
-  // than only in the summary. Gating the aggregates alone would leave the
-  // exported image showing a per-landing force the report refused to average —
-  // and the image is the part that travels without its caveats.
-  {
-    const value = (hud: ReturnType<typeof buildHudFrame>, label: string) =>
-      hud.rows.find((row) => row.label === label)?.value ?? "";
-    const split = {
-      ...sideResult,
-      quality: { ...sideResult.quality, stanceTrusted: false },
-    };
-    const splitHud = buildHudFrame(split, split.landings[1], 2);
-    for (const label of ["추정 최대 반력", "부하율", "접지 · 체공"]) {
-      if (value(splitHud, label) !== "측정 불가") {
-        throw new Error(
-          `a split stance still published ${label}: ${value(splitHud, label)}`,
-        );
-      }
-      if (value(sideHud, label) === "측정 불가") {
-        throw new Error(`${label} was already withheld, so the check proves nothing`);
-      }
-    }
-    // And the strike survives, because the angle is not made of stance.
-    if (value(splitHud, "착지 주법") !== value(sideHud, "착지 주법")) {
-      throw new Error(
-        `withholding the stance changed the strike row: ${value(splitHud, "착지 주법")}`,
-      );
-    }
   }
 
   const frontResult = analyzeSyntheticFrontRun({ valgus: 0.018, pelvicDrop: 0.009 });
