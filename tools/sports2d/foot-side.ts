@@ -21,6 +21,13 @@
  * and a pipeline with many of the second kind has a detection problem rather
  * than a labelling one.
  *
+ * Scored on `footChannel`, not on the side the app publishes. Since this
+ * measurement the app no longer claims a side from a lateral view, so a
+ * version of this reading `side` reports zero violations on every clip — which
+ * would read as "fixed" when nothing was fixed. The channel is what the pose
+ * estimator believed, the confusion is still there, and this is the view that
+ * shows it.
+ *
  *     npx tsx tools/sports2d/foot-side.ts tools/sports2d/out/06
  *
  * Needs browser-frames.json from dump-browser.py beside the Sports2D output.
@@ -58,7 +65,7 @@ type Verdict = {
 };
 
 function judge(landings: Landing[]): Verdict {
-  const known = landings.filter((landing) => landing.side !== "unknown");
+  const known = landings.filter((landing) => landing.footChannel !== "unknown");
   // The step period from the contacts themselves rather than from cadence, so
   // a clip whose cadence estimate is off does not move the cut.
   const gaps = known
@@ -75,9 +82,9 @@ function judge(landings: Landing[]): Verdict {
   if (!Number.isFinite(period) || period <= 0) return verdict;
 
   for (let i = 1; i < known.length; i++) {
-    if (known[i].side !== known[i - 1].side) continue;
+    if (known[i].footChannel !== known[i - 1].footChannel) continue;
     const periods = (known[i].tContact - known[i - 1].tContact) / period;
-    const entry = { t: known[i].tContact, side: known[i].side, periods };
+    const entry = { t: known[i].tContact, side: known[i].footChannel, periods };
     (periods >= MISS_CUT ? verdict.missed : verdict.mislabels).push(entry);
   }
   return verdict;
@@ -88,11 +95,11 @@ function show(name: string, verdict: Verdict, landings: Landing[]): void {
   // The left/right split. Alternation makes an even split the expectation, so
   // a lean says the heuristic prefers one foot rather than merely being noisy
   // — and a preference has a cause worth finding.
-  const left = landings.filter((landing) => landing.side === "left").length;
-  const right = landings.filter((landing) => landing.side === "right").length;
+  const left = landings.filter((landing) => landing.footChannel === "left").length;
+  const right = landings.filter((landing) => landing.footChannel === "right").length;
   console.log(
     `  ${name.padEnd(10)} 착지 ${String(verdict.contacts).padStart(3)}` +
-      ` · 좌우 미정 ${String(verdict.unknown).padStart(2)}` +
+      ` · 채널 미정 ${String(verdict.unknown).padStart(2)}` +
       ` · 교대 위반 ${String(verdict.mislabels.length + verdict.missed.length).padStart(2)}` +
       ` (오라벨 의심 ${verdict.mislabels.length} · 접지 누락 의심 ${verdict.missed.length})` +
       ` — 판정 가능한 연속쌍 ${Math.max(0, known - 1)}개 중`,

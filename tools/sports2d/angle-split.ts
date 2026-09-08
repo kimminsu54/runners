@@ -228,8 +228,14 @@ function report(target: string): void {
 
   const rows: Split[] = [];
   for (const pair of paired) {
+    // The channel, not the published side. The app stopped claiming a side
+    // from a lateral view after the alternation measurement, so reading `side`
+    // here skips every contact and the tool reports nothing at all. The
+    // channel is what the angle was read from, which is what this compares.
     const side: FootSide =
-      pair.browser.side !== "unknown" ? pair.browser.side : pair.sports2d.side;
+      pair.browser.footChannel !== "unknown"
+        ? pair.browser.footChannel
+        : pair.sports2d.footChannel;
     if (side === "unknown") continue;
     const iB = indexOf(browser, pair.browser.tContact);
     const jB = indexOf(browser, pair.sports2d.tContact);

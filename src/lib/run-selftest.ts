@@ -76,6 +76,7 @@ import {
   analyzeSyntheticFrontRun,
   analyzeSyntheticRun,
   analyzeSyntheticSideRun,
+  syntheticFrontRunFrames,
   syntheticSideRunFrames,
   assertDetectsLanding,
   assertDetectsRunningSteps,
@@ -830,16 +831,36 @@ console.log("shoe purpose column ok", {
 });
 
 // --- per-side breakdown -----------------------------------------------------
-if (!realSummary.sides) {
-  throw new Error("a two-footed run must produce per-side stats");
+// Only from the front. Seen from the side the legs pass over each other and
+// the pose estimator loses which is which — scored on alternation, its labels
+// broke on 12 of 30 consecutive pairs on one real clip — so the app does not
+// claim a side there and the per-side table has nothing to stand on.
+if (realSummary.sides) {
+  throw new Error("a side-on run must not produce per-side stats");
 }
 {
-  const { left, right, unassigned } = realSummary.sides;
+  const frontal = buildSessionSummary(
+    // Landscape, because the frontal fixture's normalised coordinates only
+    // read as frontal at a landscape aspect: the pelvis-width ratio that
+    // decides the view is computed against the frame, so a portrait frame
+    // makes the same pose look side-on (0.105 against 0.330).
+    analyzeLandings(syntheticFrontRunFrames({ fps: 60 }), {
+      statureM: 1.7,
+      massKg: 70,
+      width: 1280,
+      height: 720,
+    }),
+  );
+  if (!frontal.sides) {
+    throw new Error("a frontal run must produce per-side stats");
+  }
+  const { left, right, unassigned } = frontal.sides;
+  const frontalLandings = left.count + right.count + unassigned;
   // Nothing may vanish: a landing the tracker could not assign is counted, not
   // dropped, so the table can never disagree with the landing count above it.
-  if (left.count + right.count + unassigned !== realTime.landings.length) {
+  if (left.count === 0 || right.count === 0) {
     throw new Error(
-      `sides must account for every landing: ${left.count} + ${right.count} + ${unassigned} of ${realTime.landings.length}`,
+      `a frontal run must see both feet: ${left.count} left, ${right.count} right`,
     );
   }
   if (unassigned < 0) throw new Error("unassigned landings cannot be negative");
@@ -848,18 +869,18 @@ if (!realSummary.sides) {
       throw new Error(`${name} side lost its numbers`);
     }
   }
+  console.log("side breakdown ok", {
+    sideOn: "좌우 미주장",
+    frontal: `좌 ${left.count} · 우 ${right.count} · 미배정 ${unassigned} / ${frontalLandings}`,
+  });
 }
 // A poor clip publishes no numbers, per side included.
 if (poorSummary.sides?.left.meanPeakGrfBw !== undefined) {
-  const blanked = poorSummary.sides === null || !Number.isFinite(poorSummary.sides.left.meanPeakGrfBw);
+  const blanked =
+    poorSummary.sides === null ||
+    !Number.isFinite(poorSummary.sides.left.meanPeakGrfBw);
   if (!blanked) throw new Error("a poor clip must not publish per-side numbers");
 }
-console.log("side breakdown ok", {
-  left: realSummary.sides.left.count,
-  right: realSummary.sides.right.count,
-  unassigned: realSummary.sides.unassigned,
-  landings: realTime.landings.length,
-});
 
 // --- pace decides purpose, not just geometry --------------------------------
 // Same strike label, same midfoot-friendly drop; only the weight differs.
@@ -965,6 +986,22 @@ const bundleText = JSON.stringify(toBundle([snapA, softer], 1700000000000));
 const roundTrip = parseBundle(bundleText);
 if (!roundTrip.ok || roundTrip.sessions.length !== 2) {
   throw new Error("a bundle must survive a round trip");
+}
+// A withheld field is NaN, JSON writes NaN as null, and the importer used to
+// reject the file for carrying a non-number. Any session with a gated value
+// could not be imported at all — which was every side-on session once the
+// left/right asymmetry stopped being claimed. It must come back as NaN, not
+// as null, or a comparison does arithmetic on null further down.
+{
+  const gated = { ...snapA, id: "gated", asymmetryPct: Number.NaN };
+  const back = parseBundle(JSON.stringify(toBundle([gated], 1700000000000)));
+  if (!back.ok) {
+    throw new Error(`a bundle with a withheld field was refused: ${back.reason}`);
+  }
+  const value = back.sessions[0].asymmetryPct;
+  if (value === null || !Number.isNaN(value)) {
+    throw new Error(`a withheld field came back as ${JSON.stringify(value)}, not NaN`);
+  }
 }
 for (const [label, text] of [
   ["not json", "{{{"],
@@ -2760,17 +2797,20 @@ console.log("shoe photos ok", {
   const before = analyzeLandings(clean, opts);
   const after = analyzeLandings(oneFooted(clean), opts);
 
+  // Counted on the channel, not on the published side. From the side the app
+  // does not claim a side at all, so a check written on `side` would now be
+  // reading `unknown` for every contact and would pass by measuring nothing.
   const share = (result: ReturnType<typeof analyzeLandings>) => {
-    const named = result.landings.filter((landing) => landing.side !== "unknown");
-    const left = named.filter((landing) => landing.side === "left").length;
+    const named = result.landings.filter((l) => l.footChannel !== "unknown");
+    const left = named.filter((landing) => landing.footChannel === "left").length;
     return named.length ? Math.min(left, named.length - left) / named.length : Number.NaN;
   };
 
   // The fixture has to actually produce the lopsided reading, or the assertions
   // below pass because nothing happened.
-  if (!(share(after) < threshold("side_balance_min_share"))) {
+  if (!(share(after) < threshold("min_foot_channel_share"))) {
     throw new Error(
-      `one foot in the air left the sides balanced at ${share(after).toFixed(2)} —` +
+      `one foot in the air left the channels balanced at ${share(after).toFixed(2)} —` +
         " the fixture no longer reproduces the failure this guards against",
     );
   }
@@ -2807,9 +2847,24 @@ console.log("shoe photos ok", {
     );
   }
 
-  console.log("side balance ok", {
-    clean: `${before.landings.length}회 · 소수쪽 ${(share(before) * 100).toFixed(0)}% · ${before.quality.level}`,
-    oneFooted: `${after.landings.length}회 · 소수쪽 ${(share(after) * 100).toFixed(0)}% · ${after.quality.level}`,
+  // The published side is a separate question from the channel, and the point
+  // of separating them is that the angle survives while the name does not.
+  // A side-on clip must claim no side and still measure every strike.
+  if (before.landings.some((landing) => landing.side !== "unknown")) {
+    throw new Error("a side-on clip claimed which foot a contact was");
+  }
+  const measured = before.landings.filter((landing) =>
+    Number.isFinite(landing.footStrikeAngleDeg),
+  ).length;
+  if (measured < before.landings.length - 1) {
+    throw new Error(
+      `dropping the side cost the angle: ${measured}/${before.landings.length} measured`,
+    );
+  }
+
+  console.log("one-footed clip ok", {
+    clean: `${before.landings.length}회 · 소수쪽 채널 ${(share(before) * 100).toFixed(0)}% · ${before.quality.level} · 각도 ${measured}회`,
+    oneFooted: `${after.landings.length}회 · 소수쪽 채널 ${(share(after) * 100).toFixed(0)}% · ${after.quality.level}`,
     short: `${short.landings.length}회 · 판단 보류`,
   });
 }

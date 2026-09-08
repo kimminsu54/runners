@@ -312,9 +312,13 @@ function isSnapshot(value: unknown): value is SessionSnapshot {
   if (typeof s.id !== "string" || !s.id) return false;
   if (typeof s.label !== "string") return false;
   if (s.quality !== "good" && s.quality !== "fair" && s.quality !== "poor") return false;
-  // NaN is expected (a gated field), so only the type is checked here.
+  // NaN is expected — a gated field carries it — but JSON has no NaN, so it
+  // leaves as `null` and comes back as `null`. Accepting only `number` here
+  // rejected every exported bundle that contained a withheld value, which is
+  // any session with a field the report declined to publish. `null` is read
+  // back as the NaN it was written from, in `reviveSnapshot` below.
   for (const key of NUMBER_FIELDS) {
-    if (typeof s[key] !== "number") return false;
+    if (s[key] !== null && typeof s[key] !== "number") return false;
   }
   if (
     s.dominantStrikeSettled !== undefined &&
@@ -335,6 +339,21 @@ function isSnapshot(value: unknown): value is SessionSnapshot {
  * outside the browser, so every field is checked rather than cast — a bad file
  * should say so, not surface as `NaN` halfway down a comparison.
  */
+/**
+ * Puts back the NaN that JSON turned into null.
+ *
+ * A gated field is NaN by design and `JSON.stringify` writes it as `null`.
+ * Left alone, the imported session carries `null` where every reader expects a
+ * number, so a comparison prints "null" or does arithmetic on it.
+ */
+function reviveSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
+  const revived = { ...snapshot } as Record<string, unknown>;
+  for (const key of NUMBER_FIELDS) {
+    if (revived[key] === null) revived[key] = Number.NaN;
+  }
+  return revived as unknown as SessionSnapshot;
+}
+
 export function parseBundle(
   text: string,
 ): { ok: true; sessions: SessionSnapshot[] } | { ok: false; reason: string } {
@@ -360,7 +379,7 @@ export function parseBundle(
   if (!Array.isArray(bundle.sessions)) {
     return { ok: false, reason: "세션 목록이 없습니다." };
   }
-  const sessions = bundle.sessions.filter(isSnapshot);
+  const sessions = bundle.sessions.filter(isSnapshot).map(reviveSnapshot);
   if (!sessions.length) {
     return { ok: false, reason: "가져올 수 있는 세션이 없습니다." };
   }

@@ -15,7 +15,7 @@ export const THRESHOLDS_VERSION = 8;
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
   | "foot_strike_forefoot_min_deg"
-  | "side_balance_min_share"
+  | "min_foot_channel_share"
   | "foot_strike_max_plausible_deg"
   | "overstride_ratio_notable"
   | "side_view_max_profile_ratio"
@@ -64,15 +64,15 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     validationStatus: "convention",
     note: "경계 포함. 정확히 +8° 는 포어풋. 두 경계 사이는 미드풋입니다.",
   },
-  side_balance_min_share: {
-    key: "side_balance_min_share",
-    label: "좌우 균형 하한",
-    value: 0.3,
+  min_foot_channel_share: {
+    key: "min_foot_channel_share",
+    label: "한쪽 발만 잡힌 클립 하한",
+    value: 0.1,
     unit: "ratio",
     appliesTo: "running",
-    source: "러너는 발을 번갈아 딛습니다. 완전한 교대라면 한쪽이 다른 쪽보다 최대 한 번 많을 뿐이므로, 적은 쪽이 전체의 30% 아래로 떨어지면 교대로 설명되지 않고 좌우 배정이 틀린 것입니다.",
+    source: "실측으로 갈랐습니다. 한 발이 아예 땅에 닿지 않는 합성 클립은 적은 쪽 채널이 0.00이고, 좌우 라벨이 흔들리는 실제 측면 영상은 0.31~0.35입니다. 두 값 사이에 넉넉히 들어가는 자리입니다.",
     validationStatus: "derived",
-    note: "착지 6회 이상에서만 판단합니다. 그 아래는 시작·종료 발에 따라 자연스럽게 치우칠 수 있습니다.",
+    note: "좌우 라벨이 아니라 발 신호 채널로 셉니다 — 측면 영상에서 앱은 좌우를 주장하지 않습니다. 이전 값 0.3은 실제 영상을 0.013 차이로 통과시켰고, 재던 것은 러너의 비대칭이 아니라 자세 추정기의 좌우 혼동이었습니다. 착지 6회 이상에서만 판단합니다.",
   },
   foot_strike_max_plausible_deg: {
     key: "foot_strike_max_plausible_deg",

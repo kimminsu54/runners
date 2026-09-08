@@ -154,7 +154,34 @@ export type Landing = {
   kneeFlexPeak: number;
   damageScore: number;
   risk: Risk;
+  /**
+   * Which foot the app is willing to say this was.
+   *
+   * `unknown` from the side, which is the view the app asks for, and that is
+   * not a gap in the measurement but the measurement's answer. Seen from the
+   * side the legs pass over each other and the pose estimator loses which one
+   * is which. Scored on alternation — contacts must alternate feet, so two in
+   * a row on the same foot is an error without needing any reference — the
+   * browser's labels broke it on 12 of 30 consecutive pairs on one clip, and
+   * the left/right split leaned toward whichever foot was nearer the camera,
+   * the other way round on a clip filmed from the other side.
+   *
+   * Nothing downstream reads this to do geometry. Use `footChannel` for that.
+   */
   side: FootSide;
+  /**
+   * The foot signal this contact was measured from — left or right as the pose
+   * estimator happened to label it.
+   *
+   * A channel, not a claim about the runner's body, and that difference is
+   * what leaves the angle trustworthy while the side is not. Stance is found
+   * per channel, so this is whichever foot was actually on the ground: if the
+   * estimator has the two confused it still points at the foot that landed,
+   * because that is the one whose own height signal went flat. The strike
+   * angle is read from the foot that landed either way. Only the name for it
+   * is in doubt.
+   */
+  footChannel: FootSide;
   gaitBased: boolean;
   footStrike: FootStrike;
   footStrikeAngleDeg: number;
@@ -435,12 +462,20 @@ export function isFrontal(sideViewRatio: number): boolean {
  * NaN below six contacts, where starting and finishing on the same foot can
  * skew the count on its own, and NaN when neither foot could be named at all.
  */
-function sideBalance(landings: Landing[]): number {
-  const named = landings.filter((landing) => landing.side !== "unknown");
+/**
+ * The share of contacts that came from the less-used foot signal.
+ *
+ * Counted on `footChannel`, not on the published side, and that is the whole
+ * point of the distinction. A gate on the published side would be measuring
+ * the pose estimator's left/right confusion in a lateral view, which is the
+ * view the app asks for; a gate on the channel measures whether both feet were
+ * ever seen on the ground, which is a real property of the footage.
+ */
+function footChannelShare(landings: Landing[]): number {
+  const named = landings.filter((landing) => landing.footChannel !== "unknown");
   if (named.length < 6) return Number.NaN;
-  const left = named.filter((landing) => landing.side === "left").length;
-  const right = named.length - left;
-  return Math.min(left, right) / named.length;
+  const left = named.filter((landing) => landing.footChannel === "left").length;
+  return Math.min(left, named.length - left) / named.length;
 }
 
 function assessQuality(
@@ -460,9 +495,9 @@ function assessQuality(
         gaps.length
       : Number.NaN;
   const missedLandings = estimateMissedLandings(gaps, typical);
-  const balance = sideBalance(landings);
-  const lopsided =
-    Number.isFinite(balance) && balance < threshold("side_balance_min_share");
+  const channelShare = footChannelShare(landings);
+  const oneFooted =
+    Number.isFinite(channelShare) && channelShare < threshold("min_foot_channel_share");
 
   const reasons: string[] = [];
   if (!(subjectHeightRatio >= threshold("min_subject_height_ratio"))) {
@@ -487,12 +522,12 @@ function assessQuality(
       `착지 ${landings.length}회 중 ${landings.length - timed}회는 발이 땅에 붙어 있던 시간을 재지 못했습니다. 접지·체공 시간과 반력은 그만큼 거친 추정입니다.`,
     );
   }
-  if (lopsided) {
+  if (oneFooted) {
     // Said before the missed-contact reason, because it explains it: a foot
     // whose stance was never found contributes neither a contact time nor a
     // gap of the right length.
     reasons.push(
-      `착지의 ${Math.round((1 - balance) * 100)}%가 한쪽 발로 잡혔습니다. 한 발이 가려져 좌우 구분과 주법 판정을 믿을 수 없습니다. 두 발이 모두 보이는 옆모습 구간으로 다시 찍어 주세요.`,
+      `착지가 거의 전부 한쪽 발에서만 잡혔습니다. 한 발이 가려져 접지 시간과 주법을 그 발 하나로만 재게 됩니다. 두 발이 모두 보이도록 다시 찍어 주세요.`,
     );
   }
   if (missedLandings >= 2) {
@@ -516,11 +551,18 @@ function assessQuality(
     (Number.isFinite(cadenceConsistency) &&
       cadenceConsistency < threshold("min_cadence_consistency_publish")) ||
     missedRatio >= 0.3 ||
-    // Severe rather than a note, because the strike angle is read from the
-    // side's own series: a wrong side does not mislabel the answer, it answers
-    // about the other foot. Everything that depends on it is then withheld by
-    // the machinery that already handles a poor clip.
-    lopsided;
+    // Severe, because half the gait was never on the ground as far as the
+    // measurement could tell: every contact time, stance and strike belongs to
+    // one leg, and the report reads as though it described the runner.
+    //
+    // This gate used to be phrased on the published left/right share at 0.3,
+    // and it was wrong twice over. It rested on the belief that a mislabelled
+    // side reads the other foot's angle — false, since stance is found per
+    // channel, so the angle comes from the foot that landed whatever it is
+    // called — and what it actually measured was the estimator's left/right
+    // confusion in a lateral view, the view the app asks for. It sat 0.013
+    // from withholding a normal runner's whole report.
+    oneFooted;
   const level: QualityLevel = severe ? "poor" : reasons.length ? "fair" : "good";
   return {
     level,
@@ -1503,28 +1545,32 @@ function detectLandings(
       kneeFlexContact,
       kneeMeasured,
     });
-    const side = raw.side;
+    const channel = raw.side;
     const footStrikeAngle = strikeAngleAt(
       series,
       raw.strikeIdx,
-      side,
+      channel,
       strikeAngleSampling,
       dt,
     );
-    const footStrikeAngleUncertainty = strikeAngleSlopeAt(series, raw.strikeIdx, side);
+    const footStrikeAngleUncertainty = strikeAngleSlopeAt(
+      series,
+      raw.strikeIdx,
+      channel,
+    );
     const strike = classifyFootStrike(footStrikeAngle, view);
     // Fore-aft position needs the runner seen from the side for the same reason
     // the strike angle does: from in front, the distance is along the camera
     // axis and the image says nothing about it.
     const footAheadM =
-      view === "side" ? footAheadAt(series, raw.strikeIdx, side, dt) : Number.NaN;
+      view === "side" ? footAheadAt(series, raw.strikeIdx, channel, dt) : Number.NaN;
     // The mirror image of the rule above: these two need the camera in front of
     // the runner, and the pelvis-width gate inside the geometry already returns
     // NaN from the side, so the view check here is belt and braces on a value
     // the report would otherwise have to explain.
     const frontal =
       view === "front"
-        ? frontalPeaksOver(series, raw.strikeIdx, raw.stanceEndIdx, side)
+        ? frontalPeaksOver(series, raw.strikeIdx, raw.stanceEndIdx, channel)
         : { kneeValgusDeg: Number.NaN, pelvicDropDeg: Number.NaN };
     const landing: Landing = {
       index: raw.peakIdx,
@@ -1543,7 +1589,11 @@ function detectLandings(
       kneeFlexPeak,
       damageScore: score,
       risk: riskFromScore(score),
-      side,
+      // Claimed only from the front, where the two legs are separately
+      // visible. From the side the channel is still the foot that landed, so
+      // the geometry above is unaffected — what is dropped is the name.
+      side: view === "front" ? channel : "unknown",
+      footChannel: channel,
       gaitBased,
       footStrike: strike.type,
       footStrikeAngleDeg: footStrikeAngle,

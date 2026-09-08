@@ -101,6 +101,16 @@ export type PairedLanding = {
   /** Seconds between the two contacts. */
   apart: number;
   sameStrike: boolean;
+  /**
+   * Whether the two pipelines read this contact from the same foot signal.
+   *
+   * Compared on the channel, not on the published side. From a lateral view
+   * neither pipeline claims a side any more, so comparing the published value
+   * would find two `unknown`s equal and report that the two agree about the
+   * foot — a row asserting agreement where neither has said anything. The
+   * channel is what each one actually measured from, and whether those match
+   * is the question this row exists to answer.
+   */
   sameSide: boolean;
 };
 
@@ -215,7 +225,7 @@ export function pairLandings(
       sports2d: sports2d[b],
       apart,
       sameStrike: browser[a].footStrike === sports2d[b].footStrike,
-      sameSide: browser[a].side === sports2d[b].side,
+      sameSide: browser[a].footChannel === sports2d[b].footChannel,
     });
   }
   paired.sort((x, y) => x.browser.tContact - y.browser.tContact);
@@ -358,7 +368,7 @@ export function comparePipelines(
         ? `짝 중 ${paired.filter((pair) => pair.sameSide).length}/${paired.length}`
         : "—",
       agree: paired.length > 0 && paired.every((pair) => pair.sameSide),
-      note: "다르면 한쪽이 발을 바꿔 본 것입니다",
+      note: "각 파이프라인이 각도를 읽은 발 신호가 같은지 봅니다. 다르면 한쪽이 반대 발을 본 것입니다",
     },
     numberRow(
       "케이던스",
