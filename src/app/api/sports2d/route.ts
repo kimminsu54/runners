@@ -102,37 +102,78 @@ async function findFiles(dir: string): Promise<Found | null> {
   };
 }
 
+/** What a clip is for, and what it looks like. */
+type ClipDescription = { label: string; scene: string };
+
 /**
- * What each clip is, in a few words, keyed by its file name.
+ * One CSV row into its cells, respecting quotes.
+ *
+ * A plain `split(",")` was enough while every described column sat before the
+ * one with commas in it. Then a description gained a comma of its own — "트랙,
+ * 초보자 조언 영상" — the writer quoted it, and the tooltip showed `"트랙`.
+ * Banning commas from the descriptions would have been the smaller change and
+ * the wrong one: the file is written by Python's csv module and read here, so
+ * this side should read what that side writes.
+ */
+function splitRow(line: string): string[] {
+  const cells: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      // A doubled quote inside a quoted cell is one literal quote.
+      if (ch === '"' && line[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") {
+      cells.push(cell);
+      cell = "";
+    } else cell += ch;
+  }
+  cells.push(cell);
+  return cells;
+}
+
+/**
+ * How each clip is described, keyed by its file name.
  *
  * Read from clips.csv rather than kept here, because that file is already the
  * one place a clip is described and run.py reads the same rows. Keyed by file
  * name and not by run id: a run directory is not always a clip id — the second
  * pass over one clip is `06-balanced` — and the manifest names the file.
  *
- * A missing or malformed file costs the labels, not the runs.
+ * Two fields because they answer different questions. `label` is what the clip
+ * is in the sample for — the condition it carries — and that is what a person
+ * choosing between six runs needs. `scene` is what the footage shows, which is
+ * worth having but does not help you choose, so it goes in the tooltip.
+ *
+ * A missing or malformed file costs the descriptions, not the runs.
  */
-async function clipLabels(): Promise<Map<string, string>> {
-  const labels = new Map<string, string>();
+async function clipDescriptions(): Promise<Map<string, ClipDescription>> {
+  const found = new Map<string, ClipDescription>();
   try {
     const text = await readFile(CLIPS_CSV, "utf8");
     const lines = text.split(/\r?\n/).filter(Boolean);
     const header = (lines.shift() ?? "").split(",");
     const fileAt = header.indexOf("file");
     const labelAt = header.indexOf("label");
-    if (fileAt < 0 || labelAt < 0) return labels;
+    const sceneAt = header.indexOf("scene");
+    if (fileAt < 0 || labelAt < 0) return found;
     for (const line of lines) {
-      // The notes column holds commas inside quotes, but the two columns
-      // wanted here sit before it, so a plain split reaches them safely.
-      const cells = line.split(",");
+      const cells = splitRow(line);
       const file = (cells[fileAt] ?? "").split(/[\\/]/).pop() ?? "";
       const label = (cells[labelAt] ?? "").trim();
-      if (file && label) labels.set(file, label);
+      const scene = sceneAt >= 0 ? (cells[sceneAt] ?? "").trim() : "";
+      if (file && label) found.set(file, { label, scene });
     }
   } catch {
     // No clips.csv on this machine: the buttons fall back to the run id.
   }
-  return labels;
+  return found;
 }
 
 /** Frame count and rate straight from the TRC header, for the run list. */
@@ -176,7 +217,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ runs: [], note: "tools/sports2d/out 이 아직 없습니다." });
   }
 
-  const labels = await clipLabels();
+  const described = await clipDescriptions();
   const runs = [];
   for (const runId of ids) {
     try {
@@ -199,10 +240,12 @@ export async function GET(request: Request) {
         id: runId,
         name: found.name,
         clip,
-        // What the footage is, and which pose model read it. The mode earns
-        // its place because of the two runs over one clip, where the footage
-        // is identical and the model is the entire difference.
-        label: clip ? (labels.get(clip) ?? null) : null,
+        // What the clip is for, what it shows, and which pose model read it.
+        // The mode earns its place because of the two runs over one clip,
+        // where the footage is identical and the model is the whole
+        // difference.
+        label: clip ? (described.get(clip)?.label ?? null) : null,
+        scene: clip ? (described.get(clip)?.scene ?? null) : null,
         mode,
         people: found.people,
         ...summarise(found.trc),

@@ -112,8 +112,15 @@ type Sports2dRun = {
   rate: number;
   /** The clip file the run was made from, per its manifest. */
   clip?: string | null;
-  /** What that footage is, in a few words, from clips.csv. */
+  /**
+   * What this clip is in the sample for — the condition it carries, from
+   * clips.csv. This is what the button says, because it is what a person
+   * choosing between six runs actually needs.
+   */
   label?: string | null;
+  /** What the footage shows. Useful, but it does not help you choose, so it
+   * lives in the tooltip. */
+  scene?: string | null;
   /**
    * Which pose model read it. Shown because two of these runs are the same
    * clip and the model is the entire difference between them.
@@ -1421,6 +1428,7 @@ export function LandingAnalyzer() {
                       // The label says what the footage is; everything needed
                       // to find the run on disk stays in the tooltip.
                       title={[
+                        run.scene ?? null,
                         `${run.id} · ${run.clip ?? run.name}`,
                         `${run.frames}프레임 · ${run.rate} fps`,
                         run.mode ? `모드 ${run.mode}` : null,
@@ -1435,12 +1443,14 @@ export function LandingAnalyzer() {
                       {loadingRun === run.id
                         ? "읽는 중"
                         : /*
-                           * The number told nobody anything. What a person
-                           * needs to choose between these is what the footage
-                           * is — and for the two runs over one clip, which
-                           * model read it, since that is all that separates
-                           * them. The id stays in the tooltip for finding the
-                           * run on disk.
+                           * The number told nobody anything, and naming the
+                           * scenery only told them what was on screen. What
+                           * decides which of six to open is what each one is
+                           * in the sample for — the condition it carries —
+                           * so that is the name. For the two runs over one
+                           * clip the model is added, since it is all that
+                           * separates them. The scene, the id and the rest
+                           * are in the tooltip.
                            */
                           [
                             run.label ?? `Sports2D ${run.id}`,
