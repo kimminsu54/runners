@@ -29,6 +29,8 @@ const DEVELOPMENT = process.env.NODE_ENV === "development";
 
 /** Where run.py writes. Resolved from the server's cwd, which is the repo. */
 const ROOT = join(process.cwd(), "tools", "sports2d", "out");
+/** Where the clips are described, which is the same place run.py reads them. */
+const CLIPS_CSV = join(process.cwd(), "tools", "sports2d", "clips.csv");
 
 const notFound = () => new NextResponse("Not found", { status: 404 });
 
@@ -100,6 +102,39 @@ async function findFiles(dir: string): Promise<Found | null> {
   };
 }
 
+/**
+ * What each clip is, in a few words, keyed by its file name.
+ *
+ * Read from clips.csv rather than kept here, because that file is already the
+ * one place a clip is described and run.py reads the same rows. Keyed by file
+ * name and not by run id: a run directory is not always a clip id — the second
+ * pass over one clip is `06-balanced` — and the manifest names the file.
+ *
+ * A missing or malformed file costs the labels, not the runs.
+ */
+async function clipLabels(): Promise<Map<string, string>> {
+  const labels = new Map<string, string>();
+  try {
+    const text = await readFile(CLIPS_CSV, "utf8");
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    const header = (lines.shift() ?? "").split(",");
+    const fileAt = header.indexOf("file");
+    const labelAt = header.indexOf("label");
+    if (fileAt < 0 || labelAt < 0) return labels;
+    for (const line of lines) {
+      // The notes column holds commas inside quotes, but the two columns
+      // wanted here sit before it, so a plain split reaches them safely.
+      const cells = line.split(",");
+      const file = (cells[fileAt] ?? "").split(/[\\/]/).pop() ?? "";
+      const label = (cells[labelAt] ?? "").trim();
+      if (file && label) labels.set(file, label);
+    }
+  } catch {
+    // No clips.csv on this machine: the buttons fall back to the run id.
+  }
+  return labels;
+}
+
 /** Frame count and rate straight from the TRC header, for the run list. */
 function summarise(trc: string): { frames: number; rate: number } {
   const lines = trc.split(/\r?\n/);
@@ -141,6 +176,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ runs: [], note: "tools/sports2d/out 이 아직 없습니다." });
   }
 
+  const labels = await clipLabels();
   const runs = [];
   for (const runId of ids) {
     try {
@@ -151,9 +187,11 @@ export async function GET(request: Request) {
       // The clip name goes in the listing so a button can say which footage
       // it belongs to before it is loaded.
       let clip: string | null = null;
+      let mode: string | null = null;
       try {
         const parsed = found.manifest ? JSON.parse(found.manifest) : null;
         if (parsed && typeof parsed.clip === "string") clip = parsed.clip;
+        if (parsed && typeof parsed.mode === "string") mode = parsed.mode;
       } catch {
         // A malformed manifest costs the label, not the run.
       }
@@ -161,6 +199,11 @@ export async function GET(request: Request) {
         id: runId,
         name: found.name,
         clip,
+        // What the footage is, and which pose model read it. The mode earns
+        // its place because of the two runs over one clip, where the footage
+        // is identical and the model is the entire difference.
+        label: clip ? (labels.get(clip) ?? null) : null,
+        mode,
         people: found.people,
         ...summarise(found.trc),
       });

@@ -1,7 +1,7 @@
-id,file,height_m,pace,strike,visible_side,note
-01,clips/advice-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 9.7초 · 세로 720x1280 · 30fps 720x1280 9.7s · 신장 미상(자리표시자 1.70)
-02,clips/pace-ladder-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 26초 · 페이스가 구간마다 바뀝니다 · 30fps 720x1280 26.0s · 신장 미상(자리표시자 1.70)
-03,clips/heel-strike-480p.mp4,1.70,unknown,unknown,auto,외부 클립 · 24.3초 · 480x854 로 해상도가 낮은 유일한 클립 · 30fps 480x854 24.3s · 신장 미상(자리표시자 1.70)
-04,clips/chelimo-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 15.1초 · 엘리트 주행 · 30fps 720x1280 15.1s · 신장 미상(자리표시자 1.70)
-05,clips/jog-to-sprint-720p.mp4,1.70,unknown,unknown,auto,외부 클립 · 10.8초 · 조깅에서 질주로 바뀝니다 · 30fps 720x1280 10.8s · 신장 미상(자리표시자 1.70)
-06,clips/treadmill-720p.mp4,1.70,unknown,unknown,auto,"외부 클립 · 52.5초 · 트레드밀, 전신 옆모습 · 30fps 720x1280 52.5s · 신장 미상(자리표시자 1.70)"
+id,file,height_m,pace,strike,visible_side,label,note
+01,clips/advice-720p.mp4,1.70,unknown,unknown,auto,트랙 · 초보자 조언 영상,외부 클립 · 9.7초 · 세로 720x1280 · 30fps 720x1280 9.7s · 신장 미상(자리표시자 1.70)
+02,clips/pace-ladder-720p.mp4,1.70,unknown,unknown,auto,보도 · 페이스 구간별 변화,외부 클립 · 26초 · 페이스가 구간마다 바뀝니다 · 30fps 720x1280 26.0s · 신장 미상(자리표시자 1.70)
+03,clips/heel-strike-480p.mp4,1.70,unknown,unknown,auto,트레드밀 다리 클로즈업 · 저해상도,외부 클립 · 24.3초 · 480x854 로 해상도가 낮은 유일한 클립 · 30fps 480x854 24.3s · 신장 미상(자리표시자 1.70)
+04,clips/chelimo-720p.mp4,1.70,unknown,unknown,auto,엘리트 주행 · 배경에 사람 많음,외부 클립 · 15.1초 · 엘리트 주행 · 30fps 720x1280 15.1s · 신장 미상(자리표시자 1.70)
+05,clips/jog-to-sprint-720p.mp4,1.70,unknown,unknown,auto,보도 · 조깅에서 질주로,외부 클립 · 10.8초 · 조깅에서 질주로 바뀝니다 · 30fps 720x1280 10.8s · 신장 미상(자리표시자 1.70)
+06,clips/treadmill-720p.mp4,1.70,unknown,unknown,auto,트레드밀 전신 옆모습,"외부 클립 · 52.5초 · 트레드밀, 전신 옆모습 · 30fps 720x1280 52.5s · 신장 미상(자리표시자 1.70)"

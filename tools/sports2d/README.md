@@ -156,6 +156,11 @@ RTMPose 가중치는 **첫 실행 때 내려받습니다.** 첫 클립이 유독
 `clips.csv` 가 처리할 클립 목록이자 **3단계 수동 라벨의 표본 행렬**입니다. 한 파일이
 두 역할을 하므로 목록이 서로 어긋날 수 없습니다.
 
+`label` 열은 그 영상이 무엇인지 한 줄로 적는 곳이고, 개발 서버가 그대로 읽어
+**앱의 실행 버튼 이름**으로 씁니다. 버튼이 `Sports2D 04` 라고만 적혀 있으면 여섯 개
+중 무엇을 누를지 알 수 없어서, 설명이 이미 있는 이 파일에서 가져옵니다. 클립을 추가하면
+여기에 한 줄 적어 주세요 — 비워 두면 버튼은 id로 돌아갑니다.
+
 ```powershell
 tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py
 tools\sports2d\.venv\Scripts\python.exe tools\sports2d\run.py --only 03

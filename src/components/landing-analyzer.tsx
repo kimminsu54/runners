@@ -105,7 +105,23 @@ type ViewState = {
 };
 
 /** A Sports2D result the dev server found on disk. */
-type Sports2dRun = { id: string; name: string; frames: number; rate: number };
+type Sports2dRun = {
+  id: string;
+  name: string;
+  frames: number;
+  rate: number;
+  /** The clip file the run was made from, per its manifest. */
+  clip?: string | null;
+  /** What that footage is, in a few words, from clips.csv. */
+  label?: string | null;
+  /**
+   * Which pose model read it. Shown because two of these runs are the same
+   * clip and the model is the entire difference between them.
+   */
+  mode?: string | null;
+  /** How many people Sports2D tracked in it. */
+  people?: number;
+};
 
 export function LandingAnalyzer() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -1402,14 +1418,36 @@ export function LandingAnalyzer() {
                       size="sm"
                       variant="secondary"
                       disabled={loadingRun !== null}
-                      title={`${run.name} · ${run.frames}프레임 · ${run.rate} fps`}
+                      // The label says what the footage is; everything needed
+                      // to find the run on disk stays in the tooltip.
+                      title={[
+                        `${run.id} · ${run.clip ?? run.name}`,
+                        `${run.frames}프레임 · ${run.rate} fps`,
+                        run.mode ? `모드 ${run.mode}` : null,
+                        run.people && run.people > 1 ? `추적된 사람 ${run.people}명` : null,
+                      ]
+                        .filter(Boolean)
+                        .join("\n")}
                       onClick={() => {
                         void loadRun(run.id);
                       }}
                     >
                       {loadingRun === run.id
                         ? "읽는 중"
-                        : `Sports2D ${run.id} · ${run.frames}f`}
+                        : /*
+                           * The number told nobody anything. What a person
+                           * needs to choose between these is what the footage
+                           * is — and for the two runs over one clip, which
+                           * model read it, since that is all that separates
+                           * them. The id stays in the tooltip for finding the
+                           * run on disk.
+                           */
+                          [
+                            run.label ?? `Sports2D ${run.id}`,
+                            run.mode && run.mode !== "performance" ? run.mode : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                     </Button>
                   ))
                 : null}
