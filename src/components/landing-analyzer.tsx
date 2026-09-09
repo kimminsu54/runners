@@ -39,7 +39,7 @@ import {
   syntheticFrontRunFrames,
   syntheticRunningFrames,
 } from "@/lib/synthetic-jump";
-import type { PipelinePass } from "@/lib/pipeline-compare";
+import type { PipelineKey, PipelinePass } from "@/lib/pipeline-compare";
 import { importTrc, isImportCandidate, type NamedText } from "@/lib/trc-import";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, ImageDown, UploadCloud } from "lucide-react";
@@ -86,6 +86,24 @@ const MAX_FPS = 60;
  */
 const OFFER_TRC_IMPORT = process.env.NODE_ENV === "development";
 
+/**
+ * What has to be put back to show a pass again.
+ *
+ * The result lives in `passes`; this is everything else the screen was in
+ * when that result was made.
+ */
+type ViewState = {
+  result: AnalysisResult;
+  frames: PoseFrame[];
+  offsetS: number;
+  fileName: string | null;
+  /** Whether the skeleton belongs over the uploaded clip. */
+  overFootage: boolean;
+  note: string | null;
+  slowMotion: number | null;
+  suggested: number | null;
+};
+
 /** A Sports2D result the dev server found on disk. */
 type Sports2dRun = { id: string; name: string; frames: number; rate: number };
 
@@ -96,7 +114,17 @@ export function LandingAnalyzer() {
   const streamRef = useRef<MediaStream | null>(null);
 
   const [fileName, setFileName] = useState<string | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  /**
+   * The uploaded clip's object URL, which belongs to the file and not to
+   * whichever pass is on screen.
+   *
+   * This used to be cleared when a Sports2D run was opened over different
+   * footage, and clearing it revoked the blob — so the video was gone and
+   * there was no way back to the clip the person had just uploaded. Now only
+   * choosing another file replaces it, and what changes when the view changes
+   * is whether the footage is drawn on, not whether it still exists.
+   */
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [statureCm, setStatureCm] = useState(170);
   const [massKg, setMassKg] = useState(70);
   const [paceMinutes, setPaceMinutes] = useState<string>("");
@@ -146,10 +174,29 @@ export function LandingAnalyzer() {
   const clockFactor =
     detectedSlowMotion && detectedSlowMotion > 0 ? detectedSlowMotion : 1;
 
+  /**
+   * Enough of each pass to put it back on screen.
+   *
+   * `passes` already keeps both results for the comparison card, but a result
+   * alone does not restore a view: the frames the overlay draws, where the
+   * analysis sits in the video's clock, what the file was called and whether
+   * the skeleton belongs over the footage all differ between the two. Kept
+   * here so switching is a restore rather than a re-analysis — the browser
+   * pass in particular would otherwise mean running MediaPipe over the clip
+   * again.
+   */
+  const [views, setViews] = useState<Partial<Record<PipelineKey, ViewState>>>({});
+  const [view, setView] = useState<PipelineKey>("browser");
+  // The footage the current view draws on, which is the uploaded clip unless
+  // this view is a run over something else. Derived rather than stored: every
+  // reader below already branches on "is there footage", and the answer now
+  // depends on which pass is showing.
+  const videoUrl = views[view]?.overFootage === false ? null : sourceUrl;
+
   useEffect(() => {
-    if (!videoUrl) return;
-    return () => URL.revokeObjectURL(videoUrl);
-  }, [videoUrl]);
+    if (!sourceUrl) return;
+    return () => URL.revokeObjectURL(sourceUrl);
+  }, [sourceUrl]);
 
   // `?demo=report` seeds the sample session, and `?demo=front` seeds one shot
   // from in front — the two reports differ enough that the second is worth
@@ -284,7 +331,9 @@ export function LandingAnalyzer() {
     setPlayheadT(0);
     setDemoPlaying(false);
     setFileName(file.name);
-    setVideoUrl(URL.createObjectURL(file));
+    setSourceUrl(URL.createObjectURL(file));
+    setViews({});
+    setView("browser");
   };
 
   /**
@@ -458,6 +507,39 @@ export function LandingAnalyzer() {
   };
 
   /**
+   * Put a pass that has already been computed back on screen.
+   *
+   * Opening a Sports2D run used to be one-way: it replaced the report and
+   * revoked the uploaded clip's object URL, so there was no route back to the
+   * video the person had just analysed. Both passes are kept now, and this
+   * restores one — the result, the frames the overlay draws, where the
+   * analysis sits in the video's clock, and whether the skeleton belongs over
+   * the footage.
+   *
+   * A restore rather than a re-run: analysing the clip again would mean
+   * another MediaPipe pass over every frame, which is the slowest thing the
+   * page does.
+   */
+  const showView = (key: PipelineKey) => {
+    const next = views[key];
+    if (!next || key === view) return;
+    setView(key);
+    setResult(next.result);
+    setPoseFrames(next.frames);
+    setAnalysisOffsetS(next.offsetS);
+    setFileName(next.fileName);
+    setTrcNote(next.note);
+    setDetectedSlowMotion(next.slowMotion);
+    setSuggestedSlowMotion(next.suggested);
+    setSelected(0);
+    setOverlay(null);
+    setPlayheadT(0);
+    setDemoPlaying(false);
+    setError(null);
+    setStatus("done");
+  };
+
+  /**
    * Fill the report from a Sports2D run instead of from this browser's pass.
    *
    * The files are read here and nowhere else — the same promise the hero makes
@@ -498,7 +580,7 @@ export function LandingAnalyzer() {
     // and reads as one.
     const loaded = fileName;
     const overFootage = Boolean(videoUrl && clip && loaded && clip === loaded);
-    if (!overFootage) setVideoUrl(null);
+
     setAnalysisOffsetS(overFootage ? startS : 0);
     setFaceFromPose(false);
     setDemoPlaying(false);
@@ -532,6 +614,20 @@ export function LandingAnalyzer() {
     setDetectedSlowMotion(1);
     setSuggestedSlowMotion(null);
     setFileName(overFootage ? loaded : sourceName);
+    setViews((kept) => ({
+      ...kept,
+      sports2d: {
+        result: analysis,
+        frames,
+        offsetS: overFootage ? startS : 0,
+        fileName: overFootage ? loaded : sourceName,
+        overFootage,
+        note: null,
+        slowMotion: 1,
+        suggested: null,
+      },
+    }));
+    setView("sports2d");
     setPasses((kept) => ({
       ...kept,
       sports2d: {
@@ -550,19 +646,24 @@ export function LandingAnalyzer() {
         clockFactor: 1,
       },
     }));
-    setTrcNote(
-      [
-        `Sports2D${mode ? ` ${mode}` : ""}`,
-        `${width}×${height} · ${rate} fps`,
-        `마커 ${markerCount}개 · 추적 ${trackedFrames}/${frames.length}`,
-        `y축 ${verticalAxis} · 내부 평활 반영`,
-        overFootage
-          ? `영상 위 · ${startS.toFixed(0)}초부터`
-          : clip
-            ? `영상 없음 (이 결과는 ${clip})`
-            : "영상 없음 (어느 클립인지 기록 없음)",
-      ].join(" · "),
-    );
+    // Built once and kept on the view, so coming back to this run brings its
+    // provenance line with it rather than showing the run under no caption.
+    const note = [
+      `Sports2D${mode ? ` ${mode}` : ""}`,
+      `${width}×${height} · ${rate} fps`,
+      `마커 ${markerCount}개 · 추적 ${trackedFrames}/${frames.length}`,
+      `y축 ${verticalAxis} · 내부 평활 반영`,
+      overFootage
+        ? `영상 위 · ${startS.toFixed(0)}초부터`
+        : clip
+          ? `영상 없음 (이 결과는 ${clip})`
+          : "영상 없음 (어느 클립인지 기록 없음)",
+    ].join(" · ");
+    setTrcNote(note);
+    setViews((kept) => ({
+      ...kept,
+      sports2d: kept.sports2d ? { ...kept.sports2d, note } : kept.sports2d,
+    }));
     const firstContact = analysis.landings[0]?.tContact ?? 0;
     setPlayheadT(firstContact);
     if (overFootage && videoRef.current) {
@@ -706,6 +807,20 @@ export function LandingAnalyzer() {
           clockFactor: usedFactor > 0 ? usedFactor : 1,
         },
       }));
+      setViews((kept) => ({
+        ...kept,
+        browser: {
+          result: analysis,
+          frames,
+          offsetS: 0,
+          fileName,
+          overFootage: true,
+          note: null,
+          slowMotion: usedFactor,
+          suggested: suggestedFactor ?? null,
+        },
+      }));
+      setView("browser");
       setSelected(0);
       setStatus("done");
       setProgress(100);
@@ -1253,6 +1368,33 @@ export function LandingAnalyzer() {
                   }}
                 />
               </label>
+              {/*
+                * Only once there is something to switch between. Two passes on
+                * the same clip is the case this exists for; with one, the
+                * control would be a button that does nothing.
+                */}
+              {views.browser && views.sports2d && !cameraOn ? (
+                <div className="flex items-center gap-1 rounded-md border p-0.5">
+                  {(
+                    [
+                      ["browser", "업로드 영상"],
+                      ["sports2d", "Sports2D"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <Button
+                      key={key}
+                      size="sm"
+                      variant={view === key ? "default" : "ghost"}
+                      aria-pressed={view === key}
+                      onClick={() => {
+                        showView(key);
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
               {OFFER_TRC_IMPORT && runs && runs.length > 0 && !cameraOn
                 ? runs.map((run) => (
                     <Button
