@@ -28,7 +28,12 @@ async function createLandmarker(): Promise<PoseLandmarker> {
       delegate: "CPU",
     },
     runningMode: "IMAGE",
-    numPoses: 1,
+    // More than one, or `pickSubject` has nothing to choose between and the
+    // wrong-person switch it exists to prevent cannot be seen. Three rather
+    // than more: each extra pose costs another landmark pass, the crowded clip
+    // in this sample had the intended subject and one interloper in frame at
+    // once, and the browser cost of a fourth has not been measured.
+    numPoses: 3,
     minPoseDetectionConfidence: 0.4,
     minPosePresenceConfidence: 0.4,
     minTrackingConfidence: 0.4,

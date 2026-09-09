@@ -50,7 +50,7 @@ def main(argv: list[str]) -> int:
     with urllib.request.urlopen(f"{CDP}/json/list") as response:
         target = next(t for t in json.load(response) if t.get("type") == "page")
     ws = websocket.create_connection(
-        target["webSocketDebuggerUrl"], timeout=300, suppress_origin=True
+        target["webSocketDebuggerUrl"], timeout=900, suppress_origin=True
     )
     seq = 0
 
@@ -114,7 +114,11 @@ def main(argv: list[str]) -> int:
 
     started = time.time()
     busy = False
-    while time.time() - started < 300:
+    # Fifteen minutes, not five. Asking the estimator for three bodies rather
+    # than one — so the subject can be held across frames — costs a landmark
+    # pass each, and a crowded clip ran past the old ceiling with the socket
+    # closing mid-analysis and no dump written.
+    while time.time() - started < 900:
         text = label()
         if "중…" in text:
             busy = True

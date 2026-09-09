@@ -33,7 +33,7 @@ import {
   nearestPoseFrame,
   videoTimeFromAnalysis,
 } from "@/lib/live-readout";
-import type { Landmark } from "@/lib/pose";
+import { pickSubject, type Landmark } from "@/lib/pose";
 import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
 import {
   syntheticFrontRunFrames,
@@ -247,7 +247,7 @@ export function LandingAnalyzer() {
         const landmarker = await getPoseLandmarker();
         if (!live) return;
         const det = landmarker.detect(video);
-        setPreviewFace(det.landmarks[0] ?? null);
+        setPreviewFace(pickSubject(det.landmarks, null));
       } catch {
         // Leave the last box in place. PoseOverlay holds it, and holding is the
         // fail-closed answer here: a dropped detection is not evidence that the
@@ -654,11 +654,17 @@ export function LandingAnalyzer() {
       );
       const n = Math.min(Math.round(duration * sampleFps), FRAME_BUDGET);
       const frames: PoseFrame[] = [];
+      // The estimator returns bodies without identities, so the subject is
+      // carried forward frame to frame rather than taking whichever body came
+      // back first. On a clip with a second runner in shot, taking the first
+      // put a fifth of the frames on the wrong person.
+      let subject: Landmark[] | null = null;
       for (let i = 0; i < n; i++) {
         const t = (i / Math.max(1, n - 1)) * duration;
         await seekVideo(video, t);
         const det = landmarker.detect(video);
-        frames.push({ t, landmarks: det.landmarks[0] ?? null });
+        subject = pickSubject(det.landmarks, subject);
+        frames.push({ t, landmarks: subject });
         if (i % 2 === 0) setProgress(Math.round(((i + 1) / n) * 100));
       }
       setPoseFrames(frames);
@@ -818,7 +824,7 @@ export function LandingAnalyzer() {
     try {
       const landmarker = await getPoseLandmarker();
       const det = landmarker.detect(video);
-      setOverlay(det.landmarks[0] ?? null);
+      setOverlay(pickSubject(det.landmarks, null));
     } catch {
       setOverlay(null);
     }

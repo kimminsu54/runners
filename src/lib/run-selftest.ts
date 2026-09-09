@@ -114,7 +114,7 @@ import {
 } from "./face-blur";
 import { buildHudFrame, HUD_NOTE } from "./hud-frame";
 import { exportPlan } from "./export-frame";
-import { LM, type Landmark } from "./pose";
+import { LM, pickSubject, type Landmark } from "./pose";
 import { buildLandingGuidance } from "./training-guidance";
 
 const hit = assertDetectsLanding();
@@ -830,6 +830,60 @@ console.log("shoe purpose column ok", {
   marked: superTrainers.length,
   zoomFly: { easy: easyPick.score, fast: fastPick.score, unmarkedEasy: twinPick.score },
 });
+
+// --- the subject is carried forward, not taken first ------------------------
+// The estimator returns bodies without identities. Asked for one it returns
+// one and says nothing about which, and on a clip with a second runner in shot
+// a fifth of the frames were the wrong person — foot keypoints a median of
+// 234px from the intended subject's, against 9px elsewhere.
+{
+  // A body is only ever read for its extent here, so two points suffice and
+  // the fixture stays legible.
+  const body = (x: number, top: number, bottom: number) => [
+    { x, y: top },
+    { x, y: bottom },
+  ];
+  const runner = body(0.5, 0.2, 0.9);
+  const bystander = body(0.1, 0.1, 0.95);
+
+  if (pickSubject([], null) !== null) {
+    throw new Error("no bodies must give no subject");
+  }
+  if (pickSubject([runner], null) !== runner) {
+    throw new Error("one body must be the subject");
+  }
+  // With nothing before it, the tallest — the same idea the quality gate uses
+  // when it asks the subject to fill a quarter of the frame.
+  if (pickSubject([runner, bystander], null) !== bystander) {
+    throw new Error("with no history the tallest body should be taken");
+  }
+  // With a subject already established, continuity beats height: the taller
+  // bystander must not steal it.
+  if (pickSubject([runner, bystander], runner) !== runner) {
+    throw new Error("a taller body must not take over from the tracked subject");
+  }
+  if (pickSubject([bystander, runner], runner) !== runner) {
+    throw new Error("the subject must be found whatever order it arrives in");
+  }
+  // And the failure this exists to stop: the interloper arrives first in the
+  // list, every frame, and the subject is still the one measured.
+  let held: ReturnType<typeof pickSubject> = null;
+  const chosen: number[] = [];
+  for (let frame = 0; frame < 8; frame++) {
+    // The runner drifts across the frame; the bystander stands still.
+    const moving = body(0.5 + frame * 0.02, 0.2, 0.9);
+    held = pickSubject([bystander, moving], held ?? moving);
+    chosen.push(held === bystander ? 1 : 0);
+  }
+  if (chosen.some((wrong) => wrong === 1)) {
+    throw new Error(`the subject was lost on ${chosen.filter(Boolean).length} of 8 frames`);
+  }
+  console.log("subject continuity ok", {
+    first: "가장 큰 사람",
+    then: "앞 프레임과 이어지는 사람",
+    drift: `8프레임 유지 ${chosen.filter((w) => w === 0).length}/8`,
+  });
+}
 
 // --- the force fallback is not a force -------------------------------------
 // A landing with no matched stance reads the body's own acceleration instead of

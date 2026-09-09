@@ -5,6 +5,57 @@ export type Landmark = {
   visibility?: number;
 };
 
+/**
+ * Which of several detected bodies this report is about.
+ *
+ * The estimator returns bodies, not identities. Asked for one it returns one
+ * and says nothing about which, so on footage with more than one person it can
+ * hand back a different body from one frame to the next without anything
+ * looking wrong. Measured on a crowded clip: a fifth of the frames were
+ * another runner, whose foot keypoints sat a median of 234px from the intended
+ * subject's against 9px on the rest.
+ *
+ * The rule is continuity. Given the previous frame's subject, take the
+ * candidate whose box centre is nearest it; with no previous frame, take the
+ * tallest, which is the same "fills the frame" idea the quality gate already
+ * uses when it asks the subject to cover a quarter of the height.
+ *
+ * Continuity is deliberately not defended with a distance ceiling. A ceiling
+ * is what a jump guard would be, and dropping frames on box discontinuity was
+ * measured against this and caught 9% of the damage — a subject that drifts
+ * across produces no jump at all. If the measurement later shows a ceiling
+ * earns its keep, it can be added with a number behind it.
+ */
+export function pickSubject(
+  poses: Landmark[][],
+  previous: Landmark[] | null,
+): Landmark[] | null {
+  if (!poses.length) return null;
+  if (poses.length === 1) return poses[0];
+  const box = (pose: Landmark[]) => {
+    const xs = pose.map((point) => point.x);
+    const ys = pose.map((point) => point.y);
+    const top = Math.min(...ys);
+    const bottom = Math.max(...ys);
+    return {
+      centre: [(Math.min(...xs) + Math.max(...xs)) / 2, (top + bottom) / 2] as const,
+      height: bottom - top,
+    };
+  };
+  if (!previous?.length) {
+    return poses.reduce((best, pose) => (box(pose).height > box(best).height ? pose : best));
+  }
+  const from = box(previous).centre;
+  return poses.reduce((best, pose) => {
+    const here = box(pose).centre;
+    const there = box(best).centre;
+    return Math.hypot(here[0] - from[0], here[1] - from[1]) <
+      Math.hypot(there[0] - from[0], there[1] - from[1])
+      ? pose
+      : best;
+  });
+}
+
 export const LM = {
   nose: 0,
   // 1-6 are the eyes with their inner and outer corners, 7-8 the ears, 9-10
