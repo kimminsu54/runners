@@ -23,6 +23,7 @@
 
 import { distPx, isVisible, LM, mid, type Landmark } from "@/lib/pose";
 import type { PoseFrame } from "@/lib/landing-analysis";
+import { threshold } from "@/lib/thresholds";
 
 export type FaceBox = { x: number; y: number; width: number; height: number };
 
@@ -106,7 +107,7 @@ export function faceBoxFrom(
 ): FaceBox | null {
   if (!landmarks?.length) return null;
   const points = FACE_POINTS.map((index) => landmarks[index]).filter(
-    (point): point is Landmark => isVisible(point, 0.3),
+    (point): point is Landmark => isVisible(point, threshold("visibility_min_anchor")),
   );
   if (points.length < 2) return null;
 
@@ -196,10 +197,10 @@ function headScaleFrom(
 ): number {
   const nose = landmarks[LM.nose];
   const shoulders = mid(landmarks[LM.leftShoulder], landmarks[LM.rightShoulder]);
-  if (!isVisible(nose, 0.3) || !shoulders) return Number.NaN;
+  if (!isVisible(nose, threshold("visibility_min_anchor")) || !shoulders) return Number.NaN;
   if (
-    !isVisible(landmarks[LM.leftShoulder], 0.3) &&
-    !isVisible(landmarks[LM.rightShoulder], 0.3)
+    !isVisible(landmarks[LM.leftShoulder], threshold("visibility_min_anchor")) &&
+    !isVisible(landmarks[LM.rightShoulder], threshold("visibility_min_anchor"))
   ) {
     return Number.NaN;
   }

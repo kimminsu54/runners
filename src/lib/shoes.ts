@@ -7,6 +7,7 @@ import {
   type CatalogStrike,
 } from "@/lib/Shoeranking";
 import type { PaceBand, SessionSummary } from "@/lib/session-summary";
+import { threshold } from "@/lib/thresholds";
 import catalog from "../../shared/shoes.json";
 // The catalog lives in shared/ because it is not only ours: the gait engine in
 // the other track reads the same CSV. shared/shoes.csv is the one file people
@@ -191,7 +192,7 @@ export function recommendShoes(
   // same thing. Keep them apart so the card can say which one it saw: a 2.0 BW
   // session flagged only by a pattern must not be told its impact was large.
   const stability: StabilityReason =
-    summary.meanPeakGrfBw >= 2.8
+    summary.meanPeakGrfBw >= threshold("shoe_stability_impact_bw")
       ? "impact"
       : summary.patterns.some((pattern) => pattern.level !== "monitor")
         ? "pattern"

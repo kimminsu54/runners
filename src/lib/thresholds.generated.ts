@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 12)
+// Source: shared/thresholds.yaml (version 15)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 12;
+export const THRESHOLDS_VERSION = 15;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -69,7 +69,14 @@ export type ThresholdKey =
   | "narration_asymmetry_notable_pct"
   | "narration_dominant_strike_pct"
   | "slow_motion_min_cadence_spm"
-  | "narration_cadence_agreement_spm";
+  | "narration_cadence_agreement_spm"
+  | "shoe_stability_impact_bw"
+  | "visibility_min_strike_angle"
+  | "visibility_min_frontal_angle"
+  | "visibility_min_foot_distance"
+  | "visibility_min_anchor"
+  | "visibility_min_foot_height"
+  | "min_measurable_segment_px";
 
 export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
   foot_strike_rearfoot_max_deg: {
@@ -641,5 +648,75 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "착지 간격에서 구한 케이던스와 접지+체공에서 구한 케이던스가 이보다 더 벌어지면 요약이 그 값을 참고값이라고 밝힙니다. 두 경로가 갈리는 것은 착지를 놓쳤거나 접지가 쪼개졌다는 뜻입니다.",
     validationStatus: "internal",
     note: "외부 검증 없음.",
+  },
+  shoe_stability_impact_bw: {
+    key: "shoe_stability_impact_bw",
+    label: "충격을 이유로 한 안정화 추천 · 경계",
+    value: 2.8,
+    unit: "BW",
+    appliesTo: "running",
+    source: "세션 평균 추정 반력이 이보다 크면 신발 카드가 안정화를 권하면서 그 이유를 착지 패턴이 아니라 충격 크기라고 말합니다. 두 이유를 구분하는 것은 2.0 BW 세션이 패턴만으로 걸렸을 때 충격이 컸다고 듣지 않게 하기 위해서입니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 중 넘는 것은 clip 06(2.99 BW) 하나뿐인데, 그 클립이 바로 접지를 절반으로 재어 힘을 48% 크게 내는 클립입니다. Sports2D 기준값 1.88 BW 로 고쳐지면 이 경계 아래로 내려갑니다. 즉 이 표본에서 충격을 이유로 한 추천을 켠 것은 러너가 아니라 알려진 측정 오차입니다. 값을 바꾸지 않은 것은 그 오차가 고쳐지면 저절로 풀리는 문제이기 때문입니다.",
+  },
+  visibility_min_strike_angle: {
+    key: "visibility_min_strike_angle",
+    label: "주법 각도를 잴 최소 신뢰도",
+    value: 0.45,
+    unit: "ratio",
+    appliesTo: "tracking",
+    source: "발꿈치와 발가락으로 각도를 낼 때 요구하는 값이고, 이 파일에서 가장 높습니다. 주법은 ±8° 로 갈리므로 랜드마크가 몇 픽셀만 흔들려도 범주가 바뀝니다.",
+    validationStatus: "internal",
+    note: "`isVisible` 의 기본값이기도 합니다.",
+  },
+  visibility_min_frontal_angle: {
+    key: "visibility_min_frontal_angle",
+    label: "정면 무릎·골반 각도를 잴 최소 신뢰도",
+    value: 0.4,
+    unit: "ratio",
+    appliesTo: "tracking",
+    source: "정면 지표도 각도라 비슷하게 요구합니다. 엉덩이·무릎·발목 셋이 모두 이 값을 넘어야 계산합니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  visibility_min_foot_distance: {
+    key: "visibility_min_foot_distance",
+    label: "발 앞뒤 거리를 잴 최소 신뢰도",
+    value: 0.35,
+    unit: "ratio",
+    appliesTo: "tracking",
+    source: "몸 앞 착지 거리는 각도가 아니라 길이라서 같은 흔들림이 결과를 덜 움직입니다. 그래서 각도보다 너그럽습니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  visibility_min_anchor: {
+    key: "visibility_min_anchor",
+    label: "기준점으로 쓸 최소 신뢰도",
+    value: 0.3,
+    unit: "ratio",
+    appliesTo: "tracking",
+    source: "코와 어깨처럼 위치만 쓰고 각도를 내지 않는 랜드마크입니다. 배율을 만들 때와 얼굴 가리기 자리를 잡을 때 씁니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  visibility_min_foot_height: {
+    key: "visibility_min_foot_height",
+    label: "발 높이 신호에 쓸 최소 신뢰도",
+    value: 0.25,
+    unit: "ratio",
+    appliesTo: "tracking",
+    source: "접지를 찾는 신호는 발이 얼마나 낮은지만 보므로 대략적인 위치로 충분하고, 이 파일에서 가장 낮습니다. 여기서 엄격하게 굴면 프레임을 버리게 되는데 버려진 프레임은 놓친 접지입니다.",
+    validationStatus: "internal",
+    note: "발꿈치와 발목 중 이 값을 넘는 것들의 가장 낮은 점을 씁니다.",
+  },
+  min_measurable_segment_px: {
+    key: "min_measurable_segment_px",
+    label: "각도를 낼 최소 신체 분절 길이",
+    value: 4,
+    unit: "px",
+    appliesTo: "tracking",
+    source: "화면에서 이보다 짧은 분절로는 각도를 내지 않습니다. 발이 카메라를 정면으로 향하면 이미지 위에서 길이가 사라지고 방향도 사라지는데, 몇 픽셀 아래에서는 부호가 잡음이고 부호 하나가 뒤집히면 읽기 전체가 뒤집힙니다. 넓적다리·정강이·엉덩이~발목 간격에도 같은 값을 씁니다.",
+    validationStatus: "internal",
+    note: "정면 골반 폭의 24px 과 같은 종류의 가드이고, 값은 더 작습니다 — 골반 폭은 잡음이면 각도가 난수가 되지만 이쪽은 계산 자체가 성립하지 않는 선입니다.",
   },
 };

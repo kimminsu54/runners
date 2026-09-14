@@ -502,7 +502,7 @@ function measureSubject(
     if (!lm) continue;
     const nose = lm[LM.nose];
     const heel = mid(lm[LM.leftHeel], lm[LM.rightHeel]) ?? mid(lm[LM.leftAnkle], lm[LM.rightAnkle]);
-    if (!isVisible(nose, 0.3) || !heel) continue;
+    if (!isVisible(nose, threshold("visibility_min_anchor")) || !heel) continue;
     const px = distPx(nose, heel, width, height);
     if (px > 20) {
       const staturePx = px / threshold("stature_from_nose_heel");
@@ -1376,13 +1376,13 @@ function footStrikeAngleDeg(
   width: number,
   height: number,
 ): number {
-  if (!heel || !toe || !isVisible(heel, 0.45) || !isVisible(toe, 0.45)) {
+  if (!heel || !toe || !isVisible(heel, threshold("visibility_min_strike_angle")) || !isVisible(toe, threshold("visibility_min_strike_angle"))) {
     return Number.NaN;
   }
   const dx = (toe.x - heel.x) * width;
   const dy = (toe.y - heel.y) * height;
   const length = Math.hypot(dx, dy);
-  if (length < 4) return Number.NaN;
+  if (length < threshold("min_measurable_segment_px")) return Number.NaN;
   // Image y grows down. Positive means the forefoot is below the heel, which
   // indicates a forefoot-first contact; negative means heel-first.
   return (Math.asin(clamp(dy / length, -1, 1)) * 180) / Math.PI;
@@ -1412,8 +1412,8 @@ function footAheadOfHip(
   width: number,
   metersPerPixel: number,
 ): number {
-  if (!isVisible(heel, 0.35) || !isVisible(toe, 0.35)) return Number.NaN;
-  const point = isVisible(ankle, 0.35) ? ankle : heel;
+  if (!isVisible(heel, threshold("visibility_min_foot_distance")) || !isVisible(toe, threshold("visibility_min_foot_distance"))) return Number.NaN;
+  const point = isVisible(ankle, threshold("visibility_min_foot_distance")) ? ankle : heel;
   if (!point || !heel || !toe) return Number.NaN;
   const footLengthPx = (toe.x - heel.x) * width;
   // A foot seen end-on has no length in the image and so no direction. Below a
@@ -1430,7 +1430,7 @@ function footAbsolute(
   metersPerPixel: number,
 ): number {
   const candidates = [heel, ankle].filter(
-    (p): p is Landmark => Boolean(p) && isVisible(p, 0.25),
+    (p): p is Landmark => Boolean(p) && isVisible(p, threshold("visibility_min_foot_height")),
   );
   if (!candidates.length) return Number.NaN;
   return Math.max(...candidates.map((p) => p.y)) * height * metersPerPixel;
@@ -1444,7 +1444,7 @@ function footDropFromHip(
   metersPerPixel: number,
 ): number {
   const candidates = [heel, ankle].filter(
-    (p): p is Landmark => Boolean(p) && isVisible(p, 0.25),
+    (p): p is Landmark => Boolean(p) && isVisible(p, threshold("visibility_min_foot_height")),
   );
   if (!candidates.length) return Number.NaN;
   // Measure how far the foot sits below the hip rather than where it sits in

@@ -1,3 +1,5 @@
+import { threshold } from "@/lib/thresholds";
+
 export type Landmark = {
   x: number;
   y: number;
@@ -120,7 +122,7 @@ export function distPx(
   return Math.hypot(dx, dy);
 }
 
-export function isVisible(lm: Landmark | undefined, min = 0.45): boolean {
+export function isVisible(lm: Landmark | undefined, min = threshold("visibility_min_strike_angle")): boolean {
   if (!lm) return false;
   if (lm.visibility === undefined) return true;
   return lm.visibility >= min;
@@ -163,7 +165,7 @@ export function pelvisWidthPx(
   rightHip: Landmark | undefined,
   width: number,
 ): number {
-  if (!isVisible(leftHip, 0.4) || !isVisible(rightHip, 0.4)) return Number.NaN;
+  if (!isVisible(leftHip, threshold("visibility_min_frontal_angle")) || !isVisible(rightHip, threshold("visibility_min_frontal_angle"))) return Number.NaN;
   return (leftHip!.x - rightHip!.x) * width;
 }
 
@@ -195,7 +197,7 @@ export function frontalKneeValgusDeg(
   if (!Number.isFinite(pelvisPx) || Math.abs(pelvisPx) < minPelvisPx) {
     return Number.NaN;
   }
-  if (!isVisible(knee, 0.4) || !isVisible(ankle, 0.4)) return Number.NaN;
+  if (!isVisible(knee, threshold("visibility_min_frontal_angle")) || !isVisible(ankle, threshold("visibility_min_frontal_angle"))) return Number.NaN;
 
   const hip = side === "left" ? leftHip! : rightHip!;
   // Toward the other hip, in image x.
@@ -205,7 +207,8 @@ export function frontalKneeValgusDeg(
   const shank = sub(ankle!, knee!, width, height);
   const thighLen = Math.hypot(thigh.x, thigh.y);
   const shankLen = Math.hypot(shank.x, shank.y);
-  if (thighLen < 4 || shankLen < 4) return Number.NaN;
+  const minSegment = threshold("min_measurable_segment_px");
+  if (thighLen < minSegment || shankLen < minSegment) return Number.NaN;
   const cos = Math.min(
     1,
     Math.max(-1, (thigh.x * shank.x + thigh.y * shank.y) / (thighLen * shankLen)),
@@ -215,7 +218,7 @@ export function frontalKneeValgusDeg(
   // Which side of the hip–ankle line the knee sits on, measured at the knee's
   // own height so a bent leg is not mistaken for a displaced one.
   const legDy = (ankle!.y - hip.y) * height;
-  if (Math.abs(legDy) < 4) return Number.NaN;
+  if (Math.abs(legDy) < minSegment) return Number.NaN;
   const along = ((knee!.y - hip.y) * height) / legDy;
   const lineX = hip.x * width + along * (ankle!.x - hip.x) * width;
   const offset = knee!.x * width - lineX;

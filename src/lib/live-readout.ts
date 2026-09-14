@@ -112,8 +112,8 @@ export function trunkLeanDeg(landmarks: Landmark[] | null | undefined): number {
   if (
     !shoulder ||
     !hip ||
-    !isVisible(landmarks[LM.leftShoulder], 0.3) ||
-    !isVisible(landmarks[LM.rightShoulder], 0.3)
+    !isVisible(landmarks[LM.leftShoulder], threshold("visibility_min_anchor")) ||
+    !isVisible(landmarks[LM.rightShoulder], threshold("visibility_min_anchor"))
   ) {
     return Number.NaN;
   }
