@@ -49,3 +49,12 @@ __pycache__/
 tools/sports2d/.venv/
 tools/sports2d/clips/
 tools/sports2d/out/
+
+# The larger MediaPipe pose models, fetched for the model comparison rather
+# than shipped. lite is tracked because the app loads it; full (9.4 MB) and
+# heavy (30.7 MB) are measurement inputs and 40 MB of binary nobody has
+# decided to adopt yet. tools/sports2d/README.md says how to fetch them, and
+# docs/6단계-타당성.md has what they showed. If full is adopted, take it out of
+# here — it has to ship for the app to load it.
+public/models/pose_landmarker_full.task
+public/models/pose_landmarker_heavy.task

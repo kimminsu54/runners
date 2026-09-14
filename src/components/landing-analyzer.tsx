@@ -41,6 +41,7 @@ import {
   seekVideo,
   SUBJECT_CANDIDATES,
   waitMetadata,
+  type PoseModel,
 } from "@/lib/pose-engine";
 import {
   syntheticFrontRunFrames,
@@ -725,6 +726,88 @@ export function LandingAnalyzer() {
     };
     return () => {
       delete target.__strideLabResolutionProbe;
+    };
+  }, [statureCm, massKg]);
+
+  /**
+   * Run the pass on each MediaPipe pose model at once, development only.
+   *
+   * The app ships `lite`, and the Sports2D design note says plainly that it is
+   * the least accurate of the three the estimator offers. The app's remaining
+   * defect is a foot signal: on the treadmill clip it splits one contact into
+   * two, reads stance at half its length and force 48% high, and 3단계 closed
+   * seven routes to repairing that before concluding a better signal was
+   * needed. The answer reached for was a different estimator entirely —
+   * RTMPose, 56 MB, minutes of phone time. Trying `full` and `heavy` first
+   * costs a file swap.
+   *
+   * Same frame for every model, because runs of one clip on this machine
+   * differ by more than the thing being compared. Each model carries its own
+   * subject chain, since `pickSubject` depends on what the last frame found.
+   */
+  useEffect(() => {
+    if (!OFFER_TRC_IMPORT) return;
+    const target = window as unknown as { __strideLabModelProbe?: unknown };
+    target.__strideLabModelProbe = async (models: PoseModel[] = ["lite", "full", "heavy"]) => {
+      const video = videoRef.current;
+      if (!video) throw new Error("재 볼 영상이 없습니다");
+      await waitMetadata(video);
+      const duration = Math.min(video.duration || 0, MAX_SECONDS);
+      const sampleFps = Math.min(MAX_FPS, Math.max(MIN_FPS, FRAME_BUDGET / duration));
+      const n = Math.min(Math.round(duration * sampleFps), FRAME_BUDGET);
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 360;
+      const lanes = await Promise.all(
+        models.map(async (model) => ({
+          model,
+          landmarker: await createProbeLandmarker(SUBJECT_CANDIDATES, model),
+          frames: [] as PoseFrame[],
+          subject: null as Landmark[] | null,
+          detectMs: 0,
+        })),
+      );
+      try {
+        for (let i = 0; i < n; i++) {
+          await seekVideo(video, (i / Math.max(1, n - 1)) * duration);
+          for (const lane of lanes) {
+            const started = performance.now();
+            const det = lane.landmarker.detect(video);
+            lane.detectMs += performance.now() - started;
+            lane.subject = pickSubject(det.landmarks, lane.subject);
+            lane.frames.push({ t: (i / Math.max(1, n - 1)) * duration, landmarks: lane.subject });
+          }
+          if (i % 10 === 0) setProgress(Math.round(((i + 1) / n) * 100));
+        }
+        const median = (xs: number[]) => {
+          const v = xs.filter(Number.isFinite).sort((a, b) => a - b);
+          return v.length ? v[Math.floor(v.length / 2)] : Number.NaN;
+        };
+        return lanes.map((lane) => {
+          const { result } = analyzeLandingsAuto(lane.frames, {
+            statureM: statureCm / 100,
+            massKg,
+            width: vw,
+            height: vh,
+          });
+          return {
+            model: lane.model,
+            detectMsPerFrame: lane.detectMs / Math.max(1, n),
+            tracked: lane.frames.filter((frame) => frame.landmarks).length,
+            frames: lane.frames.length,
+            landings: result.landings.length,
+            contactMs: median(result.landings.map((landing) => landing.contactMs)),
+            peakGrfBw: median(result.landings.map((landing) => landing.peakGrfBw)),
+            cadenceSpm: cadenceSpm(result.landings),
+            quality: result.quality.level,
+          };
+        });
+      } finally {
+        for (const lane of lanes) lane.landmarker.close();
+        setProgress(0);
+      }
+    };
+    return () => {
+      delete target.__strideLabModelProbe;
     };
   }, [statureCm, massKg]);
 

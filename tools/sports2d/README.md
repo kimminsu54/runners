@@ -46,6 +46,7 @@
 | `numposes-probe.py` | `numPoses` 1과 3을 **같은 프레임에** 물어 비교. 실행끼리 비교하면 기계 드리프트가 효과보다 커서 부호가 뒤집힘 |
 | `frame-source-probe.py` | 프레임을 **탐색으로 얻을 때와 순차 재생으로 받을 때**의 비용. 받은 장수를 함께 세므로 배속을 올려 흘리는 것이 보임 |
 | `resolution-probe.py` | **입력 해상도를 줄이면 리포트가 어떻게 달라지는지.** 같은 프레임을 여러 크기로 추론하므로 크기 사이에 드리프트가 없음 |
+| `model-probe.py` | **MediaPipe lite · full · heavy 를 같은 프레임에** 물어 리포트를 비교. 큰 모델 파일이 필요(아래) |
 | `overstride-denominator.py` | 오버스트라이딩 분모 후보(신장 vs 다리 길이)의 **가용성과 안정성**. 덤프만 읽으므로 브라우저 불필요 |
 | `local-scale.ts` | 미터 스케일에 걸린 값들 — 하강 속도·낙하 높이·몸 앞 거리. 프레임마다 피사체 크기를 맞춘 판과 비교 |
 | `repeat-frames.ts` | 자세 스트림의 중복 표본 — 어디서 오는지, 접지 검출과 불확실성 수치에 영향이 있는지 |
@@ -349,3 +350,18 @@ STRIDELAB_CDP=9224 STRIDELAB_CPU=4 python tools/sports2d/dump-browser.py 06
 쓰는지 답합니다.
 
 측정 결과는 `docs/6단계-타당성.md` 의 "폰에서 재 봤습니다" 절에 있습니다.
+
+## 큰 자세 모델 받기
+
+`model-probe.py` 는 `public/models/` 에 세 파일을 기대합니다. `lite` 만 저장소에 있고
+나머지 둘은 크기 때문에 받아서 씁니다.
+
+```bash
+cd public/models
+for m in full heavy; do
+  curl -L -o pose_landmarker_$m.task     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_$m/float16/1/pose_landmarker_$m.task"
+done
+```
+
+`full` 9.4 MB · `heavy` 30.7 MB 입니다. 무엇이 나왔는지는
+`docs/6단계-타당성.md` 의 마지막 절에 있습니다.

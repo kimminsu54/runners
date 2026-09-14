@@ -31,14 +31,33 @@ export async function getPoseLandmarker(): Promise<PoseLandmarker> {
 // ~210 ms, 123 ms of it here, that is 2-6%.
 export const SUBJECT_CANDIDATES = 3;
 
+/**
+ * The three MediaPipe pose models, smallest first.
+ *
+ * The app ships `lite`, which the Sports2D design note calls the least
+ * accurate of the three. Which of them is loaded is otherwise invisible, so
+ * the names live here rather than as a path spelled into a call.
+ */
+export const POSE_MODELS = {
+  lite: "/models/pose_landmarker_lite.task",
+  full: "/models/pose_landmarker_full.task",
+  heavy: "/models/pose_landmarker_heavy.task",
+} as const;
+
+export type PoseModel = keyof typeof POSE_MODELS;
+
+/** What the app runs. */
+export const SHIPPED_MODEL: PoseModel = "lite";
+
 async function createLandmarker(
   numPoses: number = SUBJECT_CANDIDATES,
+  model: PoseModel = SHIPPED_MODEL,
 ): Promise<PoseLandmarker> {
   const vision = await import("@mediapipe/tasks-vision");
   const files = await vision.FilesetResolver.forVisionTasks("/mediapipe");
   return vision.PoseLandmarker.createFromOptions(files, {
     baseOptions: {
-      modelAssetPath: "/models/pose_landmarker_lite.task",
+      modelAssetPath: POSE_MODELS[model],
       delegate: "CPU",
     },
     runningMode: "IMAGE",
@@ -61,8 +80,11 @@ async function createLandmarker(
  * Kept out of the cache so an experiment cannot leave the app holding an
  * estimator configured for it. The caller closes what it opens.
  */
-export function createProbeLandmarker(numPoses: number): Promise<PoseLandmarker> {
-  return createLandmarker(numPoses);
+export function createProbeLandmarker(
+  numPoses: number,
+  model: PoseModel = SHIPPED_MODEL,
+): Promise<PoseLandmarker> {
+  return createLandmarker(numPoses, model);
 }
 
 export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
