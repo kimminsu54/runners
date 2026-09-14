@@ -5,7 +5,7 @@ import {
   type FootSide,
   type Landing,
   type PoseFrame,
-} from "@/lib/landing-analysis";
+  isRigidLanding,} from "@/lib/landing-analysis";
 import { isVisible, LM, mid, type Landmark } from "@/lib/pose";
 
 export type GaitPhase = "stance" | "flight" | "air" | "unknown";
@@ -248,11 +248,7 @@ function postureCues(input: {
       detail:
         "착지 뒤 자세가 낮아진 구간입니다. 흡수일 수도, 힘이 빠진 패턴일 수도 있어 같은 코스에서 비교해 보세요.",
     });
-  } else if (
-    landing &&
-    landing.kneeFlexContact < 18 &&
-    landing.kneeFlexPeak - landing.kneeFlexContact < 10
-  ) {
+  } else if (landing && isRigidLanding(landing)) {
     cues.push({
       level: "watch",
       title: "이 착지는 굽힘이 작은 편이었습니다",

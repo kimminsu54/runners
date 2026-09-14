@@ -1,6 +1,9 @@
 import { summarizeFootStrikes } from "@/lib/Footstrike";
+
 import {
   cadenceSpm,
+  isHighImpact,
+  isStiffLanding,
   footStrikeLabel,
   formatSeconds,
   formatTimingMs,
@@ -276,14 +279,12 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   );
   const peakLandingIndex = landings.indexOf(peak);
 
-  const stiffCount = landings.filter(
-    (l) =>
-      l.kneeFlexContact < 18 ||
-      l.kneeFlexPeak - l.kneeFlexContact < 10,
-  ).length;
-  const highImpactCount = landings.filter(
-    (l) => l.peakGrfBw >= 3 || l.loadingRateBwS >= 55,
-  ).length;
+  // The same two tests the per-landing guidance applies, imported rather than
+  // repeated: this card counts the landings that module would describe, and
+  // when the boundaries lived as literals in both files an edit to one left
+  // the summary and the guidance disagreeing about the same landing.
+  const stiffCount = landings.filter(isStiffLanding).length;
+  const highImpactCount = landings.filter(isHighImpact).length;
   const cautionCount = landings.filter(
     (l) => l.risk === "elevated" || l.risk === "high" || l.risk === "severe",
   ).length;

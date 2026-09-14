@@ -338,6 +338,54 @@ console.log(
   ),
 );
 
+// The summary card counts the landings the per-landing guidance describes, so
+// the two must agree about which landings those are. They used to hold
+// separate copies of the same boundaries as literals, which is the shape of
+// bug this project has hit before with the shoe catalogue: two sources that
+// look identical until one is edited. They share the predicate now, and this
+// checks the agreement through the two public surfaces rather than trusting
+// that the sharing stays.
+{
+  const run = analyzeSyntheticSideRun();
+  const landings = run.landings;
+  const stiff = landings.filter((landing) =>
+    buildLandingGuidance(landing).patterns.some((pattern) =>
+      pattern.title.includes("충격 흡수 여유"),
+    ),
+  ).length;
+  const heavy = landings.filter((landing) =>
+    buildLandingGuidance(landing).patterns.some((pattern) =>
+      pattern.title.includes("반복 충격 부담"),
+    ),
+  ).length;
+  const text = JSON.stringify(buildSessionSummary(run));
+  // Both directions, because this fixture finds every landing stiff and none
+  // heavy, so checking only the positive case would leave the heavy branch
+  // untested — and an accidental literal there is exactly what this guards.
+  const expect = (count: number, phrase: string) => {
+    const share = Math.round((count / landings.length) * 100);
+    const present = text.includes(`착지의 ${share}%는 ${phrase}`);
+    const mentioned = text.includes(phrase);
+    if (count && !present) {
+      throw new Error(
+        `summary and guidance disagree: guidance found ${count}/${landings.length} (${share}%) of "${phrase}"`,
+      );
+    }
+    if (!count && mentioned) {
+      throw new Error(
+        `summary reports "${phrase}" while the guidance finds none of it`,
+      );
+    }
+  };
+  expect(stiff, "착지 뒤 무릎 굽힘이 작은 패턴");
+  expect(heavy, "비교적 큰 충격·부하율");
+  console.log("summary agrees with guidance", {
+    착지: landings.length,
+    무릎: stiff,
+    충격: heavy,
+  });
+}
+
 const SLOW_GAIT = { contactS: 0.31, flightS: 0.05 };
 const FAST_GAIT = { contactS: 0.13, flightS: 0.14 };
 const slow = buildSessionSummary(analyzeSyntheticRun(SLOW_GAIT));

@@ -1,4 +1,8 @@
-import type { Landing } from "@/lib/landing-analysis";
+import {
+  isHighImpact,
+  isStiffLanding,
+  type Landing,
+} from "@/lib/landing-analysis";
 import { isPublishable, threshold } from "@/lib/thresholds";
 
 /**
@@ -37,16 +41,8 @@ export type LandingGuidance = {
 export function buildLandingGuidance(landing: Landing): LandingGuidance {
   const patterns: LoadPattern[] = [];
   const training: TrainingAdvice[] = [];
-  const kneeExcursion = Math.max(
-    0,
-    landing.kneeFlexPeak - landing.kneeFlexContact,
-  );
-  const highImpact = landing.peakGrfBw >= threshold("guidance_high_impact_bw") ||
-    landing.loadingRateBwS >= threshold("guidance_high_impact_rate_bw_s");
-  // A short contact is a symptom of speed, not of a bad landing, so judge
-  // stiffness from how much the knee actually gives way.
-  const stiffLanding = landing.kneeFlexContact < threshold("guidance_stiff_knee_contact_deg") ||
-    kneeExcursion < threshold("guidance_stiff_knee_excursion_deg");
+  const highImpact = isHighImpact(landing);
+  const stiffLanding = isStiffLanding(landing);
 
   if (highImpact) {
     patterns.push({

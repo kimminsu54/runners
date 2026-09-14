@@ -382,9 +382,60 @@ function damageScore(input: {
   return landingLoadScore(input);
 }
 
+/**
+ * The two load patterns, as predicates, because three parts of the report ask
+ * about the same landings.
+ *
+ * They were written out twice — once here and once in session-summary.ts —
+ * with the boundaries spelled as literals in both. Moving the boundaries into
+ * shared/thresholds.yaml fixed only this copy and so would have made the
+ * summary card and the injury guidance disagree the first time one was edited.
+ * Sharing the predicate keeps the shape of the test single too, not just the
+ * numbers in it.
+ */
+export function isHighImpact(landing: Landing): boolean {
+  return (
+    landing.peakGrfBw >= threshold("guidance_high_impact_bw") ||
+    landing.loadingRateBwS >= threshold("guidance_high_impact_rate_bw_s")
+  );
+}
+
+/**
+ * A short contact is a symptom of speed, not of a bad landing, so stiffness is
+ * judged from how much the knee actually gives way.
+ */
+export function isStiffLanding(landing: Landing): boolean {
+  const excursion = Math.max(0, landing.kneeFlexPeak - landing.kneeFlexContact);
+  return (
+    landing.kneeFlexContact < threshold("guidance_stiff_knee_contact_deg") ||
+    excursion < threshold("guidance_stiff_knee_excursion_deg")
+  );
+}
+
+/**
+ * The stricter reading of a stiff landing: both signs at once, not either.
+ *
+ * Two definitions exist and that is deliberate, but until now they were two
+ * copies of the same pair of numbers with a different operator between them —
+ * `||` where the guidance and the summary count patterns, `&&` here and in the
+ * live cue, where the sentence is a flat statement about one landing ("받은
+ * 무릎이 거의 펴져 있었다"). A stronger claim earns a stricter test. Naming
+ * both is what keeps that a decision rather than a discrepancy, and routes
+ * them through one set of boundaries.
+ */
+export function isRigidLanding(
+  landing: Pick<Landing, "kneeFlexContact" | "kneeFlexPeak">,
+): boolean {
+  const excursion = Math.max(0, landing.kneeFlexPeak - landing.kneeFlexContact);
+  return (
+    landing.kneeFlexContact < threshold("guidance_stiff_knee_contact_deg") &&
+    excursion < threshold("guidance_stiff_knee_excursion_deg")
+  );
+}
+
 function landingNote(l: Omit<Landing, "note" | "index">): string {
   const bits: string[] = [];
-  if (l.kneeFlexContact < 18 && l.kneeFlexPeak - l.kneeFlexContact < 10) {
+  if (isRigidLanding(l)) {
     bits.push("무릎을 거의 편 채로 받아 뻣뻣한 착지로 보입니다.");
   } else if (l.kneeFlexPeak - l.kneeFlexContact > 25) {
     bits.push("착지 후 무릎을 굽혀 충격을 나눠 받은 편입니다.");
@@ -400,7 +451,7 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
   // 100 points, so a sub-2 BW landing can still score past the "walking pace"
   // band. Describe the rate here instead — it is the part of the score the
   // card would otherwise leave unexplained.
-  if (l.loadingRateBwS >= 55) {
+  if (l.loadingRateBwS >= threshold("guidance_high_impact_rate_bw_s")) {
     bits.push(
       `힘이 실리는 속도가 ${formatLoadingRateBwS(l.loadingRateBwS)}로 빠른 편입니다.`,
     );
