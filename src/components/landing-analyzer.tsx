@@ -547,7 +547,7 @@ export function LandingAnalyzer() {
   useEffect(() => {
     if (!OFFER_TRC_IMPORT) return;
     const target = window as unknown as { __strideLabFrameProbe?: unknown };
-    target.__strideLabFrameProbe = async (want = 120, rate = 1) => {
+    target.__strideLabFrameProbe = async (want = 120, rate = 1, chunk = 0) => {
       const video = videoRef.current;
       if (!video) throw new Error("재 볼 영상이 없습니다");
       await waitMetadata(video);
@@ -572,12 +572,30 @@ export function LandingAnalyzer() {
       await seekVideo(video, 0);
       let captured = 0;
       const playing = performance.now();
+      // Chunked capture is the version that needs no new dependency: play a
+      // burst, stop, read what was caught, play on. Inference is not run here
+      // because it costs the same whichever way frames arrive — what is being
+      // measured is only what stopping and restarting costs, against the 360
+      // separate seeks it would replace.
       await new Promise<void>((resolve) => {
+        let sincePause = 0;
         const step = () => {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           captured += 1;
+          sincePause += 1;
           if (captured >= want || video.currentTime >= duration - 0.01) {
             resolve();
+            return;
+          }
+          if (chunk > 0 && sincePause >= chunk) {
+            sincePause = 0;
+            video.pause();
+            // A task, not a microtask: resuming from inside the frame callback
+            // would not exercise the stop at all.
+            setTimeout(() => {
+              video.requestVideoFrameCallback(step);
+              void video.play();
+            }, 0);
             return;
           }
           video.requestVideoFrameCallback(step);
@@ -594,6 +612,7 @@ export function LandingAnalyzer() {
       return {
         wanted: want,
         rate,
+        chunk,
         seek: { ms: seekMs, perFrame: seekMs / want },
         play: { ms: playMs, captured, perFrame: playMs / Math.max(1, captured) },
       };

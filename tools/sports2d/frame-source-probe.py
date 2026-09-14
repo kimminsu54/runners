@@ -42,6 +42,7 @@ def main(argv: list[str]) -> int:
     run_id = argv[0]
     frames = int(argv[1]) if len(argv) > 1 else 120
     rate = float(argv[2]) if len(argv) > 2 else 1.0
+    chunk = int(argv[3]) if len(argv) > 3 else 0
 
     with (HERE / "clips.csv").open(encoding="utf-8-sig", newline="") as handle:
         row = next((r for r in csv.DictReader(handle) if r.get("id") == run_id), None)
@@ -97,16 +98,17 @@ def main(argv: list[str]) -> int:
     if throttle > 1:
         send("Emulation.setCPUThrottlingRate", rate=throttle)
 
-    out = js(f"window.__strideLabFrameProbe?.({frames}, {rate})")
+    out = js(f"window.__strideLabFrameProbe?.({frames}, {rate}, {chunk})")
     if not out:
         print("프로브가 없습니다 — 개발 서버인지 확인하세요")
         return 1
 
     seek, play = out["seek"], out["play"]
     cpu = f" · CPU {throttle:g}x 스로틀" if throttle > 1 else ""
+    how = " · 연속" if not out.get("chunk") else f" · {out['chunk']}프레임씩 끊어서"
     print(
         f"[{run_id}] {row.get('label', '')} · {out['wanted']}프레임 요청"
-        f" · {out['rate']:g}배속{cpu}"
+        f" · {out['rate']:g}배속{cpu}{how}"
     )
     print(f"  탐색      {seek['perFrame']:6.1f}ms/프레임 · 합계 {seek['ms'] / 1000:5.1f}초")
     print(
