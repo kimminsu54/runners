@@ -109,7 +109,8 @@ const clips = readFileSync(join(HERE, "clips.csv"), "utf8").split(/\r?\n/).slice
 const pct = (v: number) => (Number.isFinite(v) ? `${(v * 100).toFixed(0)}%` : "—");
 
 console.log(
-  "클립  조건                화면몫       하강속도 m/s 중앙(10~90)  경고/high        등가 낙하 cm",
+  "클립  조건               화면몫      하강속도 m/s 중앙(10~90) 경고/high" +
+    "         등가 낙하 cm   몸앞 퍼짐    낙하 퍼짐",
 );
 for (const line of clips) {
   if (!line.trim()) continue;
@@ -141,14 +142,21 @@ for (const line of clips) {
     const hi = v[Math.floor(v.length * 0.9)];
     return `${median(v).toFixed(1)} (${lo.toFixed(1)}~${hi.toFixed(1)})`;
   };
+  const ahead = (r: typeof before) => r.landings.map((l) => l.footAheadRatio);
   console.log(
     `${id.padEnd(5)} ${label.slice(0, 18).padEnd(19)}` +
       ` ${pct(sizeShare).padStart(5)}` +
-      ` ${band(vel(before)).padStart(20)}` +
+      ` ${band(vel(before)).padStart(19)}` +
       ` ${String(trips(vel(before), 1.8)).padStart(3)}/${String(trips(vel(before), 2.6)).padEnd(3)}` +
-      ` ${band(drop(before)).padStart(20)}`,
+      ` ${band(drop(before)).padStart(19)}` +
+      // The same clip with every frame rescaled to one subject size, which is
+      // what making the metre scale local would achieve.
+      ` ${pct(spread(ahead(before))).padStart(5)}→${pct(spread(ahead(after))).padStart(5)}` +
+      ` ${pct(spread(drop(before))).padStart(6)}→${pct(spread(drop(after))).padStart(6)}`,
   );
 }
 console.log();
 console.log("화면몫 = 러너의 키가 화면 높이에서 차지하는 비율");
 console.log("경고/high = injury-guidance 의 1.8 m/s 와 2.6 m/s 를 넘은 착지 수");
+console.log("퍼짐 = 착지들 사이의 10~90 폭 ÷ 중앙값. 화살표 왼쪽이 지금,");
+console.log("       오른쪽이 프레임마다 피사체 크기를 맞춘 것 — 스케일을 국소화했을 때의 상한");
