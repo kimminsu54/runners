@@ -22,6 +22,7 @@ import { buildHudFrame } from "@/lib/hud-frame";
 import {
   analyzeLandings,
   analyzeLandingsAuto,
+  cadenceSpm,
   formatSeconds,
   type AnalysisResult,
   type PoseFrame,
@@ -601,6 +602,112 @@ export function LandingAnalyzer() {
       delete target.__strideLabFrameProbe;
     };
   }, []);
+
+  /**
+   * Run the pass at several input resolutions at once, development only.
+   *
+   * Taking frames from playback instead of seeking is worth 3.3x on a slow
+   * device, but it means holding frames to read afterwards, and 360 of them is
+   * a gigabyte at native size. Shrinking them is the only way that fits, and
+   * shrinking is exactly what this analysis cannot afford carelessly: MediaPipe
+   * finds the person in the whole frame and then reads landmarks from a crop
+   * taken at full resolution, so handing it something already reduced moves
+   * that crop onto a blurred picture. 3단계 concluded the app's problem is the
+   * foot signal; trading more of it for speed would be going backwards.
+   *
+   * So the gate is accuracy, not time, and the comparison has to be per size
+   * on identical input. The frame is sought once and every size reads that
+   * same frame, because runs of the same clip on this machine differ by more
+   * than the effect being looked for. Each size carries its own subject chain,
+   * since `pickSubject` depends on what the previous frame found.
+   *
+   * Size 0 means the video element itself — what the app does today.
+   */
+  useEffect(() => {
+    if (!OFFER_TRC_IMPORT) return;
+    const target = window as unknown as { __strideLabResolutionProbe?: unknown };
+    target.__strideLabResolutionProbe = async (sizes: number[] = [0, 512, 384, 256]) => {
+      const video = videoRef.current;
+      if (!video) throw new Error("재 볼 영상이 없습니다");
+      await waitMetadata(video);
+      const duration = Math.min(video.duration || 0, MAX_SECONDS);
+      const landmarker = await getPoseLandmarker();
+      const sampleFps = Math.min(MAX_FPS, Math.max(MIN_FPS, FRAME_BUDGET / duration));
+      const n = Math.min(Math.round(duration * sampleFps), FRAME_BUDGET);
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 360;
+
+      // Aspect ratio is kept, so a landmark's normalised coordinates mean the
+      // same thing at every size and the analysis can be given the clip's own
+      // dimensions throughout. Letterboxing instead would move every point.
+      const lanes = sizes.map((size) => {
+        const scale = size > 0 ? size / Math.max(vw, vh) : 1;
+        let canvas: HTMLCanvasElement | null = null;
+        let ctx: CanvasRenderingContext2D | null = null;
+        if (size > 0) {
+          canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(vw * scale));
+          canvas.height = Math.max(1, Math.round(vh * scale));
+          ctx = canvas.getContext("2d");
+        }
+        return {
+          size,
+          canvas,
+          ctx,
+          w: canvas?.width ?? vw,
+          h: canvas?.height ?? vh,
+          frames: [] as PoseFrame[],
+          subject: null as Landmark[] | null,
+          detectMs: 0,
+        };
+      });
+
+      for (let i = 0; i < n; i++) {
+        const t = (i / Math.max(1, n - 1)) * duration;
+        await seekVideo(video, t);
+        for (const lane of lanes) {
+          if (lane.ctx && lane.canvas) {
+            lane.ctx.drawImage(video, 0, 0, lane.canvas.width, lane.canvas.height);
+          }
+          const started = performance.now();
+          const det = landmarker.detect(lane.canvas ?? video);
+          lane.detectMs += performance.now() - started;
+          lane.subject = pickSubject(det.landmarks, lane.subject);
+          lane.frames.push({ t, landmarks: lane.subject });
+        }
+      }
+
+      const median = (xs: number[]) => {
+        const v = xs.filter(Number.isFinite).sort((a, b) => a - b);
+        return v.length ? v[Math.floor(v.length / 2)] : Number.NaN;
+      };
+      return lanes.map((lane) => {
+        const { result } = analyzeLandingsAuto(lane.frames, {
+          statureM: statureCm / 100,
+          massKg,
+          width: vw,
+          height: vh,
+        });
+        const landings = result.landings;
+        return {
+          size: lane.size,
+          input: `${lane.w}x${lane.h}`,
+          tracked: lane.frames.filter((frame) => frame.landmarks).length,
+          frames: lane.frames.length,
+          detectMsPerFrame: lane.detectMs / Math.max(1, n),
+          landings: landings.length,
+          contactMs: median(landings.map((landing) => landing.contactMs)),
+          peakGrfBw: median(landings.map((landing) => landing.peakGrfBw)),
+          cadenceSpm: cadenceSpm(landings),
+          quality: result.quality.level,
+          cameraView: result.cameraView,
+        };
+      });
+    };
+    return () => {
+      delete target.__strideLabResolutionProbe;
+    };
+  }, [statureCm, massKg]);
 
   // Ask the dev server what offline runs exist, once.
   useEffect(() => {
