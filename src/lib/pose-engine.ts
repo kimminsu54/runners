@@ -28,7 +28,7 @@ export async function getPoseLandmarker(): Promise<PoseLandmarker> {
 // frames, three bodies cost 5-13 ms per frame on the crowded clip and nothing
 // measurable on a clip with one runner, because the estimator returns 1.27
 // bodies on the first and 0.98 on the second. Against a frame that spends
-// ~250 ms, most of it seeking, that is 2-5%.
+// ~210 ms, 123 ms of it here, that is 2-6%.
 export const SUBJECT_CANDIDATES = 3;
 
 async function createLandmarker(

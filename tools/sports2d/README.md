@@ -17,7 +17,7 @@
 | 도구 | 하는 일 |
 |---|---|
 | `run.py` | `clips.csv` 의 클립을 Sports2D로 처리. 곁다리 출력은 기본 끔(`--full` 로 켬) |
-| `dump-browser.py` | 클립 하나를 브라우저에서 분석시켜 **MediaPipe 포즈 프레임**을 저장. 개발 서버와 CDP 필요 |
+| `dump-browser.py` | 클립 하나를 브라우저에서 분석시켜 **MediaPipe 포즈 프레임**과 프레임당 탐색·추론 시간을 저장. 개발 서버와 CDP 필요 |
 | `label-sheet.py` | 두 파이프라인이 주법을 다르게 본 착지만 골라 **눈가림 판정 시트**를 만듦 |
 
 ### 읽는 것
@@ -43,6 +43,7 @@
 | `rtmpose-reference.py` | 한 프레임의 참조 전처리·키포인트를 내보냄 (브라우저 구현 대조용) |
 | `rtmpose-browser-check.mts` | 브라우저용 RTMPose 사슬(어파인·정규화·SimCC 디코딩)을 rtmlib과 대조 — `npm install --no-save onnxruntime-web` 필요 |
 | `foot-side.ts` | 좌우 라벨을 교대 위반으로 채점 — 참값 없이 어느 파이프라인이 틀리는지 가림 |
+| `numposes-probe.py` | `numPoses` 1과 3을 **같은 프레임에** 물어 비교. 실행끼리 비교하면 기계 드리프트가 효과보다 커서 부호가 뒤집힘 |
 | `repeat-frames.ts` | 자세 스트림의 중복 표본 — 어디서 오는지, 접지 검출과 불확실성 수치에 영향이 있는지 |
 | `framerate.ts` | 실제 클립을 30 → 15 → 10 fps로 떨어뜨려 격자 민감도를 봄 |
 | `angle-split.ts` | 두 파이프라인의 각도 불일치를 원인별로 쪼갬 — 앵커(접지 프레임) 대 자세(포즈 추정) 대 좌우 오배정 |
@@ -312,3 +313,35 @@ Sports2D도 카메라 한 대의 2D 추정입니다. 원문 조건이 "촬영면
 정확도를 숫자로 주장하려면 240fps 클립의 **수동 라벨**(설계 문서 6절 2단)이
 필요합니다. `clips.csv` 의 `strike` 열은 촬영 시 의도한 주법이고 라벨이 아닙니다 —
 라벨은 착지 단위로 따로 만듭니다.
+
+
+## 시간을 잴 때 붙는 두 환경 변수
+
+`dump-browser.py` 와 `numposes-probe.py` 가 봅니다.
+
+| 변수 | 뜻 |
+|---|---|
+| `STRIDELAB_CDP` | 붙을 CDP 포트 (기본 `9223`) |
+| `STRIDELAB_CPU` | 분석 루프 직전에 거는 CPU 스로틀 배수 (기본 `1` = 끔) |
+
+**포트를 왜 고르게 해 뒀는가.** 이 하네스가 쓰던 Chrome은 `--disable-gpu` 로 떠 있어
+영상을 **소프트웨어로** 풉니다. 사용자의 브라우저는 그러지 않습니다. 탐색이 패스의 절반
+가까이를 차지하므로 이 차이가 시간 측정을 통째로 왜곡합니다 — 같은 클립이 소프트웨어
+디코드에서 103초, 하드웨어 디코드에서 **75초** 이고, 어느 쪽이 더 비싼지(탐색이냐 추론이냐)
+까지 뒤바뀝니다.
+
+분석 **결과**를 볼 때는 상관없지만 **시간**을 볼 때는 GPU를 켠 Chrome을 따로 띄우고
+`STRIDELAB_CDP` 로 그쪽을 가리키세요.
+
+```bash
+chrome --headless=new --no-sandbox --remote-debugging-port=9224        --user-data-dir=<임시 폴더> about:blank
+
+STRIDELAB_CDP=9224 python tools/sports2d/dump-browser.py 06
+STRIDELAB_CDP=9224 STRIDELAB_CPU=4 python tools/sports2d/dump-browser.py 06
+```
+
+어느 쪽에 붙었는지는 브라우저에 물어 확인할 수 있습니다 —
+`navigator.mediaCapabilities.decodingInfo` 의 `powerEfficient` 가 하드웨어 디코더를
+쓰는지 답합니다.
+
+측정 결과는 `docs/6단계-타당성.md` 의 "폰에서 재 봤습니다" 절에 있습니다.

@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -28,7 +29,11 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 HERE = Path(__file__).resolve().parent
 APP = "http://127.0.0.1:43217/"
-CDP = "http://127.0.0.1:9223"
+# The default browser for this harness runs with --disable-gpu, which decodes
+# video in software. That is not what a user's browser does, and seeking is
+# most of the pass, so STRIDELAB_CDP points at a second Chrome with the GPU
+# left on when the question is what the pass really costs.
+CDP = f"http://127.0.0.1:{os.environ.get('STRIDELAB_CDP', '9223')}"
 
 
 def main(argv: list[str]) -> int:
@@ -79,6 +84,20 @@ def main(argv: list[str]) -> int:
     send("Page.enable")
     send("Runtime.enable")
     send("DOM.enable")
+
+    # A slower machine, asked for with STRIDELAB_CPU=4. The desktop numbers
+    # cannot say whether this is usable on a phone and a phone is not always
+    # at hand, so the renderer is slowed instead. Applied after the page and
+    # the model have loaded, so the extra wall time is spent on the pass being
+    # measured rather than on a load that is not part of it.
+    #
+    # Read the two halves of the timing separately. The throttle slows seeking
+    # as much as inference - in headless Chrome the decode is in the process
+    # being throttled - whereas a phone decodes video in hardware and would
+    # not. So the throttled total is an upper bound, and holding seeking at
+    # its desktop cost gives the lower one.
+    throttle = float(os.environ.get("STRIDELAB_CPU", "1"))
+
     send("Page.navigate", url=APP)
     wait(5)
 
@@ -86,6 +105,9 @@ def main(argv: list[str]) -> int:
     node = send("DOM.querySelector", nodeId=root, selector="input[accept^='video']")["nodeId"]
     send("DOM.setFileInputFiles", nodeId=node, files=[str(clip)])
     wait(2.5)
+
+    if throttle > 1:
+        send("Emulation.setCPUThrottlingRate", rate=throttle)
 
     # Real time, matching how Sports2D read the same footage. Whatever the app
     # would have suggested is a separate question from this one.
@@ -147,9 +169,10 @@ def main(argv: list[str]) -> int:
         n = timing["frames"]
         seek = timing["seekMs"] / n
         detect = timing["detectMs"] / n
+        speed = f" · CPU {throttle:g}x 스로틀" if throttle > 1 else ""
         print(
             f"  프레임당 탐색 {seek:.0f}ms · 추론 {detect:.0f}ms"
-            f" · 합계 {(seek + detect) * n / 1000:.0f}초 ({n}프레임)"
+            f" · 합계 {(seek + detect) * n / 1000:.0f}초 ({n}프레임){speed}"
         )
     path.write_text(
         json.dumps(

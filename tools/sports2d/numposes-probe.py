@@ -19,6 +19,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -29,7 +30,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 HERE = Path(__file__).resolve().parent
 APP = "http://127.0.0.1:43217/"
-CDP = "http://127.0.0.1:9223"
+CDP = f"http://127.0.0.1:{os.environ.get('STRIDELAB_CDP', '9223')}"
 
 
 def main(argv: list[str]) -> int:
