@@ -44,6 +44,7 @@
 | `rtmpose-browser-check.mts` | 브라우저용 RTMPose 사슬(어파인·정규화·SimCC 디코딩)을 rtmlib과 대조 — `npm install --no-save onnxruntime-web` 필요 |
 | `foot-side.ts` | 좌우 라벨을 교대 위반으로 채점 — 참값 없이 어느 파이프라인이 틀리는지 가림 |
 | `numposes-probe.py` | `numPoses` 1과 3을 **같은 프레임에** 물어 비교. 실행끼리 비교하면 기계 드리프트가 효과보다 커서 부호가 뒤집힘 |
+| `frame-source-probe.py` | 프레임을 **탐색으로 얻을 때와 순차 재생으로 받을 때**의 비용. 받은 장수를 함께 세므로 배속을 올려 흘리는 것이 보임 |
 | `repeat-frames.ts` | 자세 스트림의 중복 표본 — 어디서 오는지, 접지 검출과 불확실성 수치에 영향이 있는지 |
 | `framerate.ts` | 실제 클립을 30 → 15 → 10 fps로 떨어뜨려 격자 민감도를 봄 |
 | `angle-split.ts` | 두 파이프라인의 각도 불일치를 원인별로 쪼갬 — 앵커(접지 프레임) 대 자세(포즈 추정) 대 좌우 오배정 |

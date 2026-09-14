@@ -524,6 +524,84 @@ export function LandingAnalyzer() {
     };
   }, []);
 
+  /**
+   * Time the two ways of getting frames out of a clip, development only.
+   *
+   * The pass spends more on reaching frames than on reading them: 385 ms of a
+   * 646 ms frame on a four-times-slower device. It reaches them by setting
+   * `currentTime` and waiting for `seeked`, which makes the decoder start over
+   * from a keyframe every time. Playing the clip once and taking frames as
+   * they are presented asks the decoder for each frame exactly once.
+   *
+   * Whether that is actually cheaper is the question, and it has a failure
+   * mode worth measuring rather than assuming: playback runs on a clock, so a
+   * decoder that cannot keep up drops frames instead of slowing down, and
+   * frames that never arrive are landings never seen. So the probe reports
+   * what it captured, not only what it cost.
+   *
+   * Capture here means drawing to a small canvas — what a real pass would do,
+   * since holding 360 full frames is a gigabyte — and no inference, because
+   * inference costs the same either way and would hide the difference.
+   */
+  useEffect(() => {
+    if (!OFFER_TRC_IMPORT) return;
+    const target = window as unknown as { __strideLabFrameProbe?: unknown };
+    target.__strideLabFrameProbe = async (want = 120, rate = 1) => {
+      const video = videoRef.current;
+      if (!video) throw new Error("재 볼 영상이 없습니다");
+      await waitMetadata(video);
+      const duration = Math.min(video.duration || 0, MAX_SECONDS);
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) throw new Error("캔버스를 못 만들었습니다");
+
+      const seeking = performance.now();
+      for (let i = 0; i < want; i++) {
+        await seekVideo(video, (i / Math.max(1, want - 1)) * duration);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+      const seekMs = performance.now() - seeking;
+
+      const wasRate = video.playbackRate;
+      const wasMuted = video.muted;
+      video.muted = true;
+      video.playbackRate = rate;
+      await seekVideo(video, 0);
+      let captured = 0;
+      const playing = performance.now();
+      await new Promise<void>((resolve) => {
+        const step = () => {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          captured += 1;
+          if (captured >= want || video.currentTime >= duration - 0.01) {
+            resolve();
+            return;
+          }
+          video.requestVideoFrameCallback(step);
+        };
+        video.addEventListener("ended", () => resolve(), { once: true });
+        video.requestVideoFrameCallback(step);
+        void video.play();
+      });
+      const playMs = performance.now() - playing;
+      video.pause();
+      video.playbackRate = wasRate;
+      video.muted = wasMuted;
+
+      return {
+        wanted: want,
+        rate,
+        seek: { ms: seekMs, perFrame: seekMs / want },
+        play: { ms: playMs, captured, perFrame: playMs / Math.max(1, captured) },
+      };
+    };
+    return () => {
+      delete target.__strideLabFrameProbe;
+    };
+  }, []);
+
   // Ask the dev server what offline runs exist, once.
   useEffect(() => {
     if (!OFFER_TRC_IMPORT) return;
