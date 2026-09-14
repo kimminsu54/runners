@@ -34,7 +34,13 @@ import {
   videoTimeFromAnalysis,
 } from "@/lib/live-readout";
 import { pickSubject, type Landmark } from "@/lib/pose";
-import { getPoseLandmarker, seekVideo, waitMetadata } from "@/lib/pose-engine";
+import {
+  createProbeLandmarker,
+  getPoseLandmarker,
+  seekVideo,
+  SUBJECT_CANDIDATES,
+  waitMetadata,
+} from "@/lib/pose-engine";
 import {
   syntheticFrontRunFrames,
   syntheticRunningFrames,
@@ -208,6 +214,17 @@ export function LandingAnalyzer() {
    * pass in particular would otherwise mean running MediaPipe over the clip
    * again.
    */
+  /**
+   * What the last pass cost, split into seeking and inference.
+   *
+   * Development only and write-only, like the pose dump beside it: nothing in
+   * the report reads it, so it cannot become a second source of truth.
+   */
+  const [timing, setTiming] = useState<{
+    seekMs: number;
+    detectMs: number;
+    frames: number;
+  } | null>(null);
   const [views, setViews] = useState<Partial<Record<PipelineKey, ViewState>>>({});
   const [view, setView] = useState<PipelineKey>("browser");
   // The footage the current view draws on, which is the uploaded clip unless
@@ -386,11 +403,13 @@ export function LandingAnalyzer() {
     const target = window as unknown as {
       __strideLabPasses?: unknown;
       __strideLabFrames?: unknown;
+      __strideLabTiming?: unknown;
     };
     // The pose itself, not only what was concluded from it. When the two
     // pipelines disagree about a stance the answer is in the foot's height
     // signal, and that never left the browser before.
     target.__strideLabFrames = poseFrames;
+    target.__strideLabTiming = timing;
     target.__strideLabPasses = {
       browser: passes.browser
         ? {
@@ -422,8 +441,88 @@ export function LandingAnalyzer() {
     return () => {
       delete target.__strideLabPasses;
       delete target.__strideLabFrames;
+      delete target.__strideLabTiming;
     };
-  }, [passes, poseFrames]);
+  }, [passes, poseFrames, timing]);
+
+  /**
+   * Time the two `numPoses` settings against each other, development only.
+   *
+   * Comparing whole runs could not answer what asking for three bodies costs.
+   * Four runs of the crowded clip, ordered 1-3-3-1 so a steady drift would
+   * cancel, put three bodies 9 ms per frame *faster* than one — impossible as
+   * an effect, and the size of the mistake is visible in the same data:
+   * seeking, which cannot depend on the setting, showed a 14 ms difference of
+   * its own. The machine moves between runs by more than the setting does.
+   *
+   * So both settings are asked about the same frame, one immediately after
+   * the other, and whatever the machine is doing at that moment applies to
+   * both. Which of the two goes first alternates by frame, because the second
+   * call on a frame finds the decoded image already warm and that advantage
+   * would otherwise always land on the same setting.
+   */
+  useEffect(() => {
+    if (!OFFER_TRC_IMPORT) return;
+    const target = window as unknown as { __strideLabPoseProbe?: unknown };
+    target.__strideLabPoseProbe = async (frameCount = 40) => {
+      const video = videoRef.current;
+      if (!video) throw new Error("재 볼 영상이 없습니다");
+      await waitMetadata(video);
+      const duration = Math.min(video.duration || 0, MAX_SECONDS);
+      const [one, three] = await Promise.all([
+        createProbeLandmarker(1),
+        createProbeLandmarker(SUBJECT_CANDIDATES),
+      ]);
+      try {
+        const ms: Record<number, number[]> = { 1: [], 3: [] };
+        const bodies: number[] = [];
+        for (let i = 0; i < frameCount; i++) {
+          await seekVideo(video, (i / Math.max(1, frameCount - 1)) * duration);
+          const first = i % 2 === 0;
+          const order: [number, (typeof one)][] = first
+            ? [[1, one], [SUBJECT_CANDIDATES, three]]
+            : [[SUBJECT_CANDIDATES, three], [1, one]];
+          for (const [key, landmarker] of order) {
+            const started = performance.now();
+            const det = landmarker.detect(video);
+            ms[key].push(performance.now() - started);
+            if (key === SUBJECT_CANDIDATES) bodies.push(det.landmarks.length);
+          }
+        }
+        // The opening frames pay for buffers both estimators build lazily, so
+        // they are timed and then dropped rather than left unmeasured.
+        const WARMUP = 4;
+        const mean = (xs: number[]) =>
+          xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
+        const median = (xs: number[]) => {
+          const v = [...xs].sort((a, b) => a - b);
+          return v.length ? v[Math.floor(v.length / 2)] : 0;
+        };
+        const a = ms[1].slice(WARMUP);
+        const b = ms[SUBJECT_CANDIDATES].slice(WARMUP);
+        // Paired, because the pairing is the point: the difference is taken
+        // within a frame, where the two settings met the same conditions.
+        const diff = b.map((x, i) => x - a[i]);
+        return {
+          frames: a.length,
+          bodiesFound: mean(bodies.slice(WARMUP)),
+          one: { mean: mean(a), median: median(a) },
+          three: { mean: mean(b), median: median(b) },
+          diff: {
+            mean: mean(diff),
+            median: median(diff),
+            threeSlowerFrames: diff.filter((d) => d > 0).length,
+          },
+        };
+      } finally {
+        one.close();
+        three.close();
+      }
+    };
+    return () => {
+      delete target.__strideLabPoseProbe;
+    };
+  }, []);
 
   // Ask the dev server what offline runs exist, once.
   useEffect(() => {
@@ -783,14 +882,37 @@ export function LandingAnalyzer() {
       // back first. On a clip with a second runner in shot, taking the first
       // put a fifth of the frames on the wrong person.
       let subject: Landmark[] | null = null;
+      // Seeking and inference timed apart, in development only.
+      //
+      // End-to-end timing could not answer what the pass costs: the same clip
+      // came back at 173s and 255s across two runs that differed only in how
+      // many bodies were asked for, and in the wrong direction, because a
+      // stopwatch outside the page also times the page load, the model load
+      // and fixed waits. The two questions that need an answer — what asking
+      // for three bodies costs, and whether this is usable on a phone — are
+      // both about the loop, so the loop is what gets timed.
+      //
+      // Split in two because the answers differ. If seeking dominates, the
+      // cost is video decode and a heavier pose model would be cheaper than
+      // it looks; if inference dominates, the reverse.
+      const timing = { seekMs: 0, detectMs: 0, frames: 0 };
+      const clock = OFFER_TRC_IMPORT ? performance : null;
       for (let i = 0; i < n; i++) {
         const t = (i / Math.max(1, n - 1)) * duration;
+        const beforeSeek = clock?.now() ?? 0;
         await seekVideo(video, t);
+        const beforeDetect = clock?.now() ?? 0;
         const det = landmarker.detect(video);
+        if (clock) {
+          timing.seekMs += beforeDetect - beforeSeek;
+          timing.detectMs += clock.now() - beforeDetect;
+          timing.frames += 1;
+        }
         subject = pickSubject(det.landmarks, subject);
         frames.push({ t, landmarks: subject });
         if (i % 2 === 0) setProgress(Math.round(((i + 1) / n) * 100));
       }
+      setTiming(clock ? timing : null);
       setPoseFrames(frames);
       const {
         result: analysis,

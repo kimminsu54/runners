@@ -19,7 +19,21 @@ export async function getPoseLandmarker(): Promise<PoseLandmarker> {
   return landmarkerPromise;
 }
 
-async function createLandmarker(): Promise<PoseLandmarker> {
+// More than one, or `pickSubject` has nothing to choose between and the
+// wrong-person switch it exists to prevent cannot be seen. Three rather than
+// more: the crowded clip in this sample had the intended subject and one
+// interloper in frame at once, and a fourth has not been measured.
+//
+// The cost is a ceiling, not a count. Timed against `numPoses: 1` on the same
+// frames, three bodies cost 5-13 ms per frame on the crowded clip and nothing
+// measurable on a clip with one runner, because the estimator returns 1.27
+// bodies on the first and 0.98 on the second. Against a frame that spends
+// ~250 ms, most of it seeking, that is 2-5%.
+export const SUBJECT_CANDIDATES = 3;
+
+async function createLandmarker(
+  numPoses: number = SUBJECT_CANDIDATES,
+): Promise<PoseLandmarker> {
   const vision = await import("@mediapipe/tasks-vision");
   const files = await vision.FilesetResolver.forVisionTasks("/mediapipe");
   return vision.PoseLandmarker.createFromOptions(files, {
@@ -28,16 +42,27 @@ async function createLandmarker(): Promise<PoseLandmarker> {
       delegate: "CPU",
     },
     runningMode: "IMAGE",
-    // More than one, or `pickSubject` has nothing to choose between and the
-    // wrong-person switch it exists to prevent cannot be seen. Three rather
-    // than more: each extra pose costs another landmark pass, the crowded clip
-    // in this sample had the intended subject and one interloper in frame at
-    // once, and the browser cost of a fourth has not been measured.
-    numPoses: 3,
+    numPoses,
     minPoseDetectionConfidence: 0.4,
     minPosePresenceConfidence: 0.4,
     minTrackingConfidence: 0.4,
   });
+}
+
+/**
+ * A second estimator, for measurement only.
+ *
+ * `getPoseLandmarker` caches one instance because the app wants exactly one.
+ * Comparing two settings wants two alive at once, so both can be asked about
+ * the same frame and whatever the machine is doing at that moment applies to
+ * both. Comparing whole runs instead could not answer the question: this
+ * machine drifted faster run over run by more than the setting changed.
+ *
+ * Kept out of the cache so an experiment cannot leave the app holding an
+ * estimator configured for it. The caller closes what it opens.
+ */
+export function createProbeLandmarker(numPoses: number): Promise<PoseLandmarker> {
+  return createLandmarker(numPoses);
 }
 
 export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {

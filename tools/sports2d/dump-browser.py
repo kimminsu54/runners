@@ -129,6 +129,10 @@ def main(argv: list[str]) -> int:
         print("브라우저 분석이 끝나지 않았습니다")
         return 1
 
+    # What the pass cost, measured inside the page. A stopwatch out here also
+    # times the page load, the model load and the fixed waits above, and the
+    # spread between runs is larger than the thing being measured.
+    timing = js("window.__strideLabTiming ?? null")
     frames = js("window.__strideLabFrames ?? null")
     passes = js("window.__strideLabPasses ?? null")
     if not frames:
@@ -139,6 +143,14 @@ def main(argv: list[str]) -> int:
     out.mkdir(parents=True, exist_ok=True)
     path = out / "browser-frames.json"
     tracked = sum(1 for f in frames if f.get("landmarks"))
+    if timing and timing.get("frames"):
+        n = timing["frames"]
+        seek = timing["seekMs"] / n
+        detect = timing["detectMs"] / n
+        print(
+            f"  프레임당 탐색 {seek:.0f}ms · 추론 {detect:.0f}ms"
+            f" · 합계 {(seek + detect) * n / 1000:.0f}초 ({n}프레임)"
+        )
     path.write_text(
         json.dumps(
             {
