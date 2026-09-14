@@ -80,6 +80,9 @@ import {
   syntheticFrontRunFrames,
   syntheticSideRunFrames,
   assertDetectsLanding,
+  syntheticDropFrames,
+  trueImpactVelocity,
+  SYNTHETIC_STATURE_M,
   assertDetectsRunningSteps,
   syntheticRunningFrames,
 } from "./synthetic-jump";
@@ -272,6 +275,68 @@ console.log("scale gate ok", {
   legsOnly: `${legsOnly.landings.length}회 · 배율 미확인 · 속도 ${legsOnly.landings[0]?.impactVelocity.toFixed(2)} m/s 는 표시`,
   whole: `${whole.landings.length}회 · 배율 확인`,
 });
+
+// How much of a known impact speed this measurement actually reports.
+//
+// impactVelocity is the one published quantity with nothing to check it
+// against: it comes off the hip's trajectory through a ruler built from the
+// nose-to-heel distance, and no clip in the sample has a known answer. A free
+// fall does, so this asks the question directly — and the answer is that at
+// the frame rate this app is built for, most of the speed is lost.
+//
+// That is why guidance_fast_descent_m_s is withheld. The boundary is 1.8 m/s;
+// reaching it through this measurement at 30 fps takes a true 2.9 m/s, which
+// is a 43 cm drop. Whether the boundary is high or the measurement is low was
+// the open question, and this answers it: the measurement is low.
+//
+// The numbers below are a characterisation, not a target. If someone improves
+// the velocity estimator this fails, and the right response is to read the new
+// ratios and update them here — with the descent threshold reconsidered.
+const drops = [0.05, 0.1, 0.2, 0.4];
+const readBack = (fps: number) =>
+  drops.map((dropM) => {
+    const result = analyzeLandings(syntheticDropFrames(dropM, fps), {
+      statureM: SYNTHETIC_STATURE_M,
+      massKg: 70,
+      width: 1280,
+      height: 720,
+    });
+    const got = result.landings[0]?.impactVelocity ?? Number.NaN;
+    return { dropM, got, share: got / trueImpactVelocity(dropM) };
+  });
+
+const atTarget = readBack(30);
+// The two shallow drops are not seen as landings at all at 30 fps.
+if (atTarget.slice(0, 2).some((row) => Number.isFinite(row.got))) {
+  throw new Error("a 5-10 cm drop is not expected to register at 30 fps; re-read this test");
+}
+for (const row of atTarget.slice(2)) {
+  if (!(row.share > 0.5 && row.share < 0.75)) {
+    throw new Error(
+      `30 fps read back ${(row.share * 100).toFixed(0)}% of a ${row.dropM * 100} cm drop; the characterised band is 50-75%`,
+    );
+  }
+}
+// The deficit is a sampling effect, so it has to shrink as the clock speeds
+// up. If it did not, the cause would be the scale instead and the conclusion
+// above would be the wrong one.
+const faster = readBack(120);
+for (let i = 2; i < drops.length; i++) {
+  if (!(faster[i].share > atTarget[i].share + 0.15)) {
+    throw new Error("raising the frame rate must recover much of the lost speed");
+  }
+}
+console.log(
+  "impact speed read-back ok",
+  Object.fromEntries(
+    atTarget.map((row) => [
+      `${row.dropM * 100}cm`,
+      Number.isFinite(row.got)
+        ? `${row.got.toFixed(2)}/${trueImpactVelocity(row.dropM).toFixed(2)} m/s · ${(row.share * 100).toFixed(0)}%`
+        : "착지로 검출 안 됨",
+    ]),
+  ),
+);
 
 const SLOW_GAIT = { contactS: 0.31, flightS: 0.05 };
 const FAST_GAIT = { contactS: 0.13, flightS: 0.14 };

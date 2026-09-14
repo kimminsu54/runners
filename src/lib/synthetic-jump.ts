@@ -4,6 +4,7 @@ import {
   type PoseFrame,
 } from "@/lib/landing-analysis";
 import type { Landmark } from "@/lib/pose";
+import { threshold } from "@/lib/thresholds";
 
 function lm(x: number, y: number): Landmark {
   return { x, y, visibility: 1 };
@@ -103,6 +104,73 @@ export function syntheticJumpFrames(fps = 30): PoseFrame[] {
     frames.push({ t, landmarks: poseAt(hipY) });
   }
   return frames;
+}
+
+/**
+ * A body dropped from a known height, which is the only fixture here whose
+ * truth comes from physics rather than from what the generator was told to
+ * draw.
+ *
+ * `impactVelocity` is the one published quantity with no way to check it. It
+ * is read off the hip's own trajectory, scaled by a ruler built from the
+ * nose-to-heel distance, and nothing in the sample has a known answer. A free
+ * fall does: from `dropM` metres the body arrives at sqrt(2 g h), exactly, and
+ * the same geometry that gives the analysis its scale gives this fixture its
+ * metres.
+ *
+ * The fall is drawn at `y = ½gt²` rather than in a straight line — the older
+ * jump fixture interpolates linearly, which is a constant speed and so cannot
+ * say anything about a measurement of speed.
+ */
+export function syntheticDropFrames(dropM: number, fps = 30): PoseFrame[] {
+  const still = 0.4;
+  const absorb = 0.08;
+  const tFall = Math.sqrt((2 * dropM) / G);
+  const n = Math.round((still + tFall + absorb + 0.5) * fps);
+  const perNorm = metresPerNormalisedY();
+  const dropNorm = dropM / perNorm;
+  const vNorm = Math.sqrt(2 * G * dropM) / perNorm;
+  const hip0 = 0.45;
+  const gap = 0.26;
+  const frames: PoseFrame[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / fps;
+    let hipY = hip0;
+    if (t > still && t <= still + tFall) {
+      const u = t - still;
+      hipY = hip0 + (0.5 * G * u * u) / perNorm;
+    } else if (t > still + tFall) {
+      // The feet are down and the hip is brought to rest over the absorption,
+      // which is what a landing looks like from the outside.
+      const u = Math.min(1, (t - still - tFall) / absorb);
+      hipY = hip0 + dropNorm + vNorm * absorb * (u - (u * u) / 2);
+    }
+    const footY =
+      t <= still + tFall ? hipY + gap : hip0 + dropNorm + gap;
+    frames.push({ t, landmarks: poseAt(hipY, footY, footY) });
+  }
+  return frames;
+}
+
+/**
+ * Metres per unit of normalised y, from the geometry `poseAt` draws.
+ *
+ * The nose sits 0.28 above the hip and the feet 0.26 below, so the runner
+ * spans 0.54 of the frame, and the analysis reads that as
+ * `stature_from_nose_heel` of their height. Deriving it here rather than
+ * writing the number down means the fixture follows the pose if it changes.
+ */
+function metresPerNormalisedY(): number {
+  const noseToHeel = 0.28 + 0.26;
+  return SYNTHETIC_STATURE_M / (noseToHeel / threshold("stature_from_nose_heel"));
+}
+
+/** The stature every fixture here is drawn at. */
+export const SYNTHETIC_STATURE_M = 1.7;
+
+/** What a drop from `dropM` actually arrives at, in metres per second. */
+export function trueImpactVelocity(dropM: number): number {
+  return Math.sqrt(2 * G * dropM);
 }
 
 export type RunningGait = {
