@@ -1,4 +1,17 @@
 import type { Landing } from "@/lib/landing-analysis";
+import { isPublishable, threshold } from "@/lib/thresholds";
+
+/**
+ * Every boundary this module applies now comes from shared/thresholds.yaml.
+ *
+ * They used to be written here as bare numbers, which made this — the part of
+ * the report that says the heaviest things, about injury — the one place with
+ * no record of where a boundary came from and no way to withhold one. The
+ * rest of the analysis had carried both for a while.
+ *
+ * Moving them was also the first time each was checked against what this
+ * pipeline actually produces; the yaml notes carry those counts.
+ */
 
 export type GuidanceLevel = "monitor" | "attention" | "high";
 
@@ -28,17 +41,20 @@ export function buildLandingGuidance(landing: Landing): LandingGuidance {
     0,
     landing.kneeFlexPeak - landing.kneeFlexContact,
   );
-  const highImpact = landing.peakGrfBw >= 3 || landing.loadingRateBwS >= 55;
+  const highImpact = landing.peakGrfBw >= threshold("guidance_high_impact_bw") ||
+    landing.loadingRateBwS >= threshold("guidance_high_impact_rate_bw_s");
   // A short contact is a symptom of speed, not of a bad landing, so judge
   // stiffness from how much the knee actually gives way.
-  const stiffLanding = landing.kneeFlexContact < 18 || kneeExcursion < 10;
+  const stiffLanding = landing.kneeFlexContact < threshold("guidance_stiff_knee_contact_deg") ||
+    kneeExcursion < threshold("guidance_stiff_knee_excursion_deg");
 
   if (highImpact) {
     patterns.push({
       area: "정강이·발",
       title: "반복 충격 부담 가능성",
       level:
-        landing.peakGrfBw >= 3.8 || landing.loadingRateBwS >= 85
+        landing.peakGrfBw >= threshold("guidance_severe_impact_bw") ||
+        landing.loadingRateBwS >= threshold("guidance_severe_impact_rate_bw_s")
           ? "high"
           : "attention",
       evidence: `${landing.peakGrfBw.toFixed(1)} BW · ${landing.loadingRateBwS.toFixed(0)} BW/s`,
@@ -56,7 +72,10 @@ export function buildLandingGuidance(landing: Landing): LandingGuidance {
     patterns.push({
       area: "무릎 앞쪽·고관절",
       title: "충격 흡수 여유가 작은 패턴",
-      level: landing.kneeFlexContact < 12 ? "high" : "attention",
+      level:
+        landing.kneeFlexContact < threshold("guidance_severe_knee_contact_deg")
+          ? "high"
+          : "attention",
       evidence: `흡수 ${Math.round(landing.absorptionMs)} ms · 무릎 ${landing.kneeFlexContact.toFixed(0)}°→${landing.kneeFlexPeak.toFixed(0)}°`,
       meaning:
         "착지 뒤 무릎과 엉덩이가 충분히 굽혀지지 않으면 충격을 여러 관절에 나누는 시간이 짧아질 수 있습니다. 무릎 통증이나 인대 손상을 진단하는 지표는 아닙니다.",
@@ -75,11 +94,32 @@ export function buildLandingGuidance(landing: Landing): LandingGuidance {
   // the frame for over a quarter of the footage. It was separating clips by
   // how they were shot. The speed itself is still reported; what stops is the
   // verdict drawn from it.
-  if (landing.scaleMeasured && landing.impactVelocity >= 1.8) {
+  // Two conditions on top of the boundary itself.
+  //
+  // The scale, because every metre here is the pixel measurement times a ruler
+  // built from the runner's nose-to-heel distance, and on the six-clip sample
+  // this pattern fired on exactly one clip — the one framed on the legs, where
+  // that nose is outside the picture for over a quarter of the footage. It was
+  // separating clips by how they were shot.
+  //
+  // And the threshold's own status, because it is withheld: the boundary sits
+  // above ordinary running on purpose, but nothing has checked that the speed
+  // measured here is the same quantity the boundary was set for. Across 138
+  // landings the median is 0.33 m/s against a boundary of 1.8, and that gap
+  // could be the boundary being high or this measurement reading low. The
+  // speed is still reported either way; what waits is the verdict.
+  if (
+    landing.scaleMeasured &&
+    isPublishable("guidance_fast_descent_m_s") &&
+    landing.impactVelocity >= threshold("guidance_fast_descent_m_s")
+  ) {
     patterns.push({
       area: "하체 전반",
       title: "큰 하강 속도",
-      level: landing.impactVelocity >= 2.6 ? "high" : "attention",
+      level:
+        landing.impactVelocity >= threshold("guidance_severe_descent_m_s")
+          ? "high"
+          : "attention",
       evidence: `${landing.impactVelocity.toFixed(1)} m/s · 등가 높이 ${landing.equivalentDropCm.toFixed(0)} cm`,
       meaning:
         "몸이 빠르게 내려오는 착지입니다. 내리막, 점프, 과한 상하 움직임처럼 동작 자체가 큰 경우인지 먼저 확인해야 합니다.",

@@ -230,25 +230,34 @@ if (!legsOnly.warnings.some((warning) => warning.includes("배율"))) {
 if (!legsOnly.landings.some((landing) => Number.isFinite(landing.impactVelocity))) {
   throw new Error("an unverified scale must still report the speed it measured");
 }
-// What stops is the verdict. Well past the 1.8 m/s boundary, and silent.
-const unscaledGuidance = buildLandingGuidance({
-  ...legsOnly.landings[0],
-  impactVelocity: 4,
-  equivalentDropCm: 80,
-});
-if (unscaledGuidance.patterns.some((pattern) => pattern.title.includes("하강"))) {
+// What stops is the verdict, for two separate reasons, and both are checked
+// because either alone would hide a hole in the other.
+const descent = (landing: (typeof legsOnly.landings)[number]) =>
+  buildLandingGuidance(landing).patterns.some((pattern) =>
+    pattern.title.includes("하강"),
+  );
+if (descent({ ...legsOnly.landings[0], impactVelocity: 4, equivalentDropCm: 80 })) {
   throw new Error("a fast-descent verdict must not rest on an unverified scale");
 }
-// And the same landing with the scale verified does raise it, or the gate
-// above would pass by breaking the pattern rather than by gating it.
-const scaledGuidance = buildLandingGuidance({
-  ...legsOnly.landings[0],
-  scaleMeasured: true,
-  impactVelocity: 4,
-  equivalentDropCm: 80,
-});
-if (!scaledGuidance.patterns.some((pattern) => pattern.title.includes("하강"))) {
-  throw new Error("a fast-descent verdict must still be reachable");
+if (
+  descent({
+    ...legsOnly.landings[0],
+    scaleMeasured: true,
+    impactVelocity: 4,
+    equivalentDropCm: 80,
+  })
+) {
+  throw new Error("a withheld boundary must not produce a verdict");
+}
+// A tripwire, not a preference. The boundary is withheld because nothing has
+// shown that the speed measured here is the quantity 1.8 m/s was set for —
+// 138 landings put the median at 0.33 m/s. Whoever lifts that status will
+// fail here, which is the moment to re-check the scale gate above, since with
+// the boundary withheld it is the assertion before this one that carries it.
+if (isPublishable("guidance_fast_descent_m_s")) {
+  throw new Error(
+    "guidance_fast_descent_m_s is publishable now: re-check that the scale gate still holds before deleting this",
+  );
 }
 const whole = analyzeLandings(syntheticRunningFrames(), {
   statureM: 1.7,

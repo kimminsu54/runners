@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 9)
+// Source: shared/thresholds.yaml (version 10)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 9;
+export const THRESHOLDS_VERSION = 10;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -42,7 +42,16 @@ export type ThresholdKey =
   | "load_score_moderate_min"
   | "load_score_elevated_min"
   | "load_score_high_min"
-  | "load_score_severe_min";
+  | "load_score_severe_min"
+  | "guidance_high_impact_bw"
+  | "guidance_high_impact_rate_bw_s"
+  | "guidance_severe_impact_bw"
+  | "guidance_severe_impact_rate_bw_s"
+  | "guidance_stiff_knee_contact_deg"
+  | "guidance_stiff_knee_excursion_deg"
+  | "guidance_severe_knee_contact_deg"
+  | "guidance_fast_descent_m_s"
+  | "guidance_severe_descent_m_s";
 
 export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
   foot_strike_rearfoot_max_deg: {
@@ -344,5 +353,95 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "같은 휴리스틱의 마지막 구간 경계입니다.",
     validationStatus: "internal",
     note: "외부 검증 없음.",
+  },
+  guidance_high_impact_bw: {
+    key: "guidance_high_impact_bw",
+    label: "반복 충격 부담 · 판정 경계",
+    value: 3,
+    unit: "BW",
+    appliesTo: "guidance",
+    source: "추정 반력이 이 값을 넘으면 부담 가능성을 안내합니다. 이 프로젝트의 안내 모듈이 정한 값이고 러닝 데이터셋과 대조한 적은 없습니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 8회가 넘었고 중앙값은 2.13 BW 입니다. 반력은 측정이 아니라 듀티 팩터에서 유도되며 1.05~4.5 로 잘립니다.",
+  },
+  guidance_high_impact_rate_bw_s: {
+    key: "guidance_high_impact_rate_bw_s",
+    label: "반복 충격 부담 · 부하율 경계",
+    value: 55,
+    unit: "BW/s",
+    appliesTo: "guidance",
+    source: "부하율이 이 값을 넘어도 같은 안내를 냅니다. 위와 같은 출처이고 같은 정도로 검증되지 않았습니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 14회. 중앙값 21.1 BW/s.",
+  },
+  guidance_severe_impact_bw: {
+    key: "guidance_severe_impact_bw",
+    label: "반복 충격 부담 · high 승격 경계",
+    value: 3.8,
+    unit: "BW",
+    appliesTo: "guidance",
+    source: "안내의 심각도를 attention 에서 high 로 올리는 값입니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 한 번도 넘지 않았습니다. 반력 상한 4.5 아래이므로 도달할 수 없는 값은 아니고, 이 표본이 전부 일반 주행이라 닿지 않은 것입니다.",
+  },
+  guidance_severe_impact_rate_bw_s: {
+    key: "guidance_severe_impact_rate_bw_s",
+    label: "반복 충격 부담 · high 부하율 경계",
+    value: 85,
+    unit: "BW/s",
+    appliesTo: "guidance",
+    source: "같은 승격을 부하율로 판단하는 값입니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 1회. 부하율은 반력 ÷ 상승시간이고 상승시간은 접지의 40% 라, 이 값에 닿으려면 접지가 0.13초 안쪽이어야 합니다 — 질주 구간입니다.",
+  },
+  guidance_stiff_knee_contact_deg: {
+    key: "guidance_stiff_knee_contact_deg",
+    label: "충격 흡수 여유 · 접지 무릎 굽힘 경계",
+    value: 18,
+    unit: "deg",
+    appliesTo: "guidance",
+    source: "접지 순간 무릎이 이보다 덜 굽어 있으면 흡수 여유가 작다고 안내합니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 7회. 중앙값 54.7°. 정면 클립에서는 무릎 굽힘이 측정되지 않아 이 경계가 적용되지 않습니다.",
+  },
+  guidance_stiff_knee_excursion_deg: {
+    key: "guidance_stiff_knee_excursion_deg",
+    label: "충격 흡수 여유 · 무릎 가동 폭 경계",
+    value: 10,
+    unit: "deg",
+    appliesTo: "guidance",
+    source: "접지에서 최대까지 무릎이 이보다 적게 더 굽으면 같은 안내를 냅니다. 짧은 접지는 속도의 결과이지 나쁜 착지가 아니므로, 접지 시간이 아니라 무릎이 실제로 내준 각도로 판단합니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개에서 56회로, 이 안내를 만드는 조건 중 사실상 전부입니다(접지 굽힘 쪽은 7회). 그런데 같은 표본의 가동 폭 중앙값이 10.2° 라 경계가 중앙값 위에 얹혀 있고, 그러면 이 안내는 러너의 특징이 아니라 표본의 절반을 가리키게 됩니다. 이 표본은 러너가 몇 명뿐이라 모집단 중앙값이라고 할 수는 없지만, 다음에 손봐야 할 값이 이것이라는 뜻입니다. 지금 보류로 돌리지 않은 것은 그러면 이 안내가 138회 중 7회로 줄어드는 실제 변경인데, 그 근거로는 이 표본이 얇기 때문입니다 — 하강 속도를 보류한 것은 그쪽이 138회 중 0회라 눈에 보이는 변화가 없었기 때문입니다.",
+  },
+  guidance_severe_knee_contact_deg: {
+    key: "guidance_severe_knee_contact_deg",
+    label: "충격 흡수 여유 · high 승격 경계",
+    value: 12,
+    unit: "deg",
+    appliesTo: "guidance",
+    source: "그 안내를 high 로 올리는 값입니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 2회.",
+  },
+  guidance_fast_descent_m_s: {
+    key: "guidance_fast_descent_m_s",
+    label: "큰 하강 속도 · 판정 경계",
+    value: 1.8,
+    unit: "m_s",
+    appliesTo: "guidance",
+    source: "몸이 내려오는 속도가 이 값을 넘으면 내리막이나 점프처럼 동작 자체가 큰 경우인지 확인하라고 안내합니다. 일반 주행 위에 일부러 둔 값으로 보이지만, 우리가 재는 속도가 그 값과 같은 것을 재는지 확인하지 못했습니다.",
+    validationStatus: "withheld",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 한 번도 넘지 않았고 중앙값은 0.33 m/s 입니다. 이 속도는 자세 랜드마크에서 얻은 대용값이고 배율은 코→발꿈치 거리에서 나오므로, 경계가 높은 것인지 우리 측정이 낮게 읽는 것인지 지금은 가릴 수 없습니다. 높이를 아는 낙하로 이 속도를 대조하면 풀립니다.",
+  },
+  guidance_severe_descent_m_s: {
+    key: "guidance_severe_descent_m_s",
+    label: "큰 하강 속도 · high 승격 경계",
+    value: 2.6,
+    unit: "m_s",
+    appliesTo: "guidance",
+    source: "같은 안내를 high 로 올리는 값입니다. 위와 같은 이유로 보류합니다.",
+    validationStatus: "withheld",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 한 번도 넘지 않았습니다.",
   },
 };
