@@ -68,7 +68,14 @@ export function buildLandingGuidance(landing: Landing): LandingGuidance {
     });
   }
 
-  if (landing.impactVelocity >= 1.8) {
+  // Only when the metre scale was read off landmarks that were in shot. This
+  // pattern is the one place a threshold is applied to a value the scale
+  // produces, and on the six-clip sample it fired on exactly one clip — the
+  // one framed on the legs, where the nose the scale is built from was outside
+  // the frame for over a quarter of the footage. It was separating clips by
+  // how they were shot. The speed itself is still reported; what stops is the
+  // verdict drawn from it.
+  if (landing.scaleMeasured && landing.impactVelocity >= 1.8) {
     patterns.push({
       area: "하체 전반",
       title: "큰 하강 속도",

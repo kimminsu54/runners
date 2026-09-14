@@ -109,7 +109,7 @@ const clips = readFileSync(join(HERE, "clips.csv"), "utf8").split(/\r?\n/).slice
 const pct = (v: number) => (Number.isFinite(v) ? `${(v * 100).toFixed(0)}%` : "—");
 
 console.log(
-  "클립  조건               화면몫      하강속도 m/s 중앙(10~90) 경고/high" +
+  "클립  조건               화면몫  배율    하강속도 m/s 중앙(10~90) 경고/high" +
     "         등가 낙하 cm   몸앞 퍼짐    낙하 퍼짐",
 );
 for (const line of clips) {
@@ -134,7 +134,10 @@ for (const line of clips) {
   // supposed to divide out and the suspicion is that it does not.
   const heights = frames.map((f) => staturePx(f.landmarks, w, h));
   const sizeShare = median(heights) / h;
-  const trips = (xs: number[], at: number) => xs.filter((v) => v >= at).length;
+  // The warning only fires on a verified scale now, so count it the way the
+  // app does rather than on the raw threshold.
+  const trips = (xs: number[], at: number) =>
+    before.landings[0]?.scaleMeasured ? xs.filter((v) => v >= at).length : 0;
   const band = (xs: number[]) => {
     const v = xs.filter(Number.isFinite).sort((a, b) => a - b);
     if (v.length < 5) return "—";
@@ -146,6 +149,7 @@ for (const line of clips) {
   console.log(
     `${id.padEnd(5)} ${label.slice(0, 18).padEnd(19)}` +
       ` ${pct(sizeShare).padStart(5)}` +
+      ` ${(before.landings[0]?.scaleMeasured ? "확인" : "미확인").padStart(4)}` +
       ` ${band(vel(before)).padStart(19)}` +
       ` ${String(trips(vel(before), 1.8)).padStart(3)}/${String(trips(vel(before), 2.6)).padEnd(3)}` +
       ` ${band(drop(before)).padStart(19)}` +

@@ -209,6 +209,24 @@ export type Landing = {
   footAheadM: number;
   footAheadRatio: number;
   /**
+   * Whether the metre scale was read off landmarks that were in shot.
+   *
+   * Every metre here — this distance, the impact velocity, the equivalent drop
+   * height — is the pixel measurement times a scale built from the runner's
+   * nose-to-heel distance. The estimator returns a nose for a clip framed on
+   * the legs too, placed where it guesses, and a scale built on that guess
+   * measures how the clip was shot rather than how the runner landed. On the
+   * six-clip sample the leg close-up had the nose outside the frame for over a
+   * quarter of its frames, and it was the only clip of the six to trip the
+   * fast-descent warning.
+   *
+   * False does not blank the distances: the measurement still exists and the
+   * reader is better served seeing it than seeing nothing. What it stops is
+   * any verdict resting on it, since a threshold crossed by a guessed scale is
+   * a statement about the framing.
+   */
+  scaleMeasured: boolean;
+  /**
    * What a frontal clip can say and a side-on one cannot: the stance leg's
    * worst inward knee collapse, and how far the opposite hip dropped, both
    * taken as the peak over the stance phase rather than at touchdown — that is
@@ -397,14 +415,35 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
   return bits.join(" ");
 }
 
+/** Whether a landmark sits inside the picture rather than beyond its edge. */
+function inFrame(point: { x: number; y: number } | undefined): boolean {
+  return !!point && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+}
+
 function measureSubject(
   frames: PoseFrame[],
   statureM: number,
   width: number,
   height: number,
-): { metersPerPixel: number; staturePx: number; sideViewRatio: number } {
+): {
+  metersPerPixel: number;
+  staturePx: number;
+  sideViewRatio: number;
+  /**
+   * The share of the frames behind the scale where both landmarks it is built
+   * from were actually in shot.
+   *
+   * The estimator returns a position for a joint it cannot see, placed where
+   * it thinks the joint is, so a clip framed on the legs still yields a nose
+   * and this function still returns a number. Every metre in the analysis
+   * comes from that nose-to-heel distance, so when it is a guess the metres
+   * describe the framing. Counting is the only way to tell the two apart.
+   */
+  visibleShare: number;
+} {
   const lengths: number[] = [];
   const profileRatios: number[] = [];
+  let visible = 0;
   for (const frame of frames) {
     const lm = frame.landmarks;
     if (!lm) continue;
@@ -414,6 +453,7 @@ function measureSubject(
     const px = distPx(nose, heel, width, height);
     if (px > 20) {
       const staturePx = px / threshold("stature_from_nose_heel");
+      if (inFrame(nose) && inFrame(heel)) visible += 1;
       lengths.push(staturePx);
       const shoulderWidth = Math.abs(lm[LM.leftShoulder].x - lm[LM.rightShoulder].x) * width;
       const hipWidth = Math.abs(lm[LM.leftHip].x - lm[LM.rightHip].x) * width;
@@ -421,17 +461,21 @@ function measureSubject(
     }
   }
   const staturePx = median(lengths);
+  const visibleShare = lengths.length ? visible / lengths.length : 0;
   if (!Number.isFinite(staturePx) || staturePx < 40) {
     return {
       metersPerPixel: statureM / (height * 0.55),
       staturePx: Number.isFinite(staturePx) ? staturePx : Number.NaN,
       sideViewRatio: median(profileRatios),
+      // A fallback scale from the frame height saw nothing of the subject.
+      visibleShare: 0,
     };
   }
   return {
     metersPerPixel: statureM / staturePx,
     staturePx,
     sideViewRatio: median(profileRatios),
+    visibleShare,
   };
 }
 
@@ -593,7 +637,12 @@ export function analyzeLandings(
     warnings.push("사람 자세가 잘 잡히지 않았습니다. 전신이 나오고 옆모습·밝은 영상이 더 정확합니다.");
   }
 
-  const { metersPerPixel: mpp, staturePx, sideViewRatio } = measureSubject(
+  const {
+    metersPerPixel: mpp,
+    staturePx,
+    sideViewRatio,
+    visibleShare,
+  } = measureSubject(
     frames,
     options.statureM,
     options.width,
@@ -602,6 +651,13 @@ export function analyzeLandings(
   const subjectHeightRatio = Number.isFinite(staturePx)
     ? staturePx / options.height
     : Number.NaN;
+  // Whether the scale describes the runner or the framing. See Landing.
+  const scaleMeasured = visibleShare >= threshold("scale_min_visible_share");
+  if (!scaleMeasured) {
+    warnings.push(
+      "머리부터 발까지 한 화면에 들어오지 않아 거리 배율을 확인하지 못했습니다. 거리와 속도는 참고용이고, 그 값에 걸린 판정은 표시하지 않습니다.",
+    );
+  }
   // Slow-motion footage stretches every duration by the same factor, so undo it
   // on the clock rather than trying to correct each derived quantity.
   const timeScale =
@@ -888,6 +944,7 @@ export function analyzeLandings(
     options.statureM,
     cameraView,
     options.strikeAngleSampling,
+    scaleMeasured,
   );
   // How many ground intervals each foot signal produced, against how many the
   // cadence allows. Measured per channel and the worse one taken, because one
@@ -1416,6 +1473,10 @@ function detectLandings(
   statureM: number,
   view: CameraView = "side",
   strikeAngleSampling: StrikeAngleSampling = "before",
+  // Travels with the landings because that is where it is needed: the injury
+  // guidance is handed one landing and nothing else, so a fact about the clip
+  // has to ride along to reach it. See Landing.scaleMeasured.
+  scaleMeasured = true,
 ): Landing[] {
   if (series.length < 8) return [];
   const acc = series.map((s) => s.acc);
@@ -1603,6 +1664,7 @@ function detectLandings(
         Number.isFinite(footAheadM) && statureM > 0
           ? footAheadM / statureM
           : Number.NaN,
+      scaleMeasured,
       kneeValgusDeg: frontal.kneeValgusDeg,
       pelvicDropDeg: frontal.pelvicDropDeg,
       note: "",

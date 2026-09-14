@@ -201,6 +201,69 @@ if (frontalSummary.dominantStrike !== "unknown") {
 }
 console.log("frontal strike gate ok", frontal.quality.sideViewRatio.toFixed(2));
 
+// A clip framed on the legs, which is what breaks the metre scale: the pose
+// estimator still returns a nose, placed above the top edge, and every metre
+// in the analysis is the nose-to-heel distance times a constant. Moving the
+// head out of shot is therefore the whole fixture.
+const legsOnlyFrames = syntheticRunningFrames().map((frame) => {
+  if (!frame.landmarks) return frame;
+  const landmarks = frame.landmarks.map((point) => ({ ...point }));
+  for (const index of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+    landmarks[index] = { ...landmarks[index], y: -0.2 };
+  }
+  return { ...frame, landmarks };
+});
+const legsOnly = analyzeLandings(legsOnlyFrames, {
+  statureM: 1.7,
+  massKg: 70,
+  width: 720,
+  height: 1280,
+});
+if (legsOnly.landings.some((landing) => landing.scaleMeasured)) {
+  throw new Error("a scale built on an out-of-frame nose must not read as measured");
+}
+if (!legsOnly.warnings.some((warning) => warning.includes("배율"))) {
+  throw new Error("an unverified scale must say so");
+}
+// The distances stay: the reader is better served by a number with a caveat
+// than by a blank, and the caveat is the warning above.
+if (!legsOnly.landings.some((landing) => Number.isFinite(landing.impactVelocity))) {
+  throw new Error("an unverified scale must still report the speed it measured");
+}
+// What stops is the verdict. Well past the 1.8 m/s boundary, and silent.
+const unscaledGuidance = buildLandingGuidance({
+  ...legsOnly.landings[0],
+  impactVelocity: 4,
+  equivalentDropCm: 80,
+});
+if (unscaledGuidance.patterns.some((pattern) => pattern.title.includes("하강"))) {
+  throw new Error("a fast-descent verdict must not rest on an unverified scale");
+}
+// And the same landing with the scale verified does raise it, or the gate
+// above would pass by breaking the pattern rather than by gating it.
+const scaledGuidance = buildLandingGuidance({
+  ...legsOnly.landings[0],
+  scaleMeasured: true,
+  impactVelocity: 4,
+  equivalentDropCm: 80,
+});
+if (!scaledGuidance.patterns.some((pattern) => pattern.title.includes("하강"))) {
+  throw new Error("a fast-descent verdict must still be reachable");
+}
+const whole = analyzeLandings(syntheticRunningFrames(), {
+  statureM: 1.7,
+  massKg: 70,
+  width: 720,
+  height: 1280,
+});
+if (!whole.landings.every((landing) => landing.scaleMeasured)) {
+  throw new Error("a clip with the whole runner in shot must measure its scale");
+}
+console.log("scale gate ok", {
+  legsOnly: `${legsOnly.landings.length}회 · 배율 미확인 · 속도 ${legsOnly.landings[0]?.impactVelocity.toFixed(2)} m/s 는 표시`,
+  whole: `${whole.landings.length}회 · 배율 확인`,
+});
+
 const SLOW_GAIT = { contactS: 0.31, flightS: 0.05 };
 const FAST_GAIT = { contactS: 0.13, flightS: 0.14 };
 const slow = buildSessionSummary(analyzeSyntheticRun(SLOW_GAIT));

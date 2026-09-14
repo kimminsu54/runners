@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 8)
+// Source: shared/thresholds.yaml (version 9)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 8;
+export const THRESHOLDS_VERSION = 9;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -22,6 +22,7 @@ export type ThresholdKey =
   | "frontal_knee_valgus_notable_deg"
   | "frontal_pelvic_drop_notable_deg"
   | "frontal_pelvis_min_width_px"
+  | "scale_min_visible_share"
   | "stature_from_nose_heel"
   | "min_subject_height_ratio"
   | "min_detected_ratio_fair"
@@ -133,6 +134,16 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "두 엉덩이 랜드마크의 화면상 좌우 간격입니다. 옆에서 찍으면 거의 겹쳐서 이 간격이 잡음이 되고, 잡음으로 계산한 정렬 각도는 작은 오차가 아니라 난수입니다.",
     validationStatus: "internal",
     note: "미달이면 정면 지표를 아예 내지 않습니다. 화면 폭 1280 기준으로 잡은 값입니다.",
+  },
+  scale_min_visible_share: {
+    key: "scale_min_visible_share",
+    label: "미터 배율을 인정할 최소 실측 비율",
+    value: 0.9,
+    unit: "ratio",
+    appliesTo: "camera",
+    source: "배율을 만든 프레임 중 코와 발꿈치가 실제로 화면 안에 있던 비율입니다. 자세 추정기는 화면 밖 관절도 추정해 돌려주므로 값이 계산된다고 본 것은 아니고, 다리만 나오게 찍은 영상에서는 배율이 러너가 아니라 구도를 재게 됩니다.",
+    validationStatus: "internal",
+    note: "미달이면 배율에 걸린 판정을 내지 않습니다. 거리와 속도 자체는 계속 표시합니다. 표본에서 이 비율은 전신 클립 100%, 다리 클로즈업 73% 였습니다.",
   },
   stature_from_nose_heel: {
     key: "stature_from_nose_heel",
