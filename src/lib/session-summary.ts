@@ -1,4 +1,5 @@
 import { summarizeFootStrikes } from "@/lib/Footstrike";
+import { threshold } from "@/lib/thresholds";
 
 import {
   cadenceSpm,
@@ -60,21 +61,26 @@ export const paceLabel: Record<PaceBand, string> = {
 // far more stable than trying to read ground speed off a hand-held camera.
 export function classifyPace(dutyFactor: number, contactMs: number): PaceBand {
   if (!Number.isFinite(dutyFactor)) return "unknown";
-  if (dutyFactor >= 0.5) return "walk";
-  if (dutyFactor >= 0.4 || contactMs >= 290) return "easy";
-  if (dutyFactor >= 0.33) return "steady";
-  if (dutyFactor >= 0.23) return "brisk";
-  if (dutyFactor >= 0.18) return "fast";
+  if (dutyFactor >= threshold("pace_walk_duty_min")) return "walk";
+  if (
+    dutyFactor >= threshold("pace_easy_duty_min") ||
+    contactMs >= threshold("pace_easy_contact_min_ms")
+  ) {
+    return "easy";
+  }
+  if (dutyFactor >= threshold("pace_steady_duty_min")) return "steady";
+  if (dutyFactor >= threshold("pace_brisk_duty_min")) return "brisk";
+  if (dutyFactor >= threshold("pace_fast_duty_min")) return "fast";
   return "sprint";
 }
 
 export function classifyReportedPace(minPerKm: number): PaceBand {
   if (!Number.isFinite(minPerKm)) return "unknown";
-  if (minPerKm >= 8) return "walk";
-  if (minPerKm >= 6) return "easy";
-  if (minPerKm >= 5) return "steady";
-  if (minPerKm >= 4.25) return "brisk";
-  if (minPerKm >= 3.5) return "fast";
+  if (minPerKm >= threshold("pace_walk_min_per_km")) return "walk";
+  if (minPerKm >= threshold("pace_easy_min_per_km")) return "easy";
+  if (minPerKm >= threshold("pace_steady_min_per_km")) return "steady";
+  if (minPerKm >= threshold("pace_brisk_min_per_km")) return "brisk";
+  if (minPerKm >= threshold("pace_fast_min_per_km")) return "fast";
   return "sprint";
 }
 
@@ -300,7 +306,8 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   const cadenceAgrees =
     !Number.isFinite(timingCadence) ||
     !Number.isFinite(cadence) ||
-    Math.abs(cadence - timingCadence) <= 15;
+    Math.abs(cadence - timingCadence) <=
+      threshold("narration_cadence_agreement_spm");
   const hasReportedPace =
     Number.isFinite(result.reportedPaceMinPerKm) &&
     (result.reportedPaceMinPerKm ?? 0) > 0;
@@ -315,13 +322,15 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
       ? "unknown"
       : "gait";
   const gaitCount = landings.filter((l) => l.gaitBased).length;
-  // Running always has a flight phase, so a sub-120 cadence means the clip is
-  // played slower than it was run.
+  // Running always has a flight phase, so a cadence below the floor while the
+  // duty factor still says running means the clip is played slower than it was
+  // run. The duty side reuses the walking boundary rather than repeating 0.5:
+  // "there is a flight phase" and "this is not walking" are the same test.
   const looksSlowMotion =
     Number.isFinite(cadence) &&
-    cadence < 120 &&
+    cadence < threshold("slow_motion_min_cadence_spm") &&
     Number.isFinite(meanDutyFactor) &&
-    meanDutyFactor < 0.5;
+    meanDutyFactor < threshold("pace_walk_duty_min");
 
   const left = landings.filter((l) => l.side === "left");
   const right = landings.filter((l) => l.side === "right");
@@ -367,7 +376,7 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
   const dominantStrike: SessionSummary["dominantStrike"] =
     !topStrike || !enoughStrikeSamples
       ? "unknown"
-      : topStrike.percent >= 60
+      : topStrike.percent >= threshold("narration_dominant_strike_pct")
         ? topStrike.type
         : "mixed";
 
@@ -432,7 +441,8 @@ export function buildSessionSummary(result: AnalysisResult): SessionSummary {
     highImpactCount
       ? `착지의 ${pct(highImpactCount, landings.length)}%는 비교적 큰 충격·부하율입니다.`
       : "",
-    Number.isFinite(asymmetryPct) && asymmetryPct >= 12
+    Number.isFinite(asymmetryPct) &&
+    asymmetryPct >= threshold("narration_asymmetry_notable_pct")
       ? `왼발 ${left.length}회 ${leftShown.toFixed(1)} BW, 오른발 ${right.length}회 ${rightShown.toFixed(1)} BW로 좌우 차이가 약 ${Math.round(asymmetryPct)}%입니다.`
       : bothSides
         ? `왼발 ${left.length}회, 오른발 ${right.length}회이며 좌우 충격 차이는 ${Math.round(asymmetryPct)}%로 크지 않습니다.`

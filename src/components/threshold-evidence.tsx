@@ -33,9 +33,20 @@ const GROUP_LABEL: Record<string, string> = {
   tracking: "추적 품질",
   scoring: "충격 점수",
   guidance: "부상 안내",
+  pace: "페이스 이름",
+  narration: "서술 문구 판정",
 };
 
-const GROUP_ORDER = ["running", "frontal", "camera", "tracking", "scoring", "guidance"];
+const GROUP_ORDER = [
+  "running",
+  "pace",
+  "frontal",
+  "camera",
+  "tracking",
+  "scoring",
+  "guidance",
+  "narration",
+];
 
 /** Muted for the values this project chose, plain for the ones it did not. */
 const STATUS_VARIANT: Record<ValidationStatus, "secondary" | "outline" | "destructive"> = {

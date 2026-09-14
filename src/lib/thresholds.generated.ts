@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit.
 //
-// Source: shared/thresholds.yaml (version 10)
+// Source: shared/thresholds.yaml (version 12)
 // Regenerate: npm run emit:thresholds
 //
 // `npm run test:analysis` re-renders this from the YAML and fails if the two
@@ -10,7 +10,7 @@ import type { ThresholdRecord, ValidationStatus } from "@/lib/thresholds-source"
 
 export type { ThresholdRecord, ValidationStatus };
 
-export const THRESHOLDS_VERSION = 10;
+export const THRESHOLDS_VERSION = 12;
 
 export type ThresholdKey =
   | "foot_strike_rearfoot_max_deg"
@@ -51,7 +51,25 @@ export type ThresholdKey =
   | "guidance_stiff_knee_excursion_deg"
   | "guidance_severe_knee_contact_deg"
   | "guidance_fast_descent_m_s"
-  | "guidance_severe_descent_m_s";
+  | "guidance_severe_descent_m_s"
+  | "pace_walk_duty_min"
+  | "pace_easy_duty_min"
+  | "pace_easy_contact_min_ms"
+  | "pace_steady_duty_min"
+  | "pace_brisk_duty_min"
+  | "pace_fast_duty_min"
+  | "pace_walk_min_per_km"
+  | "pace_easy_min_per_km"
+  | "pace_steady_min_per_km"
+  | "pace_brisk_min_per_km"
+  | "pace_fast_min_per_km"
+  | "narration_knee_absorbing_deg"
+  | "narration_loading_rate_slow_bw_s"
+  | "narration_live_deep_knee_deg"
+  | "narration_asymmetry_notable_pct"
+  | "narration_dominant_strike_pct"
+  | "slow_motion_min_cadence_spm"
+  | "narration_cadence_agreement_spm";
 
 export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
   foot_strike_rearfoot_max_deg: {
@@ -443,5 +461,185 @@ export const THRESHOLDS: Record<ThresholdKey, ThresholdRecord> = {
     source: "같은 안내를 high 로 올리는 값입니다. 위와 같은 이유로 보류합니다.",
     validationStatus: "withheld",
     note: "표본 여섯 클립 · 착지 138개 기준에서 한 번도 넘지 않았습니다. 위의 읽기 손실을 적용하면 이 값을 보고하려면 참값 약 3.9 m/s, 75 cm 안팎의 낙하가 필요합니다.",
+  },
+  pace_walk_duty_min: {
+    key: "pace_walk_duty_min",
+    label: "걷기 · 듀티 경계",
+    value: 0.5,
+    unit: "ratio",
+    appliesTo: "pace",
+    source: "한 발의 접지가 한 걸음의 절반을 넘으면 양발이 동시에 땅에 있는 구간이 생깁니다. 그게 걷기의 정의이므로 이 경계만은 고른 값이 아니라 유도된 값입니다.",
+    validationStatus: "derived",
+    note: "표본 여섯 클립 · 착지 138개 기준의 듀티 중앙값은 0.365 입니다.",
+  },
+  pace_easy_duty_min: {
+    key: "pace_easy_duty_min",
+    label: "가벼운 조깅 · 듀티 경계",
+    value: 0.4,
+    unit: "ratio",
+    appliesTo: "pace",
+    source: "듀티는 속도가 오르면 내려갑니다. 아래 네 경계는 그 사다리를 이 프로젝트가 나눈 것이고, 러닝 문헌의 구간을 옮긴 것이 아닙니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 클립별 듀티 중앙값은 0.236~0.417 이고, 이 사다리는 그 범위를 brisk·steady·easy 로 갈랐습니다.",
+  },
+  pace_easy_contact_min_ms: {
+    key: "pace_easy_contact_min_ms",
+    label: "가벼운 조깅 · 접지 시간 경계",
+    value: 290,
+    unit: "ms",
+    appliesTo: "pace",
+    source: "듀티가 아직 0.4 아래여도 접지가 이만큼 길면 가벼운 조깅으로 봅니다. 듀티 하나로는 접지와 체공이 함께 길어지는 느린 주행을 놓칩니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  pace_steady_duty_min: {
+    key: "pace_steady_duty_min",
+    label: "편한 러닝 · 듀티 경계",
+    value: 0.33,
+    unit: "ratio",
+    appliesTo: "pace",
+    source: "같은 사다리의 다음 칸입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  pace_brisk_duty_min: {
+    key: "pace_brisk_duty_min",
+    label: "빠른 러닝 · 듀티 경계",
+    value: 0.23,
+    unit: "ratio",
+    appliesTo: "pace",
+    source: "같은 사다리의 다음 칸입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  pace_fast_duty_min: {
+    key: "pace_fast_duty_min",
+    label: "고속 러닝 · 듀티 경계",
+    value: 0.18,
+    unit: "ratio",
+    appliesTo: "pace",
+    source: "같은 사다리의 마지막 칸이고, 아래는 스프린트입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  pace_walk_min_per_km: {
+    key: "pace_walk_min_per_km",
+    label: "걷기 · 사용자가 적은 페이스 경계",
+    value: 8,
+    unit: "min_km",
+    appliesTo: "pace",
+    source: "러너가 직접 적어 준 페이스를 같은 이름으로 옮기는 사다리입니다. 영상에서 잰 듀티 쪽과 이름이 같아야 두 값을 나란히 보여줄 수 있습니다.",
+    validationStatus: "internal",
+    note: "달리기에서 흔히 쓰는 구간에 가깝게 잡았지만 표준이 있는 것은 아닙니다.",
+  },
+  pace_easy_min_per_km: {
+    key: "pace_easy_min_per_km",
+    label: "가벼운 조깅 · 사용자가 적은 페이스 경계",
+    value: 6,
+    unit: "min_km",
+    appliesTo: "pace",
+    source: "같은 사다리의 다음 칸입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  pace_steady_min_per_km: {
+    key: "pace_steady_min_per_km",
+    label: "편한 러닝 · 사용자가 적은 페이스 경계",
+    value: 5,
+    unit: "min_km",
+    appliesTo: "pace",
+    source: "같은 사다리의 다음 칸입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  pace_brisk_min_per_km: {
+    key: "pace_brisk_min_per_km",
+    label: "빠른 러닝 · 사용자가 적은 페이스 경계",
+    value: 4.25,
+    unit: "min_km",
+    appliesTo: "pace",
+    source: "같은 사다리의 다음 칸입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  pace_fast_min_per_km: {
+    key: "pace_fast_min_per_km",
+    label: "고속 러닝 · 사용자가 적은 페이스 경계",
+    value: 3.5,
+    unit: "min_km",
+    appliesTo: "pace",
+    source: "같은 사다리의 마지막 칸이고, 아래는 스프린트입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
+  },
+  narration_knee_absorbing_deg: {
+    key: "narration_knee_absorbing_deg",
+    label: "무릎으로 나눠 받은 착지 · 문구 경계",
+    value: 25,
+    unit: "deg",
+    appliesTo: "narration",
+    source: "접지에서 최대까지 무릎이 이보다 더 굽으면 착지 카드가 충격을 나눠 받았다고 씁니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 22회. 가동 폭 중앙값은 10.2° 입니다.",
+  },
+  narration_loading_rate_slow_bw_s: {
+    key: "narration_loading_rate_slow_bw_s",
+    label: "힘이 천천히 실린 착지 · 문구 경계",
+    value: 20,
+    unit: "BW/s",
+    appliesTo: "narration",
+    source: "부하율이 이보다 낮으면 착지 카드가 힘이 천천히 실렸다고 씁니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 58회인데, 같은 표본의 부하율 중앙값이 21.1 BW/s 라 이 경계가 중앙값 위에 얹혀 있습니다. 무릎 가동 폭 경계와 같은 문제이고, 그러면 이 문장은 러너의 특징이 아니라 표본의 절반을 가리킵니다.",
+  },
+  narration_live_deep_knee_deg: {
+    key: "narration_live_deep_knee_deg",
+    label: "라이브 큐 · 깊은 무릎 굽힘 경계",
+    value: 42,
+    unit: "deg",
+    appliesTo: "narration",
+    source: "실시간 화면에서 지지 구간 무릎이 이보다 깊게 굽으면 큐를 띄웁니다.",
+    validationStatus: "internal",
+    note: "라이브 경로라 오프라인 표본으로 세지 못했습니다.",
+  },
+  narration_asymmetry_notable_pct: {
+    key: "narration_asymmetry_notable_pct",
+    label: "좌우 충격 차이 · 문구 경계",
+    value: 12,
+    unit: "pct",
+    appliesTo: "narration",
+    source: "좌우 평균 반력 차이가 이보다 크면 요약이 차이를 지적하고, 아니면 크지 않다고 씁니다. 어느 쪽이든 숫자는 함께 보여 줍니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준의 여섯 클립 모두 이 값을 넘지 않았습니다. 넘는 쪽 문장은 이 표본으로 확인되지 않았습니다.",
+  },
+  narration_dominant_strike_pct: {
+    key: "narration_dominant_strike_pct",
+    label: "주된 주법 · 판정 경계",
+    value: 60,
+    unit: "pct",
+    appliesTo: "narration",
+    source: "가장 많은 주법이 착지의 이만큼을 넘으면 그것을 주된 주법으로 부르고, 아니면 섞였다고 합니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 주법이 나온 세 클립 중 하나가 이 경계를 넘었고 둘은 섞임으로 갔습니다.",
+  },
+  slow_motion_min_cadence_spm: {
+    key: "slow_motion_min_cadence_spm",
+    label: "슬로모션 의심 · 케이던스 하한",
+    value: 120,
+    unit: "score",
+    appliesTo: "camera",
+    source: "달리기에는 항상 체공 구간이 있으므로, 체공이 있는데도 케이던스가 이보다 낮으면 영상이 실제보다 느리게 재생되고 있다고 봅니다. 체공 여부는 듀티가 걷기 경계 아래인지로 판단하며, 그 경계는 pace_walk_duty_min 하나를 함께 씁니다.",
+    validationStatus: "internal",
+    note: "표본 여섯 클립 · 착지 138개 기준에서 이 조건에 걸린 클립은 없습니다. 슬로모션 클립은 표본에 없습니다.",
+  },
+  narration_cadence_agreement_spm: {
+    key: "narration_cadence_agreement_spm",
+    label: "케이던스 일치 · 문구 경계",
+    value: 15,
+    unit: "score",
+    appliesTo: "narration",
+    source: "착지 간격에서 구한 케이던스와 접지+체공에서 구한 케이던스가 이보다 더 벌어지면 요약이 그 값을 참고값이라고 밝힙니다. 두 경로가 갈리는 것은 착지를 놓쳤거나 접지가 쪼개졌다는 뜻입니다.",
+    validationStatus: "internal",
+    note: "외부 검증 없음.",
   },
 };

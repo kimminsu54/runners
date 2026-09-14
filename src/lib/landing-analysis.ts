@@ -437,7 +437,9 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
   const bits: string[] = [];
   if (isRigidLanding(l)) {
     bits.push("무릎을 거의 편 채로 받아 뻣뻣한 착지로 보입니다.");
-  } else if (l.kneeFlexPeak - l.kneeFlexContact > 25) {
+  } else if (
+    l.kneeFlexPeak - l.kneeFlexContact > threshold("narration_knee_absorbing_deg")
+  ) {
     bits.push("착지 후 무릎을 굽혀 충격을 나눠 받은 편입니다.");
   }
   if (Number.isFinite(l.contactMs) && l.contactMs > 0) {
@@ -455,7 +457,7 @@ function landingNote(l: Omit<Landing, "note" | "index">): string {
     bits.push(
       `힘이 실리는 속도가 ${formatLoadingRateBwS(l.loadingRateBwS)}로 빠른 편입니다.`,
     );
-  } else if (l.loadingRateBwS <= 20) {
+  } else if (l.loadingRateBwS <= threshold("narration_loading_rate_slow_bw_s")) {
     bits.push(
       `힘이 ${formatLoadingRateBwS(l.loadingRateBwS)}로 천천히 실렸습니다.`,
     );

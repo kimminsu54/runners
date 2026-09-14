@@ -1,11 +1,13 @@
 import {
   footStrikeLabel,
   formatSeconds,
+  isRigidLanding,
   type AnalysisResult,
   type FootSide,
   type Landing,
   type PoseFrame,
-  isRigidLanding,} from "@/lib/landing-analysis";
+} from "@/lib/landing-analysis";
+import { threshold } from "@/lib/thresholds";
 import { isVisible, LM, mid, type Landmark } from "@/lib/pose";
 
 export type GaitPhase = "stance" | "flight" | "air" | "unknown";
@@ -241,7 +243,8 @@ function postureCues(input: {
       detail:
         "접지 순간에 다리가 곧게 서 있으면 충격을 나눠 받을 시간이 짧아 보입니다. 부상 단정은 아닙니다.",
     });
-  } else if (phase === "stance" && Number.isFinite(kneeFlex) && kneeFlex >= 42) {
+  } else if (phase === "stance" && Number.isFinite(kneeFlex) &&
+    kneeFlex >= threshold("narration_live_deep_knee_deg")) {
     cues.push({
       level: "watch",
       title: "무릎이 깊게 굽고 있습니다",
